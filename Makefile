@@ -62,16 +62,17 @@ build-all: clean
 	@echo "Done! Binaries in $(DIST_DIR)/"
 	@ls -la $(DIST_DIR)/
 
-## install: Install to GOPATH/bin
-install:
-	@echo "Installing $(APP_NAME)..."
-	$(GO) install $(GOFLAGS) -ldflags "$(LDFLAGS)" $(MAIN_PKG)
-	@echo "Installed to $(shell go env GOPATH)/bin/$(APP_NAME)"
+## install: Install to /usr/local/bin (may require sudo)
+install: build
+	@echo "Installing $(APP_NAME) to /usr/local/bin..."
+	sudo cp $(BUILD_DIR)/$(APP_NAME) /usr/local/bin/$(APP_NAME)
+	sudo chmod 755 /usr/local/bin/$(APP_NAME)
+	@echo "Installed to /usr/local/bin/$(APP_NAME)"
 
-## uninstall: Remove from GOPATH/bin
+## uninstall: Remove from /usr/local/bin (may require sudo)
 uninstall:
 	@echo "Uninstalling $(APP_NAME)..."
-	rm -f $(shell go env GOPATH)/bin/$(APP_NAME)
+	sudo rm -f /usr/local/bin/$(APP_NAME)
 	@echo "Done"
 
 ## run: Build and run
