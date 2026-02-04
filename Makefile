@@ -29,7 +29,7 @@ PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 .DEFAULT_GOAL := build
 
 # Phony targets
-.PHONY: all build clean test lint fmt vet tidy run help install uninstall release
+.PHONY: all build clean test lint fmt vet tidy run help install uninstall release update
 
 ## help: Show this help message
 help:
@@ -156,3 +156,10 @@ deps:
 ## check: Run all checks (fmt, vet, lint, test)
 check: fmt vet lint test
 	@echo "All checks passed!"
+
+## update: Pull latest changes and reinstall
+update:
+	@echo "Updating $(APP_NAME)..."
+	git pull
+	@$(MAKE) install
+	@echo "Updated to $(VERSION)"
