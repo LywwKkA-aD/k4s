@@ -2,7 +2,7 @@
 
 A Terminal User Interface (TUI) for K3s cluster management, inspired by [k9s](https://k9scli.io/).
 
-![k4s demo](https://img.shields.io/badge/version-0.1.0-blue)
+![k4s demo](https://img.shields.io/badge/version-0.2.0-blue)
 ![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -10,6 +10,10 @@ A Terminal User Interface (TUI) for K3s cluster management, inspired by [k9s](ht
 
 - **Multiple Kubeconfig Support** - Manage multiple K3s/Kubernetes clusters from a single config
 - **Real-time Pod Monitoring** - Live-updating pod list with status colors
+- **Deployments Management** - View, scale, restart, and delete deployments
+- **Services View** - List services with type, IPs, and ports
+- **Events Browser** - Cluster-wide events with filtering (warnings, kind)
+- **Resource Metrics** - CPU/Memory usage for pods (requires metrics-server)
 - **Streaming Logs** - View and follow pod logs in real-time (like `kubectl logs -f`)
 - **Pod Operations** - Delete and restart pods with confirmation dialogs
 - **SSH Integration** - Connect to nodes via SSH and run crictl commands
@@ -40,13 +44,13 @@ Download the latest release for your platform from the [Releases](https://github
 
 ```bash
 # Linux (amd64)
-curl -LO https://github.com/LywwKkA-aD/k4s/releases/download/v0.1.0/k4s-linux-amd64.tar.gz
-tar -xzf k4s-linux-amd64.tar.gz
+curl -LO https://github.com/LywwKkA-aD/k4s/releases/download/v0.2.0/k4s-v0.2.0-linux-amd64.tar.gz
+tar -xzf k4s-v0.2.0-linux-amd64.tar.gz
 sudo mv k4s-linux-amd64 /usr/local/bin/k4s
 
 # macOS (Apple Silicon)
-curl -LO https://github.com/LywwKkA-aD/k4s/releases/download/v0.1.0/k4s-darwin-arm64.tar.gz
-tar -xzf k4s-darwin-arm64.tar.gz
+curl -LO https://github.com/LywwKkA-aD/k4s/releases/download/v0.2.0/k4s-v0.2.0-darwin-arm64.tar.gz
+tar -xzf k4s-v0.2.0-darwin-arm64.tar.gz
 sudo mv k4s-darwin-arm64 /usr/local/bin/k4s
 ```
 
@@ -124,8 +128,11 @@ Press `?` at any time to see the help screen.
 | `↓` / `j` | Move down |
 | `Enter` | Select / Open |
 | `/` | Filter list / Search |
-| `0` | Go to Namespaces |
-| `1` | Go to Pods |
+| `1` | Go to Namespaces |
+| `2` | Go to Pods |
+| `3` | Go to Deployments |
+| `4` | Go to Services |
+| `5` | Go to Events |
 | `9` | Go to SSH Hosts |
 
 ### Pod Actions
@@ -135,6 +142,23 @@ Press `?` at any time to see the help screen.
 | `l` | View logs |
 | `d` | Delete pod |
 | `R` | Restart pod (Shift+R) |
+| `m` | Toggle metrics |
+
+### Deployment Actions
+
+| Key | Action |
+|-----|--------|
+| `s` | Scale deployment |
+| `d` | Delete deployment |
+| `R` | Restart deployment |
+
+### Events Actions
+
+| Key | Action |
+|-----|--------|
+| `f` | Toggle follow mode |
+| `w` | Toggle warnings only |
+| `k` | Cycle kind filter |
 
 ### Log Viewer
 
@@ -160,18 +184,45 @@ Press `?` at any time to see the help screen.
 
 ## Views
 
-### Namespaces View (`0`)
+### Namespaces View (`1`)
 Browse and select Kubernetes namespaces. Shows namespace status and age.
 
-### Pods View (`1`)
+### Pods View (`2`)
 List all pods in the selected namespace with:
 - Pod name
 - Ready containers (X/Y)
 - Status (color-coded)
 - Restart count
 - Age
+- CPU/Memory (toggle with `m`, requires metrics-server)
 
 Auto-refreshes every 5 seconds.
+
+### Deployments View (`3`)
+List all deployments with:
+- Deployment name
+- Ready/Desired replicas
+- Up-to-date count
+- Available count
+- Age
+
+Actions: scale (`s`), restart (`R`), delete (`d`)
+
+### Services View (`4`)
+List all services with:
+- Service name
+- Type (ClusterIP, NodePort, LoadBalancer)
+- Cluster IP
+- External IP
+- Ports
+- Age
+
+### Events View (`5`)
+Cluster-wide events in log-style format:
+- Auto-follow mode (`f`)
+- Filter warnings only (`w`)
+- Filter by resource kind (`k`)
+- Color-coded by event type
 
 ### Pod Details (Enter on pod)
 Detailed information about a pod including:
@@ -186,6 +237,7 @@ View pod logs with streaming support:
 - Multi-container support
 - Timestamp toggle
 - Search with highlighting
+- ANSI color preservation
 
 ### SSH Hosts View (`9`)
 Connect to K3s nodes via SSH to run crictl commands:
