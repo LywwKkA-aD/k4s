@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -39,6 +40,7 @@ const (
 	ViewServices
 	ViewServiceDetails
 	ViewEvents
+	ViewMultiPodLogs
 )
 
 // Messages for async operations
@@ -88,6 +90,17 @@ type logLineMsg struct {
 
 type logStreamEndedMsg struct {
 	err error
+}
+
+type multiPodLogLineMsg struct {
+	podName   string
+	container string
+	line      string
+}
+
+type multiPodLogStreamEndedMsg struct {
+	podName string
+	err     error
 }
 
 type containersResultMsg struct {
@@ -178,6 +191,9 @@ type App struct {
 	styles             Styles
 	width              int
 	height             int
+	contentWidth       int  // width for main content area (excludes sidebar + padding)
+	sidebarWidth       int  // sidebar panel width (0 when hidden)
+	showSidebar        bool // false when terminal < sidebarMinWidth
 	ready              bool
 	config             *domain.Config
 	selectedConfig     *domain.KubeConfig
@@ -248,6 +264,16 @@ type App struct {
 
 	// Scale dialog
 	scaleDialog ScaleDialog
+
+	// Multi-pod log fields
+	podMultiSelector       PodMultiSelector
+	multiPodLogViewer      MultiPodLogViewer
+	multiPodStreamCancel   context.CancelFunc
+	multiPodStreamCtx      context.Context
+	multiPodStreamActive   bool
+	multiPodActiveStreams   int
+	multiPodLineChanMap    map[string]<-chan string
+	multiPodContainerMap   map[string]string // podName -> containerName for restarts
 }
 
 // NewApp creates a new App instance with configuration
@@ -275,6 +301,8 @@ func NewApp(cfg *domain.Config) *App {
 		serviceDetails:        NewServiceDetailsModel(DefaultStyles()),
 		eventViewer:           NewEventViewer(DefaultStyles()),
 		scaleDialog:           NewScaleDialog(),
+		podMultiSelector:      NewPodMultiSelector(),
+		multiPodLogViewer:     NewMultiPodLogViewer(DefaultStyles()),
 	}
 
 	// If only one kubeconfig, auto-select it
@@ -540,7 +568,7 @@ func (a *App) fetchMetrics() tea.Cmd {
 
 // fetchContainers returns a command that fetches container names for a pod
 func (a *App) fetchContainers(podName string) tea.Cmd {
-	logger.Debug("fetchContainers called for pod: %s", podName)
+	logger.Debug("fetchContainers called", "pod", podName)
 	return func() tea.Msg {
 		if a.k8sClient == nil {
 			logger.Error("fetchContainers: k8sClient is nil")
@@ -548,12 +576,12 @@ func (a *App) fetchContainers(podName string) tea.Cmd {
 		}
 
 		ctx := context.Background()
-		logger.Debug("Calling GetPodContainers for %s in namespace %s", podName, a.k8sClient.CurrentNamespace())
+		logger.Debug("Calling GetPodContainers", "pod", podName, "namespace", a.k8sClient.CurrentNamespace())
 		containers, err := a.k8sClient.GetPodContainers(ctx, a.k8sClient.CurrentNamespace(), podName)
 		if err != nil {
-			logger.Errorf(err, "GetPodContainers failed")
+			logger.Error("GetPodContainers failed", "err", err)
 		} else {
-			logger.Debug("GetPodContainers returned %d containers", len(containers))
+			logger.Debug("GetPodContainers returned containers", "count", len(containers))
 		}
 		return containersResultMsg{containers: containers, err: err}
 	}
@@ -598,67 +626,61 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		a.ready = true
+
+		// Calculate sidebar dimensions
+		if a.width >= sidebarMinWidth {
+			a.showSidebar = true
+			a.sidebarWidth = a.width / 4
+			if a.sidebarWidth < 24 {
+				a.sidebarWidth = 24
+			}
+			if a.sidebarWidth > 30 {
+				a.sidebarWidth = 30
+			}
+			a.contentWidth = a.width - 4 - a.sidebarWidth
+		} else {
+			a.showSidebar = false
+			a.sidebarWidth = 0
+			a.contentWidth = a.width - 4
+		}
+
+		cw := a.contentWidth
+		// When sidebar is shown, content has more vertical space (no header)
+		listH := a.height - 10
+		viewH := a.height - 8
+		logH := a.height - 10
+		if a.showSidebar {
+			listH = a.height - 8
+			viewH = a.height - 6
+			logH = a.height - 6
+		}
+
 		a.kubeConfigList = newKubeConfigList(
 			a.config.KubeConfigs,
-			a.width-4,
-			a.height-10,
+			cw,
+			listH,
 			a.styles,
 		)
-		a.namespaceList = newNamespaceList(
-			nil,
-			a.width-4,
-			a.height-12,
-			a.styles,
-		)
-		a.podList = newPodList(
-			nil,
-			a.width-4,
-			a.height-12,
-			a.styles,
-			a.metricsEnabled,
-			a.podMetrics,
-		)
-		a.podDetails.SetSize(a.width-4, a.height-12)
-		a.logViewer.SetSize(a.width-4, a.height-14)
+		a.namespaceList = newNamespaceList(nil, cw, listH, a.styles)
+		a.podList = newPodList(nil, cw, listH, a.styles, a.metricsEnabled, a.podMetrics)
+		a.podDetails.SetSize(cw, viewH)
+		a.logViewer.SetSize(cw, logH)
 		a.confirmDialog.SetWidth(a.width)
 		a.notification.SetWidth(a.width)
 		a.containerSelector.SetWidth(a.width)
-		// Initialize SSH host list
-		a.sshHostList = newSSHHostList(
-			a.config.SSHHosts,
-			a.width-4,
-			a.height-12,
-			a.styles,
-		)
-		a.crictlContainerList = newCrictlContainerList(
-			nil,
-			a.width-4,
-			a.height-12,
-			a.styles,
-		)
+		a.sshHostList = newSSHHostList(a.config.SSHHosts, cw, listH, a.styles)
+		a.crictlContainerList = newCrictlContainerList(nil, cw, listH, a.styles)
 		a.passphraseInput.SetWidth(a.width)
-		a.crictlLogViewer.SetSize(a.width-4, a.height-14)
+		a.crictlLogViewer.SetSize(cw, logH)
 		a.helpScreen.SetSize(a.width, a.height)
-		// Initialize deployment list
-		a.deploymentList = newDeploymentList(
-			nil,
-			a.width-4,
-			a.height-12,
-			a.styles,
-		)
-		a.deploymentDetails.SetSize(a.width-4, a.height-12)
-		// Initialize service list
-		a.serviceList = newServiceList(
-			nil,
-			a.width-4,
-			a.height-12,
-			a.styles,
-		)
-		a.serviceDetails.SetSize(a.width-4, a.height-12)
-		// Initialize event viewer
-		a.eventViewer.SetSize(a.width-4, a.height-12)
-		// Initialize scale dialog
+		a.deploymentList = newDeploymentList(nil, cw, listH, a.styles)
+		a.deploymentDetails.SetSize(cw, viewH)
+		a.serviceList = newServiceList(nil, cw, listH, a.styles)
+		a.serviceDetails.SetSize(cw, viewH)
+		a.eventViewer.SetSize(cw, logH)
 		a.scaleDialog.SetWidth(a.width)
+		a.podMultiSelector.SetWidth(a.width)
+		a.multiPodLogViewer.SetSize(cw, logH)
 		return a, nil
 
 	case connectResultMsg:
@@ -717,6 +739,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logStreamEndedMsg:
 		return a.handleLogStreamEnded(msg)
 
+	case multiPodLogLineMsg:
+		return a.handleMultiPodLogLine(msg)
+
+	case multiPodLogStreamEndedMsg:
+		return a.handleMultiPodLogStreamEnded(msg)
+
 	case sshConnectResultMsg:
 		return a.handleSSHConnectResult(msg)
 
@@ -772,6 +800,94 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 
+	// Route non-key messages to visible dialogs (huh forms produce internal
+	// commands like nextGroupMsg that need to flow back through Update).
+	if a.confirmDialog.IsVisible() {
+		confirmed, cancelled, cmd := a.confirmDialog.Update(msg)
+		if confirmed {
+			action := a.confirmDialog.Action()
+			targetName := a.confirmDialog.TargetName()
+			a.confirmDialog.Hide()
+			switch action {
+			case ConfirmActionDeletePod:
+				return a, a.deletePod(targetName)
+			case ConfirmActionRestartPod:
+				return a, a.restartPod(targetName)
+			case ConfirmActionDeleteDeployment:
+				return a, a.deleteDeployment(targetName)
+			case ConfirmActionRestartDeployment:
+				return a, a.restartDeployment(targetName)
+			}
+		}
+		if cancelled {
+			a.confirmDialog.Hide()
+		}
+		return a, cmd
+	}
+	if a.scaleDialog.IsVisible() {
+		confirmed, cancelled, cmd := a.scaleDialog.Update(msg)
+		if confirmed {
+			deployName := a.scaleDialog.DeploymentName()
+			replicas := a.scaleDialog.TargetReplicas()
+			a.scaleDialog.Hide()
+			return a, a.scaleDeployment(deployName, replicas)
+		}
+		if cancelled {
+			a.scaleDialog.Hide()
+		}
+		return a, cmd
+	}
+	if a.containerSelector.IsVisible() {
+		selected, cancelled, cmd := a.containerSelector.Update(msg)
+		if selected {
+			container := a.containerSelector.SelectedContainer()
+			a.containerSelector.Hide()
+			a.logViewer.SetContainer(container)
+			a.stopLogStream()
+			a.loading = true
+			return a, a.fetchLogs(
+				a.logViewer.PodName(),
+				container,
+				a.logViewer.TailLines(),
+				a.logViewer.Timestamps(),
+			)
+		}
+		if cancelled {
+			a.containerSelector.Hide()
+		}
+		return a, cmd
+	}
+	if a.podMultiSelector.IsVisible() {
+		confirmed, cancelled, cmd := a.podMultiSelector.Update(msg)
+		if confirmed {
+			selectedPods := a.podMultiSelector.SelectedPods()
+			a.podMultiSelector.Hide()
+			if len(selectedPods) > 0 {
+				return a, a.startMultiPodStreaming(selectedPods)
+			}
+		}
+		if cancelled {
+			a.podMultiSelector.Hide()
+		}
+		return a, cmd
+	}
+	if a.passphraseInput.IsVisible() {
+		passphrase, submitted, cancelled, cmd := a.passphraseInput.Update(msg)
+		if submitted {
+			a.passphraseInput.Hide()
+			if a.sshClient != nil && a.selectedSSHHost != nil {
+				a.sshClient.SetPassphrase(passphrase)
+				a.loading = true
+				return a, a.retrySSHConnection()
+			}
+		}
+		if cancelled {
+			a.passphraseInput.Hide()
+			a.viewState = ViewSSHHosts
+		}
+		return a, cmd
+	}
+
 	// Update child components based on view state
 	switch a.viewState {
 	case ViewKubeConfigSelect:
@@ -793,6 +909,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ViewLogs:
 		var cmd tea.Cmd
 		a.logViewer, cmd = a.logViewer.Update(msg)
+		return a, cmd
+	case ViewMultiPodLogs:
+		var cmd tea.Cmd
+		a.multiPodLogViewer, cmd = a.multiPodLogViewer.Update(msg)
 		return a, cmd
 	case ViewSSHHosts:
 		var cmd tea.Cmd
@@ -860,7 +980,7 @@ func (a *App) handleConnectResult(msg connectResultMsg) (tea.Model, tea.Cmd) {
 				logger.Debug("Metrics server not available")
 			}
 		} else {
-			logger.Debug("Failed to create metrics client: %v", err)
+			logger.Debug("Failed to create metrics client", "err", err)
 		}
 	}
 
@@ -1111,18 +1231,18 @@ func (a *App) handleContainersResult(msg containersResultMsg) (tea.Model, tea.Cm
 	a.loading = false
 
 	if msg.err != nil {
-		logger.Errorf(msg.err, "Failed to get containers for pod %s", a.selectedPodName)
+		logger.Error("Failed to get containers", "pod", a.selectedPodName, "err", msg.err)
 		a.err = msg.err
 		return a, nil
 	}
 
-	logger.Debug("Got %d containers for pod %s: %v", len(msg.containers), a.selectedPodName, msg.containers)
+	logger.Debug("Got containers for pod", "count", len(msg.containers), "pod", a.selectedPodName, "containers", msg.containers)
 
 	// Set up log viewer with pod and containers
 	a.logViewer.SetPod(a.selectedPodName, a.k8sClient.CurrentNamespace(), msg.containers)
 	a.viewState = ViewLogs
 
-	logger.Debug("Switching to ViewLogs, fetching logs for container: %s", a.logViewer.Container())
+	logger.Debug("Switching to ViewLogs, fetching logs", "container", a.logViewer.Container())
 
 	// Fetch initial logs
 	return a, a.fetchLogs(
@@ -1137,13 +1257,13 @@ func (a *App) handleLogsResult(msg logsResultMsg) (tea.Model, tea.Cmd) {
 	a.loading = false
 
 	if msg.err != nil {
-		logger.Errorf(msg.err, "Failed to get logs")
+		logger.Error("Failed to get logs", "err", msg.err)
 		a.err = msg.err
 		return a, nil
 	}
 
 	logLen := len(msg.logs)
-	logger.Debug("Received logs: %d bytes", logLen)
+	logger.Debug("Received logs", "bytes", logLen)
 
 	a.logViewer.SetLogs(msg.logs)
 	a.err = nil
@@ -1317,9 +1437,9 @@ func (a *App) handleSSHConnectResult(msg sshConnectResultMsg) (tea.Model, tea.Cm
 			if a.selectedSSHHost != nil {
 				hostName = a.selectedSSHHost.Name
 			}
-			a.passphraseInput.Show(hostName)
+			cmd := a.passphraseInput.Show(hostName)
 			a.viewState = ViewSSHConnecting
-			return a, nil
+			return a, cmd
 		}
 		a.err = msg.err
 		a.viewState = ViewSSHHosts
@@ -1352,7 +1472,7 @@ func (a *App) handleSSHCrictlContainers(msg sshCrictlContainersMsg) (tea.Model, 
 func (a *App) handleSSHNodeInfo(msg sshNodeInfoMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		// Non-fatal, just log
-		logger.Debug("Failed to get node info: %v", msg.err)
+		logger.Debug("Failed to get node info", "err", msg.err)
 		return a, nil
 	}
 
@@ -1448,7 +1568,7 @@ func (a *App) handleCrictlLogsResult(msg sshCrictlLogsMsg) (tea.Model, tea.Cmd) 
 	a.loading = false
 
 	if msg.err != nil {
-		logger.Errorf(msg.err, "Failed to get crictl logs")
+		logger.Error("Failed to get crictl logs", "err", msg.err)
 		a.err = msg.err
 		return a, nil
 	}
@@ -1501,7 +1621,7 @@ func (a *App) handleCrictlLogStreamEnded(msg sshCrictlLogStreamEndedMsg) (tea.Mo
 
 func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	logger.Debug("Key pressed: '%s', viewState: %d", key, a.viewState)
+	logger.Debug("Key pressed", "key", key, "viewState", a.viewState)
 
 	// Don't handle keys during connection
 	if a.viewState == ViewConnecting {
@@ -1513,7 +1633,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Handle confirmation dialog if visible
 	if a.confirmDialog.IsVisible() {
-		confirmed, cancelled := a.confirmDialog.Update(msg)
+		confirmed, cancelled, cmd := a.confirmDialog.Update(msg)
 		if confirmed {
 			action := a.confirmDialog.Action()
 			targetName := a.confirmDialog.TargetName()
@@ -1533,7 +1653,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if cancelled {
 			a.confirmDialog.Hide()
 		}
-		return a, nil
+		return a, cmd
 	}
 
 	// Handle scale dialog if visible
@@ -1561,7 +1681,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Handle container selector if visible
 	if a.containerSelector.IsVisible() {
-		selected, cancelled := a.containerSelector.Update(msg)
+		selected, cancelled, cmd := a.containerSelector.Update(msg)
 		if selected {
 			container := a.containerSelector.SelectedContainer()
 			a.containerSelector.Hide()
@@ -1578,7 +1698,23 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if cancelled {
 			a.containerSelector.Hide()
 		}
-		return a, nil
+		return a, cmd
+	}
+
+	// Handle pod multi-selector if visible
+	if a.podMultiSelector.IsVisible() {
+		confirmed, cancelled, cmd := a.podMultiSelector.Update(msg)
+		if confirmed {
+			selectedPods := a.podMultiSelector.SelectedPods()
+			a.podMultiSelector.Hide()
+			if len(selectedPods) > 0 {
+				return a, a.startMultiPodStreaming(selectedPods)
+			}
+		}
+		if cancelled {
+			a.podMultiSelector.Hide()
+		}
+		return a, cmd
 	}
 
 	// Handle passphrase input if visible
@@ -1666,10 +1802,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "q":
 		switch a.viewState {
-		case ViewMain, ViewNamespaces, ViewPods, ViewPodDetails, ViewLogs, ViewSSHHosts, ViewCrictlContainers, ViewCrictlLogs, ViewNodeInfo:
-			a.stopLogStream()        // Clean up any active log stream
-			a.stopCrictlLogStream()  // Clean up crictl log stream
-			a.closeSSHConnection()   // Clean up SSH connection
+		case ViewMain, ViewNamespaces, ViewPods, ViewPodDetails, ViewLogs, ViewMultiPodLogs, ViewSSHHosts, ViewCrictlContainers, ViewCrictlLogs, ViewNodeInfo:
+			a.stopLogStream()           // Clean up any active log stream
+			a.stopMultiPodStreams()      // Clean up multi-pod log streams
+			a.stopCrictlLogStream()     // Clean up crictl log stream
+			a.closeSSHConnection()      // Clean up SSH connection
 			return a, tea.Quit
 		case ViewKubeConfigSelect:
 			return a, tea.Quit
@@ -1815,7 +1952,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Go to logs
 		if a.viewState == ViewPodDetails && a.selectedPodName != "" {
 			// From pod details - pod already selected
-			logger.Debug("Opening logs from pod details for: %s", a.selectedPodName)
+			logger.Debug("Opening logs from pod details", "pod", a.selectedPodName)
 			a.logSourceView = ViewPodDetails
 			a.loading = true
 			return a, a.fetchContainers(a.selectedPodName)
@@ -1824,7 +1961,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// From pods list - get selected pod
 			if item, ok := a.podList.SelectedItem().(podItem); ok {
 				a.selectedPodName = item.pod.Name
-				logger.Debug("Opening logs from pods list for: %s", a.selectedPodName)
+				logger.Debug("Opening logs from pods list", "pod", a.selectedPodName)
 				a.logSourceView = ViewPods
 				a.loading = true
 				return a, a.fetchContainers(item.pod.Name)
@@ -1832,31 +1969,42 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			logger.Warn("No pod selected in pods list")
 		}
 
+	case "L":
+		// Multi-pod log streaming (Shift+L)
+		if a.viewState == ViewPods && a.k8sClient != nil {
+			items := a.podList.Items()
+			pods := make([]domain.Pod, 0, len(items))
+			for _, item := range items {
+				if pi, ok := item.(podItem); ok {
+					pods = append(pods, pi.pod)
+				}
+			}
+			if len(pods) > 0 {
+				return a, a.podMultiSelector.Show(pods)
+			}
+		}
+
 	case "d":
 		// Delete pod
 		if a.viewState == ViewPodDetails && a.selectedPodName != "" {
-			a.confirmDialog.Show(ConfirmActionDeletePod, a.selectedPodName)
-			return a, nil
+			return a, a.confirmDialog.Show(ConfirmActionDeletePod, a.selectedPodName)
 		}
 		// Also allow deletion from pods list view
 		if a.viewState == ViewPods {
 			if item, ok := a.podList.SelectedItem().(podItem); ok {
-				a.confirmDialog.Show(ConfirmActionDeletePod, item.pod.Name)
-				return a, nil
+				return a, a.confirmDialog.Show(ConfirmActionDeletePod, item.pod.Name)
 			}
 		}
 
 	case "R":
 		// Restart pod (Shift+R)
 		if a.viewState == ViewPodDetails && a.selectedPodName != "" {
-			a.confirmDialog.Show(ConfirmActionRestartPod, a.selectedPodName)
-			return a, nil
+			return a, a.confirmDialog.Show(ConfirmActionRestartPod, a.selectedPodName)
 		}
 		// Also allow restart from pods list view
 		if a.viewState == ViewPods {
 			if item, ok := a.podList.SelectedItem().(podItem); ok {
-				a.confirmDialog.Show(ConfirmActionRestartPod, item.pod.Name)
-				return a, nil
+				return a, a.confirmDialog.Show(ConfirmActionRestartPod, item.pod.Name)
 			}
 		}
 
@@ -1886,6 +2034,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Toggle follow mode in event viewer
 		if a.viewState == ViewEvents {
 			a.eventViewer.ToggleFollowing()
+			return a, nil
+		}
+		// Toggle follow mode in multi-pod log viewer
+		if a.viewState == ViewMultiPodLogs {
+			a.multiPodLogViewer.ToggleFollowing()
 			return a, nil
 		}
 
@@ -1941,8 +2094,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		// Change container in log viewer
 		if a.viewState == ViewLogs && len(a.logViewer.Containers()) > 1 {
-			a.containerSelector.Show(a.logViewer.Containers(), a.logViewer.Container())
-			return a, nil
+			return a, a.containerSelector.Show(a.logViewer.Containers(), a.logViewer.Container())
 		}
 
 	case "/":
@@ -1956,14 +2108,12 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Scale deployment
 		if a.viewState == ViewDeployments {
 			if item, ok := a.deploymentList.SelectedItem().(deploymentItem); ok {
-				a.scaleDialog.Show(item.deployment.Name, item.deployment.Replicas)
-				return a, nil
+				return a, a.scaleDialog.Show(item.deployment.Name, item.deployment.Replicas)
 			}
 		}
 		if a.viewState == ViewDeploymentDetails && a.deploymentDetails.Deployment() != nil {
 			dep := a.deploymentDetails.Deployment()
-			a.scaleDialog.Show(dep.Name, dep.Replicas)
-			return a, nil
+			return a, a.scaleDialog.Show(dep.Name, dep.Replicas)
 		}
 
 	case "w":
@@ -2080,6 +2230,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.viewState = ViewPodDetails
 			a.loading = true
 			return a, a.fetchPodDetails(a.selectedPodName)
+		case ViewMultiPodLogs:
+			a.stopMultiPodStreams()
+			a.multiPodLogViewer.Clear()
+			a.viewState = ViewPods
+			return a, tea.Batch(a.fetchPods(), a.schedulePodRefresh())
 		case ViewPodDetails:
 			// Go back to pods
 			a.viewState = ViewPods
@@ -2165,6 +2320,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		a.logViewer, cmd = a.logViewer.Update(msg)
 		return a, cmd
+	case ViewMultiPodLogs:
+		var cmd tea.Cmd
+		a.multiPodLogViewer, cmd = a.multiPodLogViewer.Update(msg)
+		return a, cmd
 	case ViewSSHHosts:
 		var cmd tea.Cmd
 		a.sshHostList, cmd = a.sshHostList.Update(msg)
@@ -2242,6 +2401,8 @@ func (a *App) View() string {
 		view = a.renderServiceDetailsView()
 	case ViewEvents:
 		view = a.renderEventsView()
+	case ViewMultiPodLogs:
+		view = a.renderMultiPodLogsView()
 	default:
 		view = ""
 	}
@@ -2264,236 +2425,196 @@ func (a *App) overlayHelpScreen(view string) string {
 	if !a.helpScreen.IsVisible() {
 		return view
 	}
-
-	helpView := a.helpScreen.View()
-	return lipgloss.Place(
-		a.width,
-		a.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		helpView,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("#1a1a1a")),
-	)
+	return a.placeOverlay(view, a.helpScreen.View())
 }
 
 func (a *App) renderKubeConfigSelect() string {
-	header := a.renderHeader()
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 10).
-		Render(a.kubeConfigList.View())
+	h := a.height - 10
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(a.kubeConfigList.View())
 	footer := a.renderFooter()
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	return a.assembleView(content, footer)
 }
 
 func (a *App) renderConnecting() string {
-	header := a.renderHeader()
-
 	spinnerView := a.spinner.View()
 	connectingText := fmt.Sprintf("%s Connecting to cluster...", spinnerView)
-
 	if a.selectedConfig != nil {
 		connectingText = fmt.Sprintf("%s Connecting to %s...", spinnerView, a.selectedConfig.Name)
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 10).
-		Render(connectingText)
-
+	h := a.height - 10
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(connectingText)
 	footer := a.renderFooter()
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	return a.assembleView(content, footer)
 }
 
 func (a *App) renderNamespacesView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading && a.namespaceCount == 0 {
 		contentStr = fmt.Sprintf("%s Loading namespaces...", a.spinner.View())
 	} else if a.err != nil {
 		contentStr = a.renderError()
 	} else {
-		// Title with namespace count
 		title := fmt.Sprintf("Namespaces (%d)", a.namespaceCount)
-		titleLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorPrimary).
-			Render(title)
-
-		// Column headers (widths must match delegate: 40 + 12 + age)
-		headerLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorMuted).
+		titleLine := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(title)
+		sep := a.renderSeparator()
+		headerLine := lipgloss.NewStyle().Foreground(colorMuted).
 			Render(fmt.Sprintf("  %-45s %-12s %s", "NAME", "STATUS", "AGE"))
-
-		contentStr = titleLine + "\n" + headerLine + "\n" + a.namespaceList.View()
+		contentStr = titleLine + "\n" + sep + "\n" + headerLine + "\n" + a.namespaceList.View()
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 12).
-		Render(contentStr)
-
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	return a.assembleView(content, footer)
 }
 
 func (a *App) renderPodsView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading && a.podCount == 0 {
 		contentStr = fmt.Sprintf("%s Loading pods...", a.spinner.View())
 	} else if a.err != nil {
 		contentStr = a.renderError()
 	} else {
-		// Title with pod count
 		title := fmt.Sprintf("Pods (%d)", a.podCount)
 		if a.metricsEnabled {
 			title += " [metrics]"
 		}
-		titleLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorPrimary).
-			Render(title)
+		titleLine := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(title)
+		sep := a.renderSeparator()
 
-		// Column headers (widths must match delegate)
 		var headerLine string
 		if a.metricsEnabled {
-			headerLine = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(colorMuted).
+			headerLine = lipgloss.NewStyle().Foreground(colorMuted).
 				Render(fmt.Sprintf("  %-45s %-7s %-12s %-8s %-8s %-10s %s", "NAME", "READY", "STATUS", "RESTARTS", "CPU", "MEMORY", "AGE"))
 		} else {
-			headerLine = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(colorMuted).
+			headerLine = lipgloss.NewStyle().Foreground(colorMuted).
 				Render(fmt.Sprintf("  %-45s %-7s %-12s %-8s %s", "NAME", "READY", "STATUS", "RESTARTS", "AGE"))
 		}
-
-		contentStr = titleLine + "\n" + headerLine + "\n" + a.podList.View()
+		contentStr = titleLine + "\n" + sep + "\n" + headerLine + "\n" + a.podList.View()
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 10).
-		Render(contentStr)
-
+	h := a.height - 10
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
 
-	view := lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	var view string
+	view = a.assembleView(content, footer)
 
-	// Overlay confirmation dialog if visible
 	if a.confirmDialog.IsVisible() {
 		view = a.overlayDialog(view)
 	}
-
+	if a.podMultiSelector.IsVisible() {
+		view = a.overlayPodMultiSelector(view)
+	}
 	return view
 }
 
 func (a *App) renderPodDetailsView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading {
 		contentStr = fmt.Sprintf("%s Loading pod details...", a.spinner.View())
 	} else if a.err != nil {
 		contentStr = a.renderError()
 	} else {
-		// Title
 		title := fmt.Sprintf("Pod: %s", a.selectedPodName)
-		titleLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorPrimary).
-			Render(title)
-
-		scrollInfo := lipgloss.NewStyle().
-			Foreground(colorMuted).
+		titleLine := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(title)
+		scrollInfo := lipgloss.NewStyle().Foreground(colorMuted).
 			Render(fmt.Sprintf(" (%.0f%%)", a.podDetails.ScrollPercent()*100))
-
 		contentStr = titleLine + scrollInfo + "\n" + a.podDetails.View()
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 10).
-		Render(contentStr)
-
+	h := a.height - 10
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
 
-	view := lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
-
-	// Overlay confirmation dialog if visible
+	var view string
+	view = a.assembleView(content, footer)
 	if a.confirmDialog.IsVisible() {
 		view = a.overlayDialog(view)
 	}
-
 	return view
 }
 
 func (a *App) renderLogsView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading {
 		contentStr = fmt.Sprintf("%s Loading logs...", a.spinner.View())
 	} else if a.err != nil {
 		contentStr = a.renderError()
 	} else {
-		// Log viewer header
 		logHeader := a.logViewer.RenderHeader()
-		// Add search input if visible
 		if a.searchInput.IsVisible() {
 			logHeader += "\n" + a.searchInput.View()
 		}
 		contentStr = logHeader + "\n" + a.logViewer.View()
 	}
 
-	// Use the same height calculation as the log viewer setup (height-14 for viewport)
-	// Plus 2 lines for log header, so content area is height-12
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 12).
-		Render(contentStr)
-
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
 
-	view := lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
-
-	// Overlay container selector if visible
+	var view string
+	view = a.assembleView(content, footer)
 	if a.containerSelector.IsVisible() {
 		view = a.overlayContainerSelector(view)
 	}
-
 	return view
 }
 
 func (a *App) renderMainView() string {
-	header := a.renderHeader()
 	content := a.renderContent()
 	footer := a.renderFooter()
-
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	return a.assembleView(content, footer)
 }
 
 func (a *App) renderHeader() string {
 	title := a.styles.Title.Render("k4s")
-	subtitle := a.styles.Subtitle.Render("Kubernetes TUI for K3s")
 
-	headerContent := fmt.Sprintf("%s  %s", title, subtitle)
+	// Compact fallback header for narrow terminals
+	parts := []string{title}
 
-	if a.selectedConfig != nil {
-		configBadge := a.styles.StatusBar.Render(a.selectedConfig.Name)
-		headerContent = fmt.Sprintf("%s  %s  %s", title, subtitle, configBadge)
+	if a.clusterInfo != nil && a.connectionStatus == domain.StatusConnected {
+		ctx := lipgloss.NewStyle().Foreground(colorMuted).Render(a.clusterInfo.Context)
+		ns := lipgloss.NewStyle().Foreground(colorMuted).Render(a.clusterInfo.Namespace)
+		parts = append(parts, ctx, ns)
+	} else if a.selectedConfig != nil {
+		cfg := lipgloss.NewStyle().Foreground(colorMuted).Render(a.selectedConfig.Name)
+		parts = append(parts, cfg)
+	}
+
+	sep := lipgloss.NewStyle().Foreground(colorDim).Render(" · ")
+	headerContent := ""
+	for i, p := range parts {
+		if i > 0 {
+			headerContent += sep
+		}
+		headerContent += p
 	}
 
 	return a.styles.Header.
-		Width(a.width - 4).
+		Width(a.contentWidth).
 		Render(headerContent)
 }
 
@@ -2532,160 +2653,118 @@ Press 'r' to retry connection
 `, a.selectedConfig.Name, a.selectedConfig.Path, a.connectionStatus)
 	}
 
+	h := a.height - 10
+	if a.showSidebar {
+		h = a.height - 4
+	}
 	return a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 10).
+		Width(a.contentWidth).
+		Height(h).
 		Render(content)
 }
 
+// renderSeparator renders a thin horizontal line
+func (a *App) renderSeparator() string {
+	return lipgloss.NewStyle().Foreground(colorDim).Render(strings.Repeat("─", a.contentWidth))
+}
+
+// assembleView combines content and footer, adding sidebar or header as needed
+func (a *App) assembleView(content, footer string) string {
+	if a.showSidebar {
+		sidebar := a.renderSidebar()
+		topRow := lipgloss.JoinHorizontal(lipgloss.Top, content, sidebar)
+		return lipgloss.JoinVertical(lipgloss.Left, topRow, footer)
+	}
+	header := a.renderHeader()
+	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+}
+
 func (a *App) renderFooter() string {
+	// Show notification if visible
+	if a.notification.IsVisible() {
+		return a.styles.Footer.Width(a.width - 4).Render(a.notification.View())
+	}
+
+	// Crush-style help: bold key + subtle action, separated by " · "
+	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(colorMuted)
+	actionStyle := lipgloss.NewStyle().Foreground(colorSubtle)
+	sep := lipgloss.NewStyle().Foreground(colorDim).Render(" · ")
+
+	renderHelp := func(pairs ...string) string {
+		var parts []string
+		for i := 0; i+1 < len(pairs); i += 2 {
+			parts = append(parts, keyStyle.Render(pairs[i])+" "+actionStyle.Render(pairs[i+1]))
+		}
+		result := ""
+		for i, p := range parts {
+			if i > 0 {
+				result += sep
+			}
+			result += p
+		}
+		return result
+	}
+
 	var helpText string
 	switch a.viewState {
 	case ViewKubeConfigSelect:
-		parts := []string{"↑/↓: navigate", "enter: select", "/: filter"}
-		if len(a.config.SSHHosts) > 0 {
-			parts = append(parts, "9: ssh")
-		}
-		parts = append(parts, "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("↑/↓", "navigate", "enter", "select", "/", "filter", "q", "quit")
 	case ViewConnecting:
-		helpText = "ctrl+c: cancel"
+		helpText = renderHelp("ctrl+c", "cancel")
 	case ViewNamespaces:
-		parts := []string{"↑/↓: navigate", "enter: select", "/: filter", "2: pods", "r: refresh"}
-		if len(a.config.SSHHosts) > 0 {
-			parts = append(parts, "9: ssh")
-		}
-		if len(a.config.KubeConfigs) > 1 {
-			parts = append(parts, "esc: back")
-		}
-		parts = append(parts, "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("↑/↓", "navigate", "enter", "select", "/", "filter", "2", "pods", "r", "refresh", "esc", "back", "q", "quit")
 	case ViewPods:
-		parts := []string{"↑/↓: navigate", "enter: details", "l: logs", "d: delete", "R: restart", "/: filter", "1: ns", "r: refresh"}
-		if a.metricsClient != nil {
-			parts = append(parts, "m: metrics")
-		}
-		if len(a.config.SSHHosts) > 0 {
-			parts = append(parts, "9: ssh")
-		}
-		parts = append(parts, "esc: back", "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("↑/↓", "navigate", "enter", "details", "l", "logs", "L", "multi-log", "d", "delete", "R", "restart", "/", "filter", "r", "refresh", "esc", "back", "q", "quit")
 	case ViewPodDetails:
-		parts := []string{"↑/↓: scroll", "l: logs", "d: delete", "R: restart", "1: ns", "2: pods", "r: refresh"}
-		if len(a.config.SSHHosts) > 0 {
-			parts = append(parts, "9: ssh")
-		}
-		parts = append(parts, "esc: back", "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("↑/↓", "scroll", "l", "logs", "d", "delete", "R", "restart", "r", "refresh", "esc", "back", "q", "quit")
 	case ViewLogs:
-		parts := []string{"↑/↓/g/G: scroll", "f: follow", "t: timestamps", "r: refresh"}
-		if len(a.logViewer.Containers()) > 1 {
-			parts = append(parts, "c: container")
-		}
-		parts = append(parts, "esc: back", "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("↑/↓", "scroll", "f", "follow", "t", "timestamps", "r", "refresh", "esc", "back", "q", "quit")
 	case ViewMain:
-		parts := []string{"1: namespaces", "2: pods"}
-		if len(a.config.KubeConfigs) > 1 || a.connectionStatus == domain.StatusConnected {
-			parts = append(parts, "esc: back")
-		}
-		if a.connectionStatus != domain.StatusConnected {
-			parts = append(parts, "r: retry")
-		}
-		parts = append(parts, "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("1", "namespaces", "2", "pods", "r", "retry", "q", "quit")
 	case ViewSSHHosts:
-		helpText = "↑/↓: navigate • enter: connect • /: filter • esc: back • q: quit"
+		helpText = renderHelp("↑/↓", "navigate", "enter", "connect", "/", "filter", "esc", "back", "q", "quit")
 	case ViewSSHConnecting:
-		helpText = "ctrl+c: cancel"
+		helpText = renderHelp("ctrl+c", "cancel")
 	case ViewCrictlContainers:
-		helpText = "↑/↓: navigate • enter: logs • /: filter • r: refresh • esc: back • q: quit"
+		helpText = renderHelp("↑/↓", "navigate", "enter", "logs", "/", "filter", "r", "refresh", "esc", "back", "q", "quit")
 	case ViewCrictlLogs:
-		helpText = "↑/↓/g/G: scroll • f: follow • t: timestamps • r: refresh • esc: back • q: quit"
+		helpText = renderHelp("↑/↓", "scroll", "f", "follow", "t", "timestamps", "r", "refresh", "esc", "back", "q", "quit")
 	case ViewDeployments:
-		parts := []string{"↑/↓: navigate", "enter: details", "s: scale", "R: restart", "d: delete", "/: filter", "1: ns", "2: pods", "r: refresh"}
-		if len(a.config.SSHHosts) > 0 {
-			parts = append(parts, "9: ssh")
-		}
-		parts = append(parts, "esc: back", "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("↑/↓", "navigate", "enter", "details", "s", "scale", "R", "restart", "d", "delete", "/", "filter", "r", "refresh", "esc", "back", "q", "quit")
 	case ViewDeploymentDetails:
-		parts := []string{"↑/↓: scroll", "s: scale", "R: restart", "d: delete", "1: ns", "2: pods", "3: deploys", "r: refresh"}
-		if len(a.config.SSHHosts) > 0 {
-			parts = append(parts, "9: ssh")
-		}
-		parts = append(parts, "esc: back", "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("↑/↓", "scroll", "s", "scale", "R", "restart", "d", "delete", "r", "refresh", "esc", "back", "q", "quit")
 	case ViewServices:
-		parts := []string{"↑/↓: navigate", "enter: details", "/: filter", "1: ns", "2: pods", "3: deploys", "r: refresh"}
-		if len(a.config.SSHHosts) > 0 {
-			parts = append(parts, "9: ssh")
-		}
-		parts = append(parts, "esc: back", "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("↑/↓", "navigate", "enter", "details", "/", "filter", "r", "refresh", "esc", "back", "q", "quit")
 	case ViewServiceDetails:
-		parts := []string{"↑/↓: scroll", "1: ns", "2: pods", "3: deploys", "4: svcs", "r: refresh"}
-		if len(a.config.SSHHosts) > 0 {
-			parts = append(parts, "9: ssh")
-		}
-		parts = append(parts, "esc: back", "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("↑/↓", "scroll", "r", "refresh", "esc", "back", "q", "quit")
 	case ViewEvents:
-		parts := []string{"↑/↓/g/G: scroll", "f: follow", "w: warnings", "k: kind", "r: refresh", "1: ns", "2: pods"}
-		if len(a.config.SSHHosts) > 0 {
-			parts = append(parts, "9: ssh")
-		}
-		parts = append(parts, "esc: back", "q: quit")
-		helpText = joinStrings(parts, " • ")
+		helpText = renderHelp("↑/↓", "scroll", "f", "follow", "w", "warnings", "k", "kind", "r", "refresh", "esc", "back", "q", "quit")
+	case ViewMultiPodLogs:
+		helpText = renderHelp("↑/↓", "scroll", "f", "follow", "esc", "back", "q", "quit")
 	}
 
-	// Show notification if visible
-	if a.notification.IsVisible() {
-		return a.styles.Footer.
-			Width(a.width - 4).
-			Render(a.notification.View())
+	// Thin separator above help
+	sepLine := lipgloss.NewStyle().Foreground(colorDim).Render(strings.Repeat("─", a.width-4))
+
+	// When sidebar is hidden, also show status badge
+	if !a.showSidebar && a.connectionStatus == domain.StatusConnected && a.clusterInfo != nil {
+		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Background(colorSuccess).Padding(0, 1)
+		statusBadge := statusStyle.Render(fmt.Sprintf("%s · %s", a.clusterInfo.Context, a.clusterInfo.Namespace))
+		return sepLine + "\n" + a.styles.Footer.Width(a.width-4).Render(helpText+"  "+statusBadge)
 	}
 
-	help := a.styles.Help.Render(helpText)
-
-	// Status badge with color
-	var statusStyle lipgloss.Style
-	switch a.connectionStatus {
-	case domain.StatusConnected:
-		statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(colorSuccess).
-			Padding(0, 1)
-	case domain.StatusConnecting:
-		statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(colorWarning).
-			Padding(0, 1)
-	case domain.StatusError:
-		statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(colorError).
-			Padding(0, 1)
-	default:
-		statusStyle = a.styles.StatusBar
-	}
-
-	statusText := a.connectionStatus.String()
-	if a.clusterInfo != nil && a.connectionStatus == domain.StatusConnected {
-		statusText = fmt.Sprintf("%s • %s", a.clusterInfo.Context, a.clusterInfo.Namespace)
-	}
-	statusBadge := statusStyle.Render(statusText)
-
-	return a.styles.Footer.
-		Width(a.width - 4).
-		Render(fmt.Sprintf("%s  %s", help, statusBadge))
+	return sepLine + "\n" + a.styles.Footer.Width(a.width-4).Render(helpText)
 }
 
 func (a *App) renderError() string {
+	h := a.height - 10
+	if a.showSidebar {
+		h = a.height - 4
+	}
 	return a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 10).
-		Render(renderErrorBox(a.err, a.width))
+		Width(a.contentWidth).
+		Height(h).
+		Render(renderErrorBox(a.err, a.contentWidth))
 }
 
 func joinStrings(parts []string, sep string) string {
@@ -2699,23 +2778,117 @@ func joinStrings(parts []string, sep string) string {
 	return result
 }
 
+// placeOverlay places a dialog on top of an existing view, preserving background content
+func (a *App) placeOverlay(background, overlay string) string {
+	bgLines := strings.Split(background, "\n")
+	ovLines := strings.Split(overlay, "\n")
+
+	ovWidth := lipgloss.Width(overlay)
+	ovHeight := len(ovLines)
+
+	// Center the overlay
+	startX := (a.width - ovWidth) / 2
+	startY := (a.height - ovHeight) / 2
+	if startX < 0 {
+		startX = 0
+	}
+	if startY < 0 {
+		startY = 0
+	}
+
+	// Ensure background has enough lines
+	for len(bgLines) < a.height {
+		bgLines = append(bgLines, "")
+	}
+
+	// Overlay each line
+	for i, ovLine := range ovLines {
+		bgIdx := startY + i
+		if bgIdx >= len(bgLines) {
+			break
+		}
+
+		bgLine := bgLines[bgIdx]
+		// Pad background line to startX if needed
+		bgVisWidth := lipgloss.Width(bgLine)
+		if bgVisWidth < startX {
+			bgLine += strings.Repeat(" ", startX-bgVisWidth)
+		}
+
+		// Build: background prefix + overlay line + background suffix
+		// We use ANSI-aware splitting via lipgloss
+		prefix := ansiTruncate(bgLine, startX)
+		suffix := ""
+		endX := startX + ovWidth
+		if bgVisWidth > endX {
+			suffix = ansiCutLeft(bgLine, endX)
+		}
+
+		bgLines[bgIdx] = prefix + ovLine + suffix
+	}
+
+	// Trim to screen height
+	if len(bgLines) > a.height {
+		bgLines = bgLines[:a.height]
+	}
+
+	return strings.Join(bgLines, "\n")
+}
+
+// ansiTruncate truncates a string to n visible characters, preserving ANSI codes
+func ansiTruncate(s string, n int) string {
+	var result strings.Builder
+	visible := 0
+	i := 0
+	for i < len(s) && visible < n {
+		if s[i] == '\x1b' {
+			match := ansiRegex.FindStringIndex(s[i:])
+			if match != nil && match[0] == 0 {
+				result.WriteString(s[i : i+match[1]])
+				i += match[1]
+				continue
+			}
+		}
+		result.WriteByte(s[i])
+		visible++
+		i++
+	}
+	// Pad if needed
+	for visible < n {
+		result.WriteByte(' ')
+		visible++
+	}
+	return result.String()
+}
+
+// ansiCutLeft returns the portion of s after n visible characters
+func ansiCutLeft(s string, n int) string {
+	visible := 0
+	i := 0
+	for i < len(s) && visible < n {
+		if s[i] == '\x1b' {
+			match := ansiRegex.FindStringIndex(s[i:])
+			if match != nil && match[0] == 0 {
+				i += match[1]
+				continue
+			}
+		}
+		visible++
+		i++
+	}
+	if i >= len(s) {
+		return ""
+	}
+	return s[i:]
+}
+
 // overlayContainerSelector overlays the container selector centered on screen
 func (a *App) overlayContainerSelector(view string) string {
 	selector := a.containerSelector.View()
 	if selector == "" {
 		return view
 	}
-
-	// Use lipgloss.Place to center the dialog on a full-screen background
-	return lipgloss.Place(
-		a.width,
-		a.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		selector,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("#1a1a1a")),
-	)
+	return a.placeOverlay(view, selector)
 }
 
 // overlayDialog overlays the confirmation dialog centered on screen
@@ -2724,17 +2897,7 @@ func (a *App) overlayDialog(view string) string {
 	if dialog == "" {
 		return view
 	}
-
-	// Use lipgloss.Place to center the dialog on a full-screen background
-	return lipgloss.Place(
-		a.width,
-		a.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("#1a1a1a")),
-	)
+	return a.placeOverlay(view, dialog)
 }
 
 // overlayScaleDialog overlays the scale dialog centered on screen
@@ -2743,22 +2906,11 @@ func (a *App) overlayScaleDialog(view string) string {
 	if dialog == "" {
 		return view
 	}
-
-	return lipgloss.Place(
-		a.width,
-		a.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("#1a1a1a")),
-	)
+	return a.placeOverlay(view, dialog)
 }
 
 // Deployments view
 func (a *App) renderDeploymentsView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading && a.deploymentCount == 0 {
 		contentStr = fmt.Sprintf("%s Loading deployments...", a.spinner.View())
@@ -2766,31 +2918,32 @@ func (a *App) renderDeploymentsView() string {
 		contentStr = a.renderError()
 	} else {
 		title := fmt.Sprintf("Deployments (%d)", a.deploymentCount)
-		titleLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorPrimary).
-			Render(title)
-
-		headerLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorMuted).
+		titleLine := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(title)
+		sep := a.renderSeparator()
+		headerLine := lipgloss.NewStyle().Foreground(colorMuted).
 			Render(fmt.Sprintf("  %-40s %-10s %-10s %-10s %s", "NAME", "READY", "UP-TO-DATE", "AVAILABLE", "AGE"))
-
-		contentStr = titleLine + "\n" + headerLine + "\n" + a.deploymentList.View()
+		contentStr = titleLine + "\n" + sep + "\n" + headerLine + "\n" + a.deploymentList.View()
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 12).
-		Render(contentStr)
-
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+
+	var view string
+	view = a.assembleView(content, footer)
+	if a.confirmDialog.IsVisible() {
+		view = a.overlayDialog(view)
+	}
+	if a.scaleDialog.IsVisible() {
+		view = a.overlayScaleDialog(view)
+	}
+	return view
 }
 
 func (a *App) renderDeploymentDetailsView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading {
 		contentStr = fmt.Sprintf("%s Loading deployment details...", a.spinner.View())
@@ -2800,19 +2953,18 @@ func (a *App) renderDeploymentDetailsView() string {
 		contentStr = a.deploymentDetails.View()
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 12).
-		Render(contentStr)
-
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+
+	return a.assembleView(content, footer)
 }
 
 // Services view
 func (a *App) renderServicesView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading && a.serviceCount == 0 {
 		contentStr = fmt.Sprintf("%s Loading services...", a.spinner.View())
@@ -2820,31 +2972,24 @@ func (a *App) renderServicesView() string {
 		contentStr = a.renderError()
 	} else {
 		title := fmt.Sprintf("Services (%d)", a.serviceCount)
-		titleLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorPrimary).
-			Render(title)
-
-		headerLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorMuted).
+		titleLine := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(title)
+		sep := a.renderSeparator()
+		headerLine := lipgloss.NewStyle().Foreground(colorMuted).
 			Render(fmt.Sprintf("  %-30s %-14s %-16s %-20s %-20s %s", "NAME", "TYPE", "CLUSTER-IP", "EXTERNAL-IP", "PORTS", "AGE"))
-
-		contentStr = titleLine + "\n" + headerLine + "\n" + a.serviceList.View()
+		contentStr = titleLine + "\n" + sep + "\n" + headerLine + "\n" + a.serviceList.View()
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 12).
-		Render(contentStr)
-
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+
+	return a.assembleView(content, footer)
 }
 
 func (a *App) renderServiceDetailsView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading {
 		contentStr = fmt.Sprintf("%s Loading service details...", a.spinner.View())
@@ -2854,73 +2999,64 @@ func (a *App) renderServiceDetailsView() string {
 		contentStr = a.serviceDetails.View()
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 12).
-		Render(contentStr)
-
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+
+	return a.assembleView(content, footer)
 }
 
 // Events view
 func (a *App) renderEventsView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading && a.eventViewer.TotalEvents() == 0 {
 		contentStr = fmt.Sprintf("%s Loading events...", a.spinner.View())
 	} else if a.err != nil {
 		contentStr = a.renderError()
 	} else {
-		// Event viewer header with indicators
 		titleLine := a.eventViewer.RenderHeader()
 		contentStr = titleLine + "\n" + a.eventViewer.View()
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 12).
-		Render(contentStr)
-
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+
+	return a.assembleView(content, footer)
 }
 
 // SSH-related render functions
 
 func (a *App) renderSSHHostsView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if len(a.config.SSHHosts) == 0 {
 		contentStr = "No SSH hosts configured.\n\nAdd hosts to ~/.k4s/config.yaml:\n\nssh_hosts:\n  - name: \"my-node\"\n    host: \"192.168.1.100\"\n    user: \"admin\"\n    key_path: \"~/.ssh/id_rsa\"\n    port: 22"
 	} else if a.err != nil {
 		contentStr = a.renderError()
 	} else {
-		// Title
 		title := fmt.Sprintf("SSH Hosts (%d)", len(a.config.SSHHosts))
-		titleLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorPrimary).
-			Render(title)
-
-		contentStr = titleLine + "\n\n" + a.sshHostList.View()
+		titleLine := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(title)
+		sep := a.renderSeparator()
+		contentStr = titleLine + "\n" + sep + "\n" + a.sshHostList.View()
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 12).
-		Render(contentStr)
-
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	return a.assembleView(content, footer)
 }
 
 func (a *App) renderSSHConnecting() string {
-	header := a.renderHeader()
-
 	spinnerView := a.spinner.View()
 	var connectingText string
 	if a.selectedSSHHost != nil {
@@ -2929,14 +3065,15 @@ func (a *App) renderSSHConnecting() string {
 		connectingText = fmt.Sprintf("%s Connecting via SSH...", spinnerView)
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 12).
-		Render(connectingText)
-
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(connectingText)
 	footer := a.renderFooter()
 
-	view := lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	var view string
+	view = a.assembleView(content, footer)
 
 	// Overlay passphrase input if visible
 	if a.passphraseInput.IsVisible() {
@@ -2956,27 +3093,21 @@ func (a *App) renderSSHConnecting() string {
 }
 
 func (a *App) renderCrictlContainersView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading && len(a.crictlContainers) == 0 {
 		contentStr = fmt.Sprintf("%s Loading containers...", a.spinner.View())
 	} else if a.err != nil {
 		contentStr = a.renderError()
 	} else {
-		// Title with node info
 		var titleParts []string
 		if a.selectedSSHHost != nil {
 			titleParts = append(titleParts, fmt.Sprintf("Node: %s", a.selectedSSHHost.Name))
 		}
 		titleParts = append(titleParts, fmt.Sprintf("Containers: %d", len(a.crictlContainers)))
+		titleLine := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).
+			Render(joinStrings(titleParts, " · "))
+		sep := a.renderSeparator()
 
-		titleLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorPrimary).
-			Render(joinStrings(titleParts, " • "))
-
-		// Node info line
 		var nodeInfoLine string
 		if a.nodeInfo != nil {
 			infoStyle := lipgloss.NewStyle().Foreground(colorMuted)
@@ -2996,53 +3127,210 @@ func (a *App) renderCrictlContainersView() string {
 			nodeInfoLine = infoStyle.Render(joinStrings(infoParts, " | "))
 		}
 
-		// Column headers: NAME(25) POD(30) NS(15) STATE(10) AGE(6)
-		headerLine := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorMuted).
+		headerLine := lipgloss.NewStyle().Foreground(colorMuted).
 			Render(fmt.Sprintf("  %-25s %-30s %-15s %-10s %s", "NAME", "POD", "NAMESPACE", "STATE", "AGE"))
 
 		if nodeInfoLine != "" {
-			contentStr = titleLine + "\n" + nodeInfoLine + "\n" + headerLine + "\n" + a.crictlContainerList.View()
+			contentStr = titleLine + "\n" + nodeInfoLine + "\n" + sep + "\n" + headerLine + "\n" + a.crictlContainerList.View()
 		} else {
-			contentStr = titleLine + "\n" + headerLine + "\n" + a.crictlContainerList.View()
+			contentStr = titleLine + "\n" + sep + "\n" + headerLine + "\n" + a.crictlContainerList.View()
 		}
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 12).
-		Render(contentStr)
-
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	return a.assembleView(content, footer)
 }
 
 func (a *App) renderCrictlLogsView() string {
-	header := a.renderHeader()
-
 	var contentStr string
 	if a.loading {
 		contentStr = fmt.Sprintf("%s Loading logs...", a.spinner.View())
 	} else if a.err != nil {
 		contentStr = a.renderError()
 	} else {
-		// Log viewer header
 		logHeader := a.crictlLogViewer.RenderHeader()
-		// Add search input if visible
 		if a.searchInput.IsVisible() {
 			logHeader += "\n" + a.searchInput.View()
 		}
 		contentStr = logHeader + "\n" + a.crictlLogViewer.View()
 	}
 
-	content := a.styles.Content.
-		Width(a.width - 4).
-		Height(a.height - 10).
-		Render(contentStr)
-
+	h := a.height - 10
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
 	footer := a.renderFooter()
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	return a.assembleView(content, footer)
+}
+
+// renderMultiPodLogsView renders the multi-pod log view
+func (a *App) renderMultiPodLogsView() string {
+	logHeader := a.multiPodLogViewer.RenderHeader()
+	contentStr := logHeader + "\n" + a.multiPodLogViewer.View()
+
+	h := a.height - 12
+	if a.showSidebar {
+		h = a.height - 4
+	}
+	content := a.styles.Content.Width(a.contentWidth).Height(h).Render(contentStr)
+	footer := a.renderFooter()
+
+	return a.assembleView(content, footer)
+}
+
+// overlayPodMultiSelector overlays the pod multi-selector centered on screen
+func (a *App) overlayPodMultiSelector(view string) string {
+	selector := a.podMultiSelector.View()
+	if selector == "" {
+		return view
+	}
+	return a.placeOverlay(view, selector)
+}
+
+// startMultiPodStreaming starts log streaming for multiple pods simultaneously
+func (a *App) startMultiPodStreaming(podNames []string) tea.Cmd {
+	if a.k8sClient == nil {
+		return nil
+	}
+
+	a.stopMultiPodStreams()
+
+	// Build a map from pod name to first container
+	podContainerMap := make(map[string]string)
+	for _, item := range a.podList.Items() {
+		if pi, ok := item.(podItem); ok {
+			for _, name := range podNames {
+				if pi.pod.Name == name && len(pi.pod.Containers) > 0 {
+					podContainerMap[name] = pi.pod.Containers[0].Name
+				}
+			}
+		}
+	}
+
+	a.multiPodLogViewer.SetPods(podNames)
+	a.multiPodLogViewer.SetFollowing(true)
+	a.viewState = ViewMultiPodLogs
+
+	ctx, cancel := context.WithCancel(context.Background())
+	a.multiPodStreamCancel = cancel
+	a.multiPodStreamCtx = ctx
+	a.multiPodStreamActive = true
+	a.multiPodActiveStreams = len(podNames)
+	a.multiPodLineChanMap = make(map[string]<-chan string)
+	a.multiPodContainerMap = make(map[string]string)
+
+	namespace := a.k8sClient.CurrentNamespace()
+	var cmds []tea.Cmd
+
+	for _, podName := range podNames {
+		container := podContainerMap[podName]
+		a.multiPodContainerMap[podName] = container
+
+		cmds = append(cmds, a.startSinglePodStream(ctx, namespace, podName, container, true))
+	}
+
+	return tea.Batch(cmds...)
+}
+
+// startSinglePodStream starts a log stream for a single pod within the multi-pod context
+func (a *App) startSinglePodStream(ctx context.Context, namespace, podName, container string, withHistory bool) tea.Cmd {
+	lineChan := make(chan string, 100)
+	a.multiPodLineChanMap[podName] = lineChan
+
+	var tailLines int64
+	if withHistory {
+		tailLines = 100
+	}
+
+	pn := podName
+	cn := container
+
+	go func() {
+		defer close(lineChan)
+		_ = a.k8sClient.StreamPodLogs(ctx, namespace, pn, k8s.LogOptions{
+			Container:  cn,
+			TailLines:  tailLines,
+			Timestamps: false,
+			Follow:     true,
+		}, lineChan)
+	}()
+
+	return a.waitForMultiPodLogLine(pn, cn, lineChan)
+}
+
+// waitForMultiPodLogLine returns a command that reads from a pod's log channel
+func (a *App) waitForMultiPodLogLine(podName, container string, ch <-chan string) tea.Cmd {
+	return func() tea.Msg {
+		line, ok := <-ch
+		if !ok {
+			return multiPodLogStreamEndedMsg{podName: podName}
+		}
+		return multiPodLogLineMsg{podName: podName, container: container, line: line}
+	}
+}
+
+// handleMultiPodLogLine handles a log line from a multi-pod stream
+func (a *App) handleMultiPodLogLine(msg multiPodLogLineMsg) (tea.Model, tea.Cmd) {
+	if a.viewState != ViewMultiPodLogs {
+		return a, nil
+	}
+
+	a.multiPodLogViewer.AppendEntry(MultiPodLogEntry{
+		PodName:   msg.podName,
+		Container: msg.container,
+		Line:      msg.line,
+	})
+
+	if ch, ok := a.multiPodLineChanMap[msg.podName]; ok {
+		return a, a.waitForMultiPodLogLine(msg.podName, msg.container, ch)
+	}
+	return a, nil
+}
+
+// handleMultiPodLogStreamEnded handles the end of a single pod's log stream
+func (a *App) handleMultiPodLogStreamEnded(msg multiPodLogStreamEndedMsg) (tea.Model, tea.Cmd) {
+	delete(a.multiPodLineChanMap, msg.podName)
+
+	// If context was cancelled (user stopped), don't restart
+	if msg.err == context.Canceled {
+		a.multiPodActiveStreams--
+		return a, nil
+	}
+
+	// Auto-restart the stream if still in multi-pod log view and following
+	if a.viewState == ViewMultiPodLogs && a.multiPodStreamActive && a.multiPodStreamCtx != nil {
+		container := a.multiPodContainerMap[msg.podName]
+		namespace := a.k8sClient.CurrentNamespace()
+		logger.Debug("Multi-pod stream ended, auto-restarting", "pod", msg.podName)
+		// Restart with TailLines=0 (only new logs, since we already have history)
+		cmd := a.startSinglePodStream(a.multiPodStreamCtx, namespace, msg.podName, container, false)
+		return a, cmd
+	}
+
+	a.multiPodActiveStreams--
+	if a.multiPodActiveStreams <= 0 {
+		a.multiPodStreamActive = false
+	}
+	return a, nil
+}
+
+// stopMultiPodStreams stops all multi-pod log streams
+func (a *App) stopMultiPodStreams() {
+	if a.multiPodStreamCancel != nil {
+		a.multiPodStreamCancel()
+		a.multiPodStreamCancel = nil
+	}
+	a.multiPodStreamCtx = nil
+	a.multiPodStreamActive = false
+	a.multiPodActiveStreams = 0
+	a.multiPodLineChanMap = nil
+	a.multiPodContainerMap = nil
 }

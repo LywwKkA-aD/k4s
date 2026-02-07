@@ -238,10 +238,7 @@ func (e *EventViewer) formatEvent(evt domain.Event) string {
 	line.WriteString(objectStyle.Render(fmt.Sprintf("%-40s ", truncateString(objectStr, 40))))
 
 	// Message (rest of line)
-	maxMsgLen := e.width - 90 // Approximate space for other columns
-	if maxMsgLen < 20 {
-		maxMsgLen = 20
-	}
+	maxMsgLen := max(e.width-90, 20) // Approximate space for other columns
 	msg := truncateString(evt.Message, maxMsgLen)
 
 	// Highlight message for warnings
@@ -324,33 +321,26 @@ func (e *EventViewer) RenderHeader() string {
 
 	// Follow indicator
 	if e.following {
-		followStyle := lipgloss.NewStyle().
-			Background(colorSuccess).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Padding(0, 1)
-		indicators = append(indicators, followStyle.Render("FOLLOW"))
+		indicator := lipgloss.NewStyle().Foreground(colorSuccess).Render("◉")
+		label := lipgloss.NewStyle().Foreground(colorText).Render("Following")
+		indicators = append(indicators, indicator+" "+label)
 	}
 
 	// Warnings only indicator
 	if e.warningsOnly {
-		warnStyle := lipgloss.NewStyle().
-			Background(colorError).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Padding(0, 1)
-		indicators = append(indicators, warnStyle.Render("WARNINGS"))
+		indicator := lipgloss.NewStyle().Foreground(colorError).Render("◉")
+		label := lipgloss.NewStyle().Foreground(colorText).Render("Warnings")
+		indicators = append(indicators, indicator+" "+label)
 	}
 
 	// Kind filter indicator
 	if e.kindFilter != "" {
-		kindStyle := lipgloss.NewStyle().
-			Background(colorSecondary).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Padding(0, 1)
+		kindStyle := lipgloss.NewStyle().Foreground(colorMuted)
 		indicators = append(indicators, kindStyle.Render(e.kindFilter))
 	}
 
 	// Count info
-	countStyle := lipgloss.NewStyle().Foreground(colorMuted)
+	countStyle := lipgloss.NewStyle().Foreground(colorSubtle)
 	countInfo := countStyle.Render(fmt.Sprintf("Events: %d", e.filteredCount))
 	if e.filteredCount != e.totalEvents {
 		countInfo = countStyle.Render(fmt.Sprintf("Events: %d/%d", e.filteredCount, e.totalEvents))
@@ -362,9 +352,9 @@ func (e *EventViewer) RenderHeader() string {
 	// Build header
 	header := titleStyle.Render(title)
 	if len(indicators) > 0 {
-		header += " " + strings.Join(indicators, " ")
+		header += "  " + strings.Join(indicators, "  ")
 	}
-	header += " " + countInfo + " " + scrollInfo
+	header += "  " + countInfo + "  " + scrollInfo
 
 	return header
 }

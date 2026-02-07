@@ -149,19 +149,19 @@ func renderErrorBox(err error, width int) string {
 		Foreground(colorError)
 
 	messageStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFFFFF"))
+		Foreground(colorText)
 
 	suggestionStyle := lipgloss.NewStyle().
 		Foreground(colorMuted).
 		Italic(true)
 
 	labelStyle := lipgloss.NewStyle().
-		Foreground(colorWarning).
+		Foreground(colorMuted).
 		Bold(true)
 
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorError).
+		BorderForeground(colorBorder).
 		Padding(1, 2).
 		Width(min(width-8, 70))
 

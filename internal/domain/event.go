@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // Event represents a Kubernetes Event
 type Event struct {
 	Name            string
@@ -15,6 +17,7 @@ type Event struct {
 	LastSeen        string
 	Age             string
 	SourceComponent string
+	LastSeenTime    time.Time // actual timestamp for sorting
 }
 
 // EventType constants

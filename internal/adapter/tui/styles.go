@@ -2,20 +2,34 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Theme colors
+// Theme colors — Crush-inspired palette
 var (
+	// Base palette
 	colorPrimary   = lipgloss.Color("#7D56F4")
+	colorAccent    = lipgloss.Color("#AD58F7")
 	colorSecondary = lipgloss.Color("#5A5A5A")
 	colorSuccess   = lipgloss.Color("#73D216")
 	colorWarning   = lipgloss.Color("#F5A623")
 	colorError     = lipgloss.Color("#FF5F56")
-	colorMuted     = lipgloss.Color("#626262")
+
+	// Text hierarchy
+	colorText   = lipgloss.Color("#E0E0E0")
+	colorMuted  = lipgloss.Color("#626262")
+	colorSubtle = lipgloss.Color("#444444")
+	colorDim    = lipgloss.Color("#333333")
+
+	// Backgrounds
+	colorBgDark      = lipgloss.Color("#1a1a2e")
+	colorBgHighlight = lipgloss.Color("#2a2550")
+
+	// Borders
+	colorBorder = lipgloss.Color("#333333")
 )
 
 // Styles defines the application styling
 type Styles struct {
 	App       lipgloss.Style
-	Header    lipgloss.Style
+	Header    lipgloss.Style // fallback for narrow terminals
 	Title     lipgloss.Style
 	Subtitle  lipgloss.Style
 	Content   lipgloss.Style
@@ -35,7 +49,7 @@ func DefaultStyles() Styles {
 			Foreground(colorPrimary).
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderBottom(true).
-			BorderForeground(colorSecondary).
+			BorderForeground(colorDim).
 			MarginBottom(1),
 
 		Title: lipgloss.NewStyle().
@@ -51,11 +65,7 @@ func DefaultStyles() Styles {
 
 		Footer: lipgloss.NewStyle().
 			Foreground(colorMuted).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderTop(true).
-			BorderForeground(colorSecondary).
-			MarginTop(1).
-			PaddingTop(1),
+			PaddingTop(0),
 
 		Help: lipgloss.NewStyle().
 			Foreground(colorMuted),

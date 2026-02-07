@@ -3,46 +3,49 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/huh"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // PassphraseInput is a modal dialog for entering SSH passphrase
 type PassphraseInput struct {
-	visible   bool
-	input     textinput.Model
-	hostName  string
-	width     int
+	visible    bool
+	hostName   string
+	width      int
+	passphrase string
+	form       *huh.Form
 }
 
 // NewPassphraseInput creates a new passphrase input dialog
 func NewPassphraseInput() PassphraseInput {
-	ti := textinput.New()
-	ti.Placeholder = "Enter passphrase..."
-	ti.EchoMode = textinput.EchoPassword
-	ti.EchoCharacter = '•'
-	ti.CharLimit = 256
-	ti.Width = 40
-
-	return PassphraseInput{
-		input: ti,
-	}
+	return PassphraseInput{}
 }
 
-// Show displays the passphrase input for the given host
-func (p *PassphraseInput) Show(hostName string) {
+// Show displays the passphrase input for the given host and returns a tea.Cmd.
+func (p *PassphraseInput) Show(hostName string) tea.Cmd {
 	p.visible = true
 	p.hostName = hostName
-	p.input.Reset()
-	p.input.Focus()
+	p.passphrase = ""
+
+	p.form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("SSH Passphrase Required").
+				Description("Host: "+hostName).
+				Placeholder("Enter passphrase...").
+				EchoMode(huh.EchoModePassword).
+				Value(&p.passphrase),
+		),
+	).WithTheme(K4sHuhTheme()).WithShowHelp(false)
+	return p.form.Init()
 }
 
 // Hide hides the passphrase input
 func (p *PassphraseInput) Hide() {
 	p.visible = false
-	p.input.Blur()
-	p.input.Reset()
+	p.form = nil
+	p.passphrase = ""
 }
 
 // IsVisible returns true if the dialog is visible
@@ -57,55 +60,50 @@ func (p *PassphraseInput) SetWidth(width int) {
 
 // Update handles input messages, returns (passphrase, submitted, cancelled, cmd)
 func (p *PassphraseInput) Update(msg tea.Msg) (string, bool, bool, tea.Cmd) {
-	// Handle key messages for submit/cancel
+	if p.form == nil {
+		return "", false, false, nil
+	}
+
+	// Handle esc for cancel
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		switch keyMsg.String() {
-		case "enter":
-			passphrase := p.input.Value()
-			return passphrase, true, false, nil
-		case "esc":
+		if keyMsg.String() == "esc" {
 			return "", false, true, nil
 		}
 	}
 
-	// Pass all messages to the textinput
-	var cmd tea.Cmd
-	p.input, cmd = p.input.Update(msg)
+	model, cmd := p.form.Update(msg)
+	if f, ok := model.(*huh.Form); ok {
+		p.form = f
+	}
+
+	if p.form.State == huh.StateCompleted {
+		return p.passphrase, true, false, cmd
+	}
+	if p.form.State == huh.StateAborted {
+		return "", false, true, cmd
+	}
+
 	return "", false, false, cmd
 }
 
 // View renders the passphrase input dialog
 func (p *PassphraseInput) View() string {
-	if !p.visible {
+	if !p.visible || p.form == nil {
 		return ""
 	}
 
-	// Dialog box style
 	dialogStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorPrimary).
+		BorderForeground(colorBorder).
 		Padding(1, 2).
 		Width(50)
-
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(colorPrimary)
-
-	subtitleStyle := lipgloss.NewStyle().
-		Foreground(colorMuted).
-		Italic(true)
 
 	helpStyle := lipgloss.NewStyle().
 		Foreground(colorMuted)
 
-	// Build content
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("SSH Passphrase Required"))
-	sb.WriteString("\n\n")
-	sb.WriteString(subtitleStyle.Render("Host: " + p.hostName))
-	sb.WriteString("\n\n")
-	sb.WriteString(p.input.View())
-	sb.WriteString("\n\n")
+	sb.WriteString(p.form.View())
+	sb.WriteString("\n")
 	sb.WriteString(helpStyle.Render("Enter: submit • Esc: cancel"))
 
 	return dialogStyle.Render(sb.String())

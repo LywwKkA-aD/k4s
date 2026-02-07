@@ -39,7 +39,8 @@ Press `?` at any time to see the help screen.
 
 | Key | Action |
 |-----|--------|
-| `l` | View logs |
+| `l` | View logs (single pod) |
+| `L` | Multi-pod log tailing (Shift+L) |
 | `d` | Delete pod |
 | `R` | Restart pod (Shift+R) |
 | `m` | Toggle metrics |
@@ -78,3 +79,12 @@ Press `?` at any time to see the help screen.
 | `g` | Go to top |
 | `G` | Go to bottom |
 | `c` | Change container |
+
+## Multi-Pod Log Viewer
+
+| Key | Action |
+|-----|--------|
+| `f` | Toggle follow mode |
+| `g` | Go to top |
+| `G` | Go to bottom |
+| `Esc` | Stop streams, back to pods |

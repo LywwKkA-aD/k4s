@@ -37,8 +37,7 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, podName string, opts
 		namespace = c.namespace
 	}
 
-	logger.Debug("GetPodLogs: pod=%s, container=%s, namespace=%s, tailLines=%d",
-		podName, opts.Container, namespace, opts.TailLines)
+	logger.Debug("GetPodLogs", "pod", podName, "container", opts.Container, "namespace", namespace, "tailLines", opts.TailLines)
 
 	podLogOpts := &corev1.PodLogOptions{
 		Container:  opts.Container,
@@ -54,18 +53,18 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, podName string, opts
 	req := c.clientset.CoreV1().Pods(namespace).GetLogs(podName, podLogOpts)
 	stream, err := req.Stream(ctx)
 	if err != nil {
-		logger.Errorf(err, "GetPodLogs: failed to get stream")
+		logger.Error("GetPodLogs: failed to get stream", "err", err)
 		return "", fmt.Errorf("get log stream: %w", err)
 	}
 	defer stream.Close()
 
 	logs, err := io.ReadAll(stream)
 	if err != nil {
-		logger.Errorf(err, "GetPodLogs: failed to read logs")
+		logger.Error("GetPodLogs: failed to read logs", "err", err)
 		return "", fmt.Errorf("read logs: %w", err)
 	}
 
-	logger.Debug("GetPodLogs: read %d bytes", len(logs))
+	logger.Debug("GetPodLogs: read bytes", "bytes", len(logs))
 	return string(logs), nil
 }
 
@@ -76,7 +75,7 @@ func (c *Client) StreamPodLogs(ctx context.Context, namespace, podName string, o
 		namespace = c.namespace
 	}
 
-	logger.Debug("StreamPodLogs: starting stream for pod=%s, container=%s", podName, opts.Container)
+	logger.Debug("StreamPodLogs: starting stream", "pod", podName, "container", opts.Container)
 
 	podLogOpts := &corev1.PodLogOptions{
 		Container:  opts.Container,
@@ -99,7 +98,7 @@ func (c *Client) StreamPodLogs(ctx context.Context, namespace, podName string, o
 	req := c.clientset.CoreV1().Pods(namespace).GetLogs(podName, podLogOpts)
 	stream, err := req.Stream(ctx)
 	if err != nil {
-		logger.Errorf(err, "StreamPodLogs: failed to get stream")
+		logger.Error("StreamPodLogs: failed to get stream", "err", err)
 		return fmt.Errorf("get log stream: %w", err)
 	}
 	defer stream.Close()
@@ -136,7 +135,7 @@ func (c *Client) StreamPodLogs(ctx context.Context, namespace, podName string, o
 				return ctx.Err()
 			default:
 			}
-			logger.Errorf(err, "StreamPodLogs: read error")
+			logger.Error("StreamPodLogs: read error", "err", err)
 			return fmt.Errorf("read log line: %w", err)
 		}
 

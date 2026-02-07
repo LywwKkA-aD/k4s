@@ -56,9 +56,9 @@ func (c *Client) GetEventsFiltered(ctx context.Context, namespace string, opts E
 		events = append(events, convertEvent(&e))
 	}
 
-	// Sort by last seen (most recent first)
+	// Sort chronologically (oldest first, newest last/at bottom for follow mode)
 	sort.Slice(events, func(i, j int) bool {
-		return events[i].LastSeen > events[j].LastSeen
+		return events[i].LastSeenTime.Before(events[j].LastSeenTime)
 	})
 
 	return events, nil
@@ -94,9 +94,9 @@ func (c *Client) GetAllNamespaceEvents(ctx context.Context, opts EventFilterOpti
 		events = append(events, convertEvent(&e))
 	}
 
-	// Sort by last seen (most recent first)
+	// Sort chronologically (oldest first, newest last/at bottom for follow mode)
 	sort.Slice(events, func(i, j int) bool {
-		return events[i].LastSeen > events[j].LastSeen
+		return events[i].LastSeenTime.Before(events[j].LastSeenTime)
 	})
 
 	return events, nil
@@ -106,12 +106,13 @@ func convertEvent(e *corev1.Event) domain.Event {
 	objectRef := fmt.Sprintf("%s/%s", e.InvolvedObject.Kind, e.InvolvedObject.Name)
 
 	// Use EventTime if available (newer events API), otherwise fall back to timestamps
-	firstSeen := formatAge(e.FirstTimestamp.Time)
-	lastSeen := formatAge(e.LastTimestamp.Time)
-
+	lastSeenTime := e.LastTimestamp.Time
 	if !e.EventTime.IsZero() {
-		lastSeen = formatAge(e.EventTime.Time)
+		lastSeenTime = e.EventTime.Time
 	}
+
+	firstSeen := formatAge(e.FirstTimestamp.Time)
+	lastSeen := formatAge(lastSeenTime)
 
 	return domain.Event{
 		Name:            e.Name,
@@ -127,6 +128,7 @@ func convertEvent(e *corev1.Event) domain.Event {
 		LastSeen:        lastSeen,
 		Age:             lastSeen,
 		SourceComponent: e.Source.Component,
+		LastSeenTime:    lastSeenTime,
 	}
 }
 

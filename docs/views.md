@@ -25,7 +25,7 @@ List all pods in the selected namespace.
 - Auto-refreshes every 5 seconds
 - Color-coded status (Running=green, Pending=yellow, Failed=red)
 
-**Actions:** `l` logs, `d` delete, `R` restart, `m` metrics
+**Actions:** `l` logs, `L` multi-pod logs, `d` delete, `R` restart, `m` metrics
 
 ## Pod Details (Enter on pod)
 
@@ -82,6 +82,27 @@ View pod logs with streaming support.
 - Timestamp toggle (`t`)
 - Search with highlighting (`/`, `n`, `N`)
 - ANSI color preservation
+
+## Multi-Pod Log Viewer (`Shift+L`)
+
+View streaming logs from multiple pods simultaneously.
+
+**Features:**
+- Select pods via multi-select dialog with `* All Pods` option
+- Interleaved log output with `==> pod-name/container <==` headers between sections
+- Follow mode with auto-scroll (`f` to toggle)
+- Auto-reconnects individual streams on connection drops
+- First container per pod auto-selected
+
+**Format:**
+```
+==> my-app-abc/app <==
+2026-02-06 INFO Starting server on port 8080
+==> my-app-def/app <==
+2026-02-06 INFO Starting server on port 8080
+==> my-app-abc/app <==
+2026-02-06 INFO Request received GET /health
+```
 
 ## SSH Hosts View (`9`)
 

@@ -66,14 +66,18 @@ func (d serviceDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	ageStyled := lipgloss.NewStyle().Foreground(colorMuted).Render(agePadded)
 
 	// Cursor and selection styling
+	prefix := lipgloss.NewStyle().Foreground(colorPrimary).Render("▌")
+
 	var line string
 	if index == m.Index() {
-		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
-		line = fmt.Sprintf("▸ %s %s %s %s %s %s",
-			nameStyle.Render(namePadded), typeStyled, clusterIPStyled, externalIPStyled, portsStyled, ageStyled)
+		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(colorText)
+		line = fmt.Sprintf("%s %s %s %s %s %s %s",
+			prefix, nameStyle.Render(namePadded), typeStyled, clusterIPStyled, externalIPStyled, portsStyled, ageStyled)
+		line = lipgloss.NewStyle().Background(colorBgHighlight).Render(line)
 	} else {
+		nameStyle := lipgloss.NewStyle().Foreground(colorText)
 		line = fmt.Sprintf("  %s %s %s %s %s %s",
-			namePadded, typePadded, clusterIPStyled, externalIPStyled, portsStyled, ageStyled)
+			nameStyle.Render(namePadded), typePadded, clusterIPStyled, externalIPStyled, portsStyled, ageStyled)
 	}
 
 	fmt.Fprint(w, line)

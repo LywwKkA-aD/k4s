@@ -98,23 +98,27 @@ func (d podDelegate) Render(w io.Writer, m list.Model, index int, listItem list.
 	}
 
 	// Cursor and selection styling
+	prefix := lipgloss.NewStyle().Foreground(colorPrimary).Render("▌")
+	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(colorText)
+
 	var line string
 	if index == m.Index() {
-		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
 		if d.metricsEnabled {
-			line = fmt.Sprintf("▸ %s %s %s %s %s %s %s",
-				nameStyle.Render(namePadded), readyPadded, statusStyled, restartsPadded, cpuStyled, memStyled, ageStyled)
+			line = fmt.Sprintf("%s %s %s %s %s %s %s %s",
+				prefix, nameStyle.Render(namePadded), readyPadded, statusStyled, restartsPadded, cpuStyled, memStyled, ageStyled)
 		} else {
-			line = fmt.Sprintf("▸ %s %s %s %s %s",
-				nameStyle.Render(namePadded), readyPadded, statusStyled, restartsStyled, ageStyled)
+			line = fmt.Sprintf("%s %s %s %s %s %s",
+				prefix, nameStyle.Render(namePadded), readyPadded, statusStyled, restartsStyled, ageStyled)
 		}
+		line = lipgloss.NewStyle().Background(colorBgHighlight).Render(line)
 	} else {
+		nameNormal := lipgloss.NewStyle().Foreground(colorText)
 		if d.metricsEnabled {
 			line = fmt.Sprintf("  %s %s %s %s %s %s %s",
-				namePadded, readyPadded, statusStyled, restartsPadded, cpuStyled, memStyled, ageStyled)
+				nameNormal.Render(namePadded), readyPadded, statusStyled, restartsPadded, cpuStyled, memStyled, ageStyled)
 		} else {
 			line = fmt.Sprintf("  %s %s %s %s %s",
-				namePadded, readyPadded, statusStyled, restartsStyled, ageStyled)
+				nameNormal.Render(namePadded), readyPadded, statusStyled, restartsStyled, ageStyled)
 		}
 	}
 

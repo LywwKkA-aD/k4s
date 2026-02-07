@@ -59,14 +59,18 @@ func (d deploymentDelegate) Render(w io.Writer, m list.Model, index int, listIte
 	ageStyled := lipgloss.NewStyle().Foreground(colorMuted).Render(agePadded)
 
 	// Cursor and selection styling
+	prefix := lipgloss.NewStyle().Foreground(colorPrimary).Render("▌")
+
 	var line string
 	if index == m.Index() {
-		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
-		line = fmt.Sprintf("▸ %s %s %s %s %s",
-			nameStyle.Render(namePadded), readyStyled, upToDateStyled, availableStyled, ageStyled)
+		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(colorText)
+		line = fmt.Sprintf("%s %s %s %s %s %s",
+			prefix, nameStyle.Render(namePadded), readyStyled, upToDateStyled, availableStyled, ageStyled)
+		line = lipgloss.NewStyle().Background(colorBgHighlight).Render(line)
 	} else {
+		nameStyle := lipgloss.NewStyle().Foreground(colorText)
 		line = fmt.Sprintf("  %s %s %s %s %s",
-			namePadded, readyPadded, upToDateStyled, availableStyled, ageStyled)
+			nameStyle.Render(namePadded), readyPadded, upToDateStyled, availableStyled, ageStyled)
 	}
 
 	fmt.Fprint(w, line)

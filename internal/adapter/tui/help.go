@@ -57,14 +57,14 @@ func (h *HelpScreen) View() string {
 
 	sectionStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(colorSecondary)
+		Foreground(colorMuted)
 
 	keyStyle := lipgloss.NewStyle().
-		Foreground(colorWarning).
+		Foreground(colorPrimary).
 		Width(10)
 
 	descStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFFFFF"))
+		Foreground(colorText)
 
 	mutedStyle := lipgloss.NewStyle().
 		Foreground(colorMuted).
@@ -141,7 +141,7 @@ func (h *HelpScreen) View() string {
 	// Create the box
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorPrimary).
+		BorderForeground(colorBorder).
 		Padding(1, 2)
 
 	return boxStyle.Render(content.String())

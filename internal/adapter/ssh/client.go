@@ -56,7 +56,7 @@ func (c *Client) Connect(ctx context.Context) error {
 				return err
 			}
 			// Otherwise just log and continue with agent
-			logger.Debug("Key file auth failed: %v, will use ssh-agent", err)
+			logger.Debug("Key file auth failed, will use ssh-agent", "err", err)
 		} else if keyAuth != nil {
 			authMethods = append(authMethods, keyAuth)
 		}
@@ -82,7 +82,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	// Connect
 	addr := fmt.Sprintf("%s:%d", c.host.Host, port)
-	logger.Debug("SSH connecting to %s@%s", c.host.User, addr)
+	logger.Debug("SSH connecting", "user", c.host.User, "addr", addr)
 
 	client, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
@@ -90,7 +90,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 
 	c.client = client
-	logger.Debug("SSH connected to %s", addr)
+	logger.Debug("SSH connected", "addr", addr)
 	return nil
 }
 
@@ -104,14 +104,14 @@ func (c *Client) trySSHAgent() ssh.AuthMethod {
 
 	conn, err := net.Dial("unix", socket)
 	if err != nil {
-		logger.Debug("Failed to connect to ssh-agent: %v", err)
+		logger.Debug("Failed to connect to ssh-agent", "err", err)
 		return nil
 	}
 
 	agentClient := agent.NewClient(conn)
 	signers, err := agentClient.Signers()
 	if err != nil {
-		logger.Debug("Failed to get signers from ssh-agent: %v", err)
+		logger.Debug("Failed to get signers from ssh-agent", "err", err)
 		conn.Close()
 		return nil
 	}
@@ -122,7 +122,7 @@ func (c *Client) trySSHAgent() ssh.AuthMethod {
 		return nil
 	}
 
-	logger.Debug("Found %d keys in ssh-agent", len(signers))
+	logger.Debug("Found keys in ssh-agent", "count", len(signers))
 	return ssh.PublicKeysCallback(agentClient.Signers)
 }
 
@@ -196,7 +196,7 @@ func (c *Client) Execute(ctx context.Context, command string) (string, error) {
 	}
 	defer session.Close()
 
-	logger.Debug("SSH executing: %s", command)
+	logger.Debug("SSH executing", "command", command)
 
 	// Run command and capture output
 	output, err := session.CombinedOutput(command)

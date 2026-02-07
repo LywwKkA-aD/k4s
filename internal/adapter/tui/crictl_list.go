@@ -64,14 +64,18 @@ func (d crictlContainerDelegate) Render(w io.Writer, m list.Model, index int, li
 	ageStyled := lipgloss.NewStyle().Foreground(colorMuted).Render(agePadded)
 	nsStyled := lipgloss.NewStyle().Foreground(colorMuted).Render(nsPadded)
 
+	prefix := lipgloss.NewStyle().Foreground(colorPrimary).Render("▌")
+
 	var line string
 	if index == m.Index() {
-		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
+		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(colorText)
 		podStyle := lipgloss.NewStyle().Foreground(colorSecondary)
-		line = fmt.Sprintf("▸ %s %s %s %s %s", nameStyle.Render(namePadded), podStyle.Render(podPadded), nsStyled, stateStyled, ageStyled)
+		line = fmt.Sprintf("%s %s %s %s %s %s", prefix, nameStyle.Render(namePadded), podStyle.Render(podPadded), nsStyled, stateStyled, ageStyled)
+		line = lipgloss.NewStyle().Background(colorBgHighlight).Render(line)
 	} else {
+		nameStyle := lipgloss.NewStyle().Foreground(colorText)
 		podStyle := lipgloss.NewStyle().Foreground(colorMuted)
-		line = fmt.Sprintf("  %s %s %s %s %s", namePadded, podStyle.Render(podPadded), nsStyled, stateStyled, ageStyled)
+		line = fmt.Sprintf("  %s %s %s %s %s", nameStyle.Render(namePadded), podStyle.Render(podPadded), nsStyled, stateStyled, ageStyled)
 	}
 
 	fmt.Fprint(w, line)

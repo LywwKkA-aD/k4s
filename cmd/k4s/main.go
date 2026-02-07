@@ -60,11 +60,11 @@ func run() error {
 	loader := config.NewLoader()
 	cfg, err := loader.Load()
 	if err != nil {
-		logger.Errorf(err, "Failed to load config")
+		logger.Error("Failed to load config", "err", err)
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	logger.Info("Found %d kubeconfigs", len(cfg.KubeConfigs))
+	logger.Info("Found kubeconfigs", "count", len(cfg.KubeConfigs))
 
 	// Create and run TUI
 	app := tui.NewApp(cfg)
@@ -73,7 +73,7 @@ func run() error {
 	logger.Info("Starting TUI")
 
 	if _, err := p.Run(); err != nil {
-		logger.Errorf(err, "TUI error")
+		logger.Error("TUI error", "err", err)
 		return fmt.Errorf("run k4s: %w", err)
 	}
 

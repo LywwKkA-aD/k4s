@@ -41,19 +41,18 @@ func (d sshHostDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 	connectionStr := fmt.Sprintf("%s@%s:%d", host.User, host.Host, port)
 
-	var nameStyle, connStyle lipgloss.Style
+	prefix := lipgloss.NewStyle().Foreground(colorPrimary).Render("▌")
+	bgStyle := lipgloss.NewStyle().Background(colorBgHighlight)
+
 	if index == m.Index() {
-		nameStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorPrimary)
-		connStyle = lipgloss.NewStyle().
-			Foreground(colorMuted)
-		fmt.Fprintf(w, "▸ %s\n  %s", nameStyle.Render(host.Name), connStyle.Render(connectionStr))
+		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(colorText)
+		connStyle := lipgloss.NewStyle().Foreground(colorMuted)
+		line1 := bgStyle.Render(fmt.Sprintf("%s %s", prefix, nameStyle.Render(host.Name)))
+		line2 := bgStyle.Render(fmt.Sprintf("  %s", connStyle.Render(connectionStr)))
+		fmt.Fprintf(w, "%s\n%s", line1, line2)
 	} else {
-		nameStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF"))
-		connStyle = lipgloss.NewStyle().
-			Foreground(colorMuted)
+		nameStyle := lipgloss.NewStyle().Foreground(colorText)
+		connStyle := lipgloss.NewStyle().Foreground(colorMuted)
 		fmt.Fprintf(w, "  %s\n  %s", nameStyle.Render(host.Name), connStyle.Render(connectionStr))
 	}
 }

@@ -36,24 +36,24 @@ func (d kubeConfigDelegate) Render(w io.Writer, m list.Model, index int, listIte
 	name := item.kubeConfig.Name
 	path := item.kubeConfig.Path
 
-	var nameStyle, pathStyle lipgloss.Style
-	if index == m.Index() {
-		nameStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorPrimary)
-		pathStyle = lipgloss.NewStyle().
-			Foreground(colorMuted)
-		fmt.Fprintf(w, "▸ %s\n  %s", nameStyle.Render(name), pathStyle.Render(path))
-	} else {
-		nameStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF"))
-		pathStyle = lipgloss.NewStyle().
-			Foreground(colorMuted)
-		fmt.Fprintf(w, "  %s\n  %s", nameStyle.Render(name), pathStyle.Render(path))
+	prefix := lipgloss.NewStyle().Foreground(colorPrimary).Render("▌")
+	bgStyle := lipgloss.NewStyle().Background(colorBgHighlight)
+
+	defaultTag := ""
+	if item.kubeConfig.Default {
+		defaultTag = " (default)"
 	}
 
-	if item.kubeConfig.Default {
-		fmt.Fprint(w, " (default)")
+	if index == m.Index() {
+		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(colorText)
+		pathStyle := lipgloss.NewStyle().Foreground(colorMuted)
+		line1 := bgStyle.Render(fmt.Sprintf("%s %s%s", prefix, nameStyle.Render(name), defaultTag))
+		line2 := bgStyle.Render(fmt.Sprintf("  %s", pathStyle.Render(path)))
+		fmt.Fprintf(w, "%s\n%s", line1, line2)
+	} else {
+		nameStyle := lipgloss.NewStyle().Foreground(colorText)
+		pathStyle := lipgloss.NewStyle().Foreground(colorMuted)
+		fmt.Fprintf(w, "  %s%s\n  %s", nameStyle.Render(name), defaultTag, pathStyle.Render(path))
 	}
 }
 

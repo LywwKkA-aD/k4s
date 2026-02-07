@@ -208,10 +208,14 @@ func (l CrictlLogViewer) Update(msg tea.Msg) (CrictlLogViewer, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "up", "down", "pgup", "pgdown", "k", "j":
+			l.following = false
 		case "g":
+			l.following = false
 			l.viewport.GotoTop()
 			return l, nil
 		case "G":
+			l.following = true
 			l.viewport.GotoBottom()
 			return l, nil
 		}
@@ -239,23 +243,22 @@ func (l *CrictlLogViewer) RenderHeader() string {
 
 	// Node
 	if l.nodeName != "" {
-		nodeStyle := lipgloss.NewStyle().Foreground(colorMuted)
+		nodeStyle := lipgloss.NewStyle().Foreground(colorSubtle)
 		parts = append(parts, nodeStyle.Render(fmt.Sprintf("Node: %s", l.nodeName)))
 	}
 
 	// Follow indicator
 	if l.following {
-		followStyle := lipgloss.NewStyle().
-			Background(colorSuccess).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Padding(0, 1)
-		parts = append(parts, followStyle.Render("FOLLOWING"))
+		indicator := lipgloss.NewStyle().Foreground(colorSuccess).Render("◉")
+		label := lipgloss.NewStyle().Foreground(colorText).Render("Following")
+		parts = append(parts, indicator+" "+label)
 	}
 
 	// Timestamps indicator
 	if l.timestamps {
-		tsStyle := lipgloss.NewStyle().Foreground(colorMuted)
-		parts = append(parts, tsStyle.Render("[timestamps]"))
+		indicator := lipgloss.NewStyle().Foreground(colorPrimary).Render("◉")
+		label := lipgloss.NewStyle().Foreground(colorText).Render("Timestamps")
+		parts = append(parts, indicator+" "+label)
 	}
 
 	// Search info

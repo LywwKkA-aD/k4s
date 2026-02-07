@@ -1,18 +1,18 @@
 package tui
 
 import (
-	"fmt"
-
+	"github.com/charmbracelet/huh"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // ContainerSelector is a component for selecting a container
 type ContainerSelector struct {
-	containers    []string
-	selectedIndex int
-	visible       bool
-	width         int
+	containers []string
+	selected   string
+	visible    bool
+	width      int
+	form       *huh.Form
 }
 
 // NewContainerSelector creates a new container selector
@@ -20,24 +20,37 @@ func NewContainerSelector() ContainerSelector {
 	return ContainerSelector{}
 }
 
-// Show displays the container selector
-func (c *ContainerSelector) Show(containers []string, currentContainer string) {
+// Show displays the container selector and returns a tea.Cmd.
+func (c *ContainerSelector) Show(containers []string, currentContainer string) tea.Cmd {
 	c.containers = containers
 	c.visible = true
-	c.selectedIndex = 0
+	c.selected = currentContainer
 
-	// Find current container index
-	for i, name := range containers {
-		if name == currentContainer {
-			c.selectedIndex = i
-			break
-		}
+	// If no current container set, default to first
+	if c.selected == "" && len(containers) > 0 {
+		c.selected = containers[0]
 	}
+
+	opts := make([]huh.Option[string], len(containers))
+	for i, name := range containers {
+		opts[i] = huh.NewOption(name, name)
+	}
+
+	c.form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Select Container").
+				Options(opts...).
+				Value(&c.selected),
+		),
+	).WithTheme(K4sHuhTheme()).WithShowHelp(false)
+	return c.form.Init()
 }
 
 // Hide hides the container selector
 func (c *ContainerSelector) Hide() {
 	c.visible = false
+	c.form = nil
 }
 
 // IsVisible returns whether the selector is visible
@@ -52,41 +65,41 @@ func (c *ContainerSelector) SetWidth(width int) {
 
 // SelectedContainer returns the currently selected container name
 func (c *ContainerSelector) SelectedContainer() string {
-	if c.selectedIndex < len(c.containers) {
-		return c.containers[c.selectedIndex]
-	}
-	return ""
+	return c.selected
 }
 
 // Update handles key messages for the selector
-func (c *ContainerSelector) Update(msg tea.Msg) (selected bool, cancelled bool) {
-	if !c.visible {
-		return false, false
+func (c *ContainerSelector) Update(msg tea.Msg) (selected bool, cancelled bool, cmd tea.Cmd) {
+	if !c.visible || c.form == nil {
+		return false, false, nil
 	}
 
+	// Handle esc/c for cancel
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
-		case "up", "k":
-			if c.selectedIndex > 0 {
-				c.selectedIndex--
-			}
-		case "down", "j":
-			if c.selectedIndex < len(c.containers)-1 {
-				c.selectedIndex++
-			}
-		case "enter":
-			return true, false
 		case "esc", "c":
-			return false, true
+			return false, true, nil
 		}
 	}
 
-	return false, false
+	model, formCmd := c.form.Update(msg)
+	if f, ok := model.(*huh.Form); ok {
+		c.form = f
+	}
+
+	if c.form.State == huh.StateCompleted {
+		return true, false, formCmd
+	}
+	if c.form.State == huh.StateAborted {
+		return false, true, formCmd
+	}
+
+	return false, false, formCmd
 }
 
 // View renders the container selector
 func (c *ContainerSelector) View() string {
-	if !c.visible || len(c.containers) == 0 {
+	if !c.visible || c.form == nil || len(c.containers) == 0 {
 		return ""
 	}
 
@@ -95,52 +108,16 @@ func (c *ContainerSelector) View() string {
 		selectorWidth = c.width - 10
 	}
 
-	// Title style
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(colorPrimary).
-		MarginBottom(1)
-
-	// Build container list
-	var items string
-	for i, container := range c.containers {
-		itemStyle := lipgloss.NewStyle().
-			Padding(0, 1).
-			Width(selectorWidth - 4)
-
-		if i == c.selectedIndex {
-			itemStyle = itemStyle.
-				Background(colorPrimary).
-				Foreground(lipgloss.Color("#FFFFFF")).
-				Bold(true)
-			items += itemStyle.Render(fmt.Sprintf("▸ %s", container)) + "\n"
-		} else {
-			itemStyle = itemStyle.
-				Foreground(lipgloss.Color("#FFFFFF"))
-			items += itemStyle.Render(fmt.Sprintf("  %s", container)) + "\n"
-		}
-	}
-
-	// Hint text
-	hintStyle := lipgloss.NewStyle().
-		Foreground(colorMuted).
-		MarginTop(1)
-	hint := hintStyle.Render("↑/↓: select • Enter: confirm • Esc: cancel")
-
-	// Build selector content
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		titleStyle.Render("Select Container"),
-		items,
-		hint,
-	)
-
-	// Selector box style
 	selectorStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorPrimary).
+		BorderForeground(colorBorder).
 		Padding(1, 2).
 		Width(selectorWidth)
+
+	hintStyle := lipgloss.NewStyle().
+		Foreground(colorMuted)
+
+	content := c.form.View() + "\n" + hintStyle.Render("↑/↓: select • Enter: confirm • Esc: cancel")
 
 	return selectorStyle.Render(content)
 }

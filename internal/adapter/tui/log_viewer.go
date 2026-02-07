@@ -355,19 +355,22 @@ func (l *LogViewer) highlightSearch(line, query string) string {
 
 // Update handles messages
 func (l *LogViewer) Update(msg tea.Msg) (LogViewer, tea.Cmd) {
-	// Disable auto-scroll on manual scroll
+	// Disable auto-scroll and follow on manual scroll
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
 		case "up", "down", "pgup", "pgdown", "k", "j":
 			l.autoScroll = false
+			l.following = false
 		case "G":
-			// Go to bottom re-enables auto-scroll
+			// Go to bottom re-enables auto-scroll and follow
 			l.autoScroll = true
+			l.following = true
 			l.viewport.GotoBottom()
 			return *l, nil
 		case "g":
-			// Go to top disables auto-scroll
+			// Go to top disables auto-scroll and follow
 			l.autoScroll = false
+			l.following = false
 			l.viewport.GotoTop()
 			return *l, nil
 		}
@@ -418,41 +421,38 @@ func (l *LogViewer) RenderHeader() string {
 
 	// Follow indicator
 	if l.following {
-		followStyle := lipgloss.NewStyle().
-			Background(colorSuccess).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Padding(0, 1)
-		indicators = append(indicators, followStyle.Render("FOLLOW"))
+		indicator := lipgloss.NewStyle().Foreground(colorSuccess).Render("◉")
+		label := lipgloss.NewStyle().Foreground(colorText).Render("Following")
+		indicators = append(indicators, indicator+" "+label)
 	}
 
 	// Timestamps indicator
 	if l.timestamps {
-		tsStyle := lipgloss.NewStyle().
-			Background(colorPrimary).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Padding(0, 1)
-		indicators = append(indicators, tsStyle.Render("TS"))
+		indicator := lipgloss.NewStyle().Foreground(colorPrimary).Render("◉")
+		label := lipgloss.NewStyle().Foreground(colorText).Render("Timestamps")
+		indicators = append(indicators, indicator+" "+label)
 	}
 
 	// Lines count
-	linesStyle := lipgloss.NewStyle().Foreground(colorMuted)
-	linesInfo := linesStyle.Render(fmt.Sprintf("Lines: %d", l.totalLines))
+	infoStyle := lipgloss.NewStyle().Foreground(colorSubtle)
+	linesInfo := infoStyle.Render(fmt.Sprintf("Lines: %d", l.totalLines))
 
 	// Scroll percentage
-	scrollInfo := linesStyle.Render(fmt.Sprintf("%.0f%%", l.ScrollPercent()*100))
+	scrollInfo := infoStyle.Render(fmt.Sprintf("%.0f%%", l.ScrollPercent()*100))
 
 	// Search info
 	searchInfo := ""
 	if l.searchQuery != "" {
-		searchInfo = linesStyle.Render(fmt.Sprintf(" | Search: '%s' (%d matches)", l.searchQuery, l.MatchCount()))
+		searchStyle := lipgloss.NewStyle().Foreground(colorMuted)
+		searchInfo = "  " + searchStyle.Render(fmt.Sprintf("Search: '%s' (%d)", l.searchQuery, l.MatchCount()))
 	}
 
 	// Build header
 	header := titleStyle.Render(title)
 	if len(indicators) > 0 {
-		header += " " + strings.Join(indicators, " ")
+		header += "  " + strings.Join(indicators, "  ")
 	}
-	header += " " + linesInfo + searchInfo + " " + scrollInfo
+	header += "  " + linesInfo + searchInfo + "  " + scrollInfo
 
 	return header
 }

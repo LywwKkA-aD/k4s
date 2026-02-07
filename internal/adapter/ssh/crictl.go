@@ -165,7 +165,7 @@ func (c *Client) StreamContainerLogs(ctx context.Context, containerID string, op
 	args = append(args, containerID)
 
 	cmd := strings.Join(args, " ")
-	logger.Debug("Streaming crictl logs: %s", cmd)
+	logger.Debug("Streaming crictl logs", "command", cmd)
 
 	stdout, err := session.StdoutPipe()
 	if err != nil {
