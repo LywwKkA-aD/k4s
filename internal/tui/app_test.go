@@ -134,6 +134,33 @@ func TestGoHomeClearsHistory(t *testing.T) {
 	}
 }
 
+// TestRelayoutPreservesTerminalHeight is the regression test for the bug
+// where every view switch shrunk m.height by the chrome height — the footer
+// crept up the screen until it disappeared off the top.
+func TestRelayoutPreservesTerminalHeight(t *testing.T) {
+	t.Parallel()
+
+	m := New(nil)
+	upd, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
+	m = upd.(Model)
+	if m.height != 50 {
+		t.Fatalf("initial height = %d, want 50", m.height)
+	}
+
+	// Five back-to-back relayouts (one per view switch in the bug repro).
+	for i := 0; i < 5; i++ {
+		upd, _ = m.Update(relayoutMsg{})
+		m = upd.(Model)
+		if m.height != 50 {
+			t.Fatalf("after %d relayouts, height = %d, want 50", i+1, m.height)
+		}
+		out := m.View()
+		if h := lipgloss.Height(out); h != 50 {
+			t.Fatalf("after %d relayouts, rendered height = %d, want 50", i+1, h)
+		}
+	}
+}
+
 func TestSwitchToSamePageDoesNotPushHistory(t *testing.T) {
 	t.Parallel()
 

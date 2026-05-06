@@ -29,6 +29,12 @@ const (
 	viewNamespaces = "namespaces"
 )
 
+// relayoutMsg is an internal signal that says "re-send the current view a
+// body-sized WindowSizeMsg" — used after view switches so freshly-mounted
+// views are sized correctly without us re-entering tea.WindowSizeMsg, which
+// would otherwise overwrite m.height with the smaller body height each time.
+type relayoutMsg struct{}
+
 // historyEntry captures the navigation snapshot we restore on Esc.
 //
 // Note: only "rebuildable" views (dashboard / pods / namespaces) end up here.
@@ -93,6 +99,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.forwardToView(bodyMsg)
 
+	case relayoutMsg:
+		// Re-size only — never touch m.height/m.width. The previous
+		// implementation reused tea.WindowSizeMsg here, which made the
+		// terminal-size handler above shrink m.height by the chrome on
+		// every view switch.
+		if m.width == 0 || m.height == 0 {
+			return m, nil
+		}
+		bodyMsg := tea.WindowSizeMsg{Width: m.width, Height: m.bodyHeight()}
+		return m.forwardToView(bodyMsg)
+
 	case views.NamespaceSelectedMsg:
 		m.history = append(m.history, historyEntry{
 			view:      m.current.Title(),
@@ -149,17 +166,19 @@ func (m Model) forwardToView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// relayoutCmd batches the new view's Init() with a synthetic WindowSizeMsg
-// so the freshly-mounted view is sized correctly before its first paint —
+// relayoutCmd batches the new view's Init() with a relayoutMsg so the
+// freshly-mounted view is sized correctly before its first paint —
 // otherwise it briefly renders at zero width/height after a switch.
+//
+// We use the internal relayoutMsg type rather than tea.WindowSizeMsg so the
+// app does not mistake our synthetic resize for a real terminal resize and
+// shrink m.height by the chrome height on every view switch.
 func (m Model) relayoutCmd() tea.Cmd {
 	initCmd := m.current.Init()
 	if m.width == 0 && m.height == 0 {
 		return initCmd
 	}
-	resize := func() tea.Msg {
-		return tea.WindowSizeMsg{Width: m.width, Height: m.bodyHeight()}
-	}
+	resize := func() tea.Msg { return relayoutMsg{} }
 	if initCmd == nil {
 		return resize
 	}
