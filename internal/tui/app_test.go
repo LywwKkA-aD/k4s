@@ -1,6 +1,60 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// TestViewFillsTerminal asserts the chrome (header + footer) sits at the
+// terminal edges and the body fills everything in between, regardless of
+// how much content the active view actually rendered.
+func TestViewFillsTerminal(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct{ w, h int }{
+		{100, 50},
+		{120, 30},
+		{80, 24},
+		{200, 80},
+	}
+
+	for _, c := range cases {
+		m := New(nil)
+		upd, _ := m.Update(tea.WindowSizeMsg{Width: c.w, Height: c.h})
+		m = upd.(Model)
+
+		out := m.View()
+		if h := lipgloss.Height(out); h != c.h {
+			t.Errorf("size=%dx%d: rendered height = %d, want %d (bodyHeight=%d)",
+				c.w, c.h, h, c.h, m.bodyHeight())
+		}
+	}
+}
+
+// TestBodyPadsToBodyHeight is the focused regression test: the body block
+// itself must be exactly bodyHeight tall, even when the active view's
+// View() returns just one line ("loading…", "no kubeconfig", short table).
+// Previously lipgloss.Place was used here and silently failed to pad.
+func TestBodyPadsToBodyHeight(t *testing.T) {
+	t.Parallel()
+
+	m := New(nil)
+	upd, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
+	m = upd.(Model)
+
+	bodyHeight := m.bodyHeight()
+	body := lipgloss.NewStyle().
+		Width(m.width).
+		Height(bodyHeight).
+		MaxHeight(bodyHeight).
+		Render(m.current.View())
+
+	if h := lipgloss.Height(body); h != bodyHeight {
+		t.Errorf("body height = %d, want %d", h, bodyHeight)
+	}
+}
 
 // TestNavigationHistoryAndGoHome simulates the dashboard → namespaces →
 // pods(ns=demo) flow and asserts that Esc walks back through it correctly.

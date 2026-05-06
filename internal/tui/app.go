@@ -253,6 +253,11 @@ func (m Model) popHistory() (Model, bool) {
 
 // View composes header / body / footer with the body filling all the space
 // between them so the chrome stays at the edges regardless of view content.
+//
+// We use Style.Width().Height() rather than lipgloss.Place because Place
+// does not reliably pad short content (e.g. a viewport with fewer rendered
+// lines than its declared Height) up to the requested box height — the
+// footer then floated mid-screen.
 func (m Model) View() string {
 	header := m.renderHeader()
 	footer := m.renderFooter()
@@ -260,13 +265,11 @@ func (m Model) View() string {
 	bodyHeight := m.bodyHeight()
 	bodyWidth := max(m.width, 0)
 
-	body := lipgloss.Place(
-		bodyWidth,
-		bodyHeight,
-		lipgloss.Left,
-		lipgloss.Top,
-		m.current.View(),
-	)
+	body := lipgloss.NewStyle().
+		Width(bodyWidth).
+		Height(bodyHeight).
+		MaxHeight(bodyHeight).
+		Render(m.current.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 }
