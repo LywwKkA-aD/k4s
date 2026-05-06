@@ -40,6 +40,7 @@ type Model struct {
 	err          error
 	loaded       bool
 
+	scrollKey  key.Binding
 	refreshKey key.Binding
 }
 
@@ -57,6 +58,12 @@ func New(client *k8s.Client, kind Kind, namespace, name string) Model {
 		namespace: namespace,
 		name:      name,
 		viewport:  vp,
+		// Display-only binding so the footer surfaces scroll affordance —
+		// the actual j/k/pgup/pgdn handling lives inside viewport.Update.
+		scrollKey: key.NewBinding(
+			key.WithKeys("up", "down", "j", "k", "pgup", "pgdn"),
+			key.WithHelp("↑↓/pgup/pgdn", "scroll"),
+		),
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
@@ -145,9 +152,25 @@ func (m Model) View() string {
 	return m.viewport.View()
 }
 
-// Title implements views.View.
+// Title implements views.View. We append a scroll indicator so the user knows
+// (a) there is more content below and (b) where they are in it.
 func (m Model) Title() string {
-	return string(m.kind) + " · " + m.name
+	base := string(m.kind) + " · " + m.name
+	if !m.loaded || m.err != nil {
+		return base
+	}
+	pct := int(m.viewport.ScrollPercent() * 100)
+	switch {
+	case m.viewport.AtTop() && m.viewport.AtBottom():
+		// Content fits — nothing to scroll.
+		return base
+	case m.viewport.AtBottom():
+		return base + " · end"
+	case m.viewport.AtTop():
+		return base + " · top · ↓ more"
+	default:
+		return fmt.Sprintf("%s · %d%%", base, pct)
+	}
 }
 
 // KubectlEquivalent implements views.View.
@@ -156,4 +179,4 @@ func (m Model) KubectlEquivalent() string {
 }
 
 // Help implements views.View.
-func (m Model) Help() []key.Binding { return []key.Binding{m.refreshKey} }
+func (m Model) Help() []key.Binding { return []key.Binding{m.scrollKey, m.refreshKey} }
