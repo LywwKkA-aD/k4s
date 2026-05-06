@@ -1,5 +1,5 @@
-// Package keys centralises the global keymap. Per-view overrides will compose
-// over the defaults defined here as new screens are added.
+// Package keys centralises the global keymap. Per-view overrides compose
+// over the defaults defined here.
 package keys
 
 import "github.com/charmbracelet/bubbles/key"
@@ -8,7 +8,8 @@ import "github.com/charmbracelet/bubbles/key"
 type Map struct {
 	Quit    key.Binding
 	Help    key.Binding
-	Refresh key.Binding
+	Command key.Binding
+	Back    key.Binding
 }
 
 // Default returns the baseline keymap.
@@ -22,9 +23,13 @@ func Default() Map {
 			key.WithKeys("?"),
 			key.WithHelp("?", "help"),
 		),
-		Refresh: key.NewBinding(
-			key.WithKeys("r"),
-			key.WithHelp("r", "refresh"),
+		Command: key.NewBinding(
+			key.WithKeys(":"),
+			key.WithHelp(":", "command"),
+		),
+		Back: key.NewBinding(
+			key.WithKeys("esc"),
+			key.WithHelp("esc", "back"),
 		),
 	}
 }
