@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -18,7 +18,6 @@ import (
 const (
 	fetchTimeout      = 5 * time.Second
 	minViewportHeight = 5
-	chromeReserve     = 7 // header + footer + bottom margin estimate
 )
 
 // Kind enumerates the resources the describe view supports.
@@ -99,11 +98,14 @@ func fetchCmd(c *k8s.Client, kind Kind, ns, name string) tea.Cmd {
 }
 
 // Update handles size/refresh/content and forwards scroll keys to the viewport.
+//
+// The incoming WindowSizeMsg.Height has already been adjusted by the root
+// model to be the body area only — no chrome math here.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.viewport.Width = msg.Width
-		m.viewport.Height = max(msg.Height-chromeReserve, minViewportHeight)
+		m.viewport.Height = max(msg.Height, minViewportHeight)
 		m.contentWidth = msg.Width
 		// Reflow the cached content for the new width — without this the
 		// viewport keeps the original wrapping and lines clip on shrink.
@@ -129,13 +131,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// wrap reflows long lines to the given width using lipgloss's text wrapping.
-// width <= 0 means "don't wrap" (we have not been sized yet).
+// wrap reflows long lines to the given width. lipgloss.Width().Render() does
+// NOT word-wrap reliably (it pads short lines and clips long ones) — use the
+// ANSI-aware wrapper from charmbracelet/x/ansi instead. width <= 0 means
+// "don't wrap" (we have not been sized yet).
 func wrap(content string, width int) string {
 	if width <= 0 {
 		return content
 	}
-	return lipgloss.NewStyle().Width(width).Render(content)
+	return ansi.Wrap(content, width, "")
 }
 
 // View renders the viewport or a placeholder.
@@ -152,7 +156,7 @@ func (m Model) View() string {
 	return m.viewport.View()
 }
 
-// Title implements views.View. We append a scroll indicator so the user knows
+// Title implements views.View. Appends a scroll indicator so the user knows
 // (a) there is more content below and (b) where they are in it.
 func (m Model) Title() string {
 	base := string(m.kind) + " · " + m.name

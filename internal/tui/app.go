@@ -83,7 +83,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		return m.forwardToView(msg)
+		// Forward a *body-sized* WindowSizeMsg so views can fill the entire
+		// space between header and footer without each one re-implementing
+		// the chrome math. Width is forwarded as-is so views can also
+		// wrap content to the full terminal width.
+		bodyMsg := tea.WindowSizeMsg{
+			Width:  msg.Width,
+			Height: m.bodyHeight(),
+		}
+		return m.forwardToView(bodyMsg)
 
 	case views.NamespaceSelectedMsg:
 		m.history = append(m.history, historyEntry{
@@ -92,7 +100,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 		m.namespace = msg.Namespace
 		m = m.replaceView(viewPods)
-		return m, m.current.Init()
+		return m, m.relayoutCmd()
 
 	case views.DescribeRequestMsg:
 		m.history = append(m.history, historyEntry{
@@ -100,7 +108,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			namespace: m.namespace,
 		})
 		m.current = describe.New(m.client, describe.Kind(msg.Kind), msg.Namespace, msg.Name)
-		return m, m.current.Init()
+		return m, m.relayoutCmd()
 
 	case tea.KeyMsg:
 		// ctrl+c is the always-quit escape hatch — even inside the cmd bar.
@@ -116,7 +124,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			next := m.goHome()
-			return next, next.current.Init()
+			return next, next.relayoutCmd()
 		case key.Matches(msg, m.keys.Command):
 			m.cmdBarOpen = true
 			m.cmdError = ""
@@ -124,7 +132,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		case key.Matches(msg, m.keys.Back):
 			if next, ok := m.popHistory(); ok {
-				return next, next.current.Init()
+				return next, next.relayoutCmd()
 			}
 			return m, nil
 		}
@@ -139,6 +147,37 @@ func (m Model) forwardToView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current = v
 	}
 	return m, cmd
+}
+
+// relayoutCmd batches the new view's Init() with a synthetic WindowSizeMsg
+// so the freshly-mounted view is sized correctly before its first paint —
+// otherwise it briefly renders at zero width/height after a switch.
+func (m Model) relayoutCmd() tea.Cmd {
+	initCmd := m.current.Init()
+	if m.width == 0 && m.height == 0 {
+		return initCmd
+	}
+	resize := func() tea.Msg {
+		return tea.WindowSizeMsg{Width: m.width, Height: m.bodyHeight()}
+	}
+	if initCmd == nil {
+		return resize
+	}
+	return tea.Batch(initCmd, resize)
+}
+
+// bodyHeight returns the number of lines available between header and footer,
+// computed from the *current* chrome so we match whatever lipgloss actually
+// rendered (header / footer have variable height depending on padding +
+// command bar state + kubectl hint presence).
+func (m Model) bodyHeight() int {
+	hh := lipgloss.Height(m.renderHeader())
+	fh := lipgloss.Height(m.renderFooter())
+	h := m.height - hh - fh
+	if h < 1 {
+		return 1
+	}
+	return h
 }
 
 func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -168,7 +207,7 @@ func (m Model) execCmd(input string) (Model, tea.Cmd) {
 	}
 	m.cmdError = ""
 	next := m.switchTo(name)
-	return next, next.current.Init()
+	return next, next.relayoutCmd()
 }
 
 // switchTo records the current view in history then constructs the named view.
@@ -212,19 +251,13 @@ func (m Model) popHistory() (Model, bool) {
 	return m.replaceView(last.view), true
 }
 
-// View composes header / body / footer with the footer pinned near the
-// bottom (one line of breathing room — see styles.Footer.PaddingBottom).
+// View composes header / body / footer with the body filling all the space
+// between them so the chrome stays at the edges regardless of view content.
 func (m Model) View() string {
 	header := m.renderHeader()
 	footer := m.renderFooter()
 
-	hh := lipgloss.Height(header)
-	fh := lipgloss.Height(footer)
-
-	bodyHeight := m.height - hh - fh
-	if bodyHeight < 1 {
-		bodyHeight = 1
-	}
+	bodyHeight := m.bodyHeight()
 	bodyWidth := max(m.width, 0)
 
 	body := lipgloss.Place(

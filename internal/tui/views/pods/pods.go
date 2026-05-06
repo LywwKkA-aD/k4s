@@ -97,7 +97,8 @@ func fetchPodsCmd(c *k8s.Client, namespace string) tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.table.SetHeight(max(msg.Height-7, minTableRows))
+		// msg.Height is already the body height (root model adjusts it).
+		m.table.SetHeight(max(msg.Height, minTableRows))
 	case tea.KeyMsg:
 		if key.Matches(msg, m.refreshKey) && m.client != nil {
 			return m, fetchPodsCmd(m.client, m.namespace)
