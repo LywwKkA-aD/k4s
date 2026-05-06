@@ -6,18 +6,27 @@ import "github.com/charmbracelet/bubbles/key"
 
 // Map is the set of global key bindings k4s exposes.
 type Map struct {
-	Quit    key.Binding
-	Help    key.Binding
-	Command key.Binding
-	Back    key.Binding
+	Quit      key.Binding
+	ForceQuit key.Binding
+	Help      key.Binding
+	Command   key.Binding
+	Back      key.Binding
 }
 
 // Default returns the baseline keymap.
+//
+// q is "go home, then quit" — the first press takes you back to the
+// dashboard, the second press (now on the dashboard) exits. ctrl+c is the
+// always-quit escape hatch and works even inside the command bar.
 func Default() Map {
 	return Map{
 		Quit: key.NewBinding(
-			key.WithKeys("q", "ctrl+c"),
-			key.WithHelp("q", "quit"),
+			key.WithKeys("q"),
+			key.WithHelp("q", "home / quit"),
+		),
+		ForceQuit: key.NewBinding(
+			key.WithKeys("ctrl+c"),
+			key.WithHelp("ctrl+c", "quit"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),

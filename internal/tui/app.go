@@ -21,8 +21,20 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/pods"
 )
 
-// Model is the root Bubble Tea model. It owns the active namespace, the
-// command bar and routes messages to the currently active View.
+// View names used both for routing and for history entries.
+const (
+	viewDashboard  = "dashboard"
+	viewPods       = "pods"
+	viewNamespaces = "namespaces"
+)
+
+// historyEntry captures the navigation snapshot we restore on Esc.
+type historyEntry struct {
+	view      string
+	namespace string
+}
+
+// Model is the root Bubble Tea model.
 type Model struct {
 	client *k8s.Client
 	keys   keys.Map
@@ -31,6 +43,7 @@ type Model struct {
 
 	namespace string // "" = all
 	current   views.View
+	history   []historyEntry
 
 	cmdBar     textinput.Model
 	cmdBarOpen bool
@@ -64,31 +77,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Forward so views can resize their internal widgets.
 		return m.forwardToView(msg)
 
 	case views.NamespaceSelectedMsg:
+		// Push pre-selection state so Esc returns to the namespaces view with
+		// the namespace it had before the user picked one.
+		m.history = append(m.history, historyEntry{
+			view:      m.current.Title(),
+			namespace: m.namespace,
+		})
 		m.namespace = msg.Namespace
-		m = m.switchTo("pods")
+		m = m.replaceView(viewPods)
 		return m, m.current.Init()
 
 	case tea.KeyMsg:
+		// ctrl+c is the always-quit escape hatch — even inside the cmd bar.
+		if msg.Type == tea.KeyCtrlC {
+			return m, tea.Quit
+		}
 		if m.cmdBarOpen {
 			return m.handleCmdBar(msg)
 		}
 		switch {
 		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
+			// q quits on the dashboard, otherwise it goes home.
+			if m.current.Title() == viewDashboard {
+				return m, tea.Quit
+			}
+			next := m.goHome()
+			return next, next.current.Init()
 		case key.Matches(msg, m.keys.Command):
 			m.cmdBarOpen = true
 			m.cmdError = ""
 			m.cmdBar.Focus()
 			return m, textinput.Blink
 		case key.Matches(msg, m.keys.Back):
-			if m.current.Title() != "dashboard" {
-				m = m.switchTo("dashboard")
-				return m, m.current.Init()
+			if next, ok := m.popHistory(); ok {
+				return next, next.current.Init()
 			}
+			return m, nil
 		}
 	}
 
@@ -133,26 +160,70 @@ func (m Model) execCmd(input string) (Model, tea.Cmd) {
 	return next, next.current.Init()
 }
 
+// switchTo records the current view in history then constructs the named view.
 func (m Model) switchTo(name string) Model {
+	if m.current != nil && m.current.Title() != name {
+		m.history = append(m.history, historyEntry{
+			view:      m.current.Title(),
+			namespace: m.namespace,
+		})
+	}
+	return m.replaceView(name)
+}
+
+// replaceView builds the named view without touching history.
+func (m Model) replaceView(name string) Model {
 	switch name {
-	case "pods":
+	case viewPods:
 		m.current = pods.New(m.client, m.namespace)
-	case "namespaces":
+	case viewNamespaces:
 		m.current = namespaces.New(m.client)
-	case "dashboard":
+	case viewDashboard:
 		m.current = dashboard.New(m.client)
 	}
 	return m
 }
 
-// View composes header / body / footer.
+// goHome resets history and returns to the dashboard.
+func (m Model) goHome() Model {
+	m.history = nil
+	return m.replaceView(viewDashboard)
+}
+
+// popHistory restores the previous view + namespace; returns false if empty.
+func (m Model) popHistory() (Model, bool) {
+	if len(m.history) == 0 {
+		return m, false
+	}
+	last := m.history[len(m.history)-1]
+	m.history = m.history[:len(m.history)-1]
+	m.namespace = last.namespace
+	return m.replaceView(last.view), true
+}
+
+// View composes header / body / footer with the footer pinned to the bottom.
 func (m Model) View() string {
-	return lipgloss.JoinVertical(
+	header := m.renderHeader()
+	footer := m.renderFooter()
+
+	hh := lipgloss.Height(header)
+	fh := lipgloss.Height(footer)
+
+	bodyHeight := m.height - hh - fh
+	if bodyHeight < 1 {
+		bodyHeight = 1
+	}
+	bodyWidth := max(m.width, 0)
+
+	body := lipgloss.Place(
+		bodyWidth,
+		bodyHeight,
 		lipgloss.Left,
-		m.renderHeader(),
+		lipgloss.Top,
 		m.current.View(),
-		m.renderFooter(),
 	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 }
 
 func (m Model) renderHeader() string {
@@ -184,14 +255,7 @@ func (m Model) renderFooter() string {
 	if m.cmdError != "" {
 		top = styles.Warn.Render(m.cmdError)
 	} else {
-		bindings := []string{"q quit", ": command", "esc back"}
-		for _, b := range m.current.Help() {
-			h := b.Help()
-			if h.Key != "" && h.Desc != "" {
-				bindings = append(bindings, h.Key+" "+h.Desc)
-			}
-		}
-		top = styles.Hint.Render(strings.Join(bindings, "  ·  "))
+		top = styles.Hint.Render(strings.Join(m.footerBindings(), "  ·  "))
 	}
 
 	bottom := ""
@@ -203,4 +267,19 @@ func (m Model) renderFooter() string {
 		return styles.Footer.Width(w).Render(top)
 	}
 	return styles.Footer.Width(w).Render(lipgloss.JoinVertical(lipgloss.Left, top, bottom))
+}
+
+func (m Model) footerBindings() []string {
+	quitLabel := "q quit"
+	if m.current.Title() != viewDashboard {
+		quitLabel = "q home"
+	}
+	bindings := []string{quitLabel, "^c quit", "esc back", ": command"}
+	for _, b := range m.current.Help() {
+		h := b.Help()
+		if h.Key != "" && h.Desc != "" {
+			bindings = append(bindings, h.Key+" "+h.Desc)
+		}
+	}
+	return bindings
 }
