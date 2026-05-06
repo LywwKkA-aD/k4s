@@ -3,7 +3,6 @@ package pods
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
@@ -28,6 +28,7 @@ type Model struct {
 	err       error
 	loaded    bool
 
+	selectKey  key.Binding
 	refreshKey key.Binding
 }
 
@@ -49,6 +50,10 @@ func New(client *k8s.Client, namespace string) Model {
 		client:    client,
 		namespace: namespace,
 		table:     t,
+		selectKey: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "describe"),
+		),
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
@@ -88,16 +93,23 @@ func fetchPodsCmd(c *k8s.Client, namespace string) tea.Cmd {
 	}
 }
 
-// Update handles size changes, refresh keystrokes, async fetches and forwards
-// navigation keystrokes to the underlying table.
+// Update handles size/refresh/select and forwards navigation keys to the table.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		// Reserve a few rows for header/footer chrome.
-		m.table.SetHeight(max(msg.Height-6, minTableRows))
+		m.table.SetHeight(max(msg.Height-7, minTableRows))
 	case tea.KeyMsg:
 		if key.Matches(msg, m.refreshKey) && m.client != nil {
 			return m, fetchPodsCmd(m.client, m.namespace)
+		}
+		if key.Matches(msg, m.selectKey) && m.loaded && len(m.table.Rows()) > 0 {
+			row := m.table.SelectedRow()
+			if row != nil {
+				ns, name := podCoords(row, m.namespace)
+				return m, func() tea.Msg {
+					return views.DescribeRequestMsg{Kind: "pod", Namespace: ns, Name: name}
+				}
+			}
 		}
 	case podsMsg:
 		m.err = msg.err
@@ -110,6 +122,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
+}
+
+// podCoords pulls (namespace, name) out of the selected row, accounting for
+// whether the table is rendering the NAMESPACE column or not.
+func podCoords(row table.Row, scopedNamespace string) (string, string) {
+	if scopedNamespace == "" {
+		// All namespaces: NAMESPACE | NAME | ...
+		return row[0], row[1]
+	}
+	// Single namespace: NAME | ...
+	return scopedNamespace, row[0]
 }
 
 func toRows(pods []k8s.Pod, showNamespace bool) []table.Row {
@@ -128,25 +151,11 @@ func toRows(pods []k8s.Pod, showNamespace bool) []table.Row {
 			p.Ready,
 			p.Status,
 			strconv.Itoa(int(p.Restarts)),
-			humanizeDuration(p.Age),
+			k8s.HumanizeDuration(p.Age),
 		)
 		rows = append(rows, row)
 	}
 	return rows
-}
-
-// humanizeDuration mirrors kubectl's "5m", "2h", "3d" output style.
-func humanizeDuration(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	}
-	if d < 24*time.Hour {
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	}
-	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
 // View renders the table or a placeholder.
@@ -178,4 +187,4 @@ func (m Model) KubectlEquivalent() string {
 }
 
 // Help implements views.View.
-func (m Model) Help() []key.Binding { return []key.Binding{m.refreshKey} }
+func (m Model) Help() []key.Binding { return []key.Binding{m.selectKey, m.refreshKey} }

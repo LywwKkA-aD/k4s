@@ -29,3 +29,12 @@ type View interface {
 type NamespaceSelectedMsg struct {
 	Namespace string
 }
+
+// DescribeRequestMsg is emitted when a list view (pods, deployments, ...) wants
+// to open a describe screen for the resource currently under the cursor. The
+// root model pushes the current view to history and swaps in the describe view.
+type DescribeRequestMsg struct {
+	Kind      string // "pod", future: "deployment", "service", ...
+	Namespace string
+	Name      string
+}

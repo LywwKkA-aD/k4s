@@ -34,8 +34,11 @@ var (
 		Border(lipgloss.NormalBorder(), false, false, true, false).
 		BorderForeground(colorMuted)
 
+	// Footer reserves an extra line at the bottom (PaddingBottom) so the
+	// chrome does not sit directly on the terminal edge — handy for tmux
+	// status bars and so the kubectl hint never hugs the system prompt.
 	Footer = lipgloss.NewStyle().
-		Padding(0, 1).
+		Padding(0, 1, 1, 1).
 		Border(lipgloss.NormalBorder(), true, false, false, false).
 		BorderForeground(colorMuted)
 

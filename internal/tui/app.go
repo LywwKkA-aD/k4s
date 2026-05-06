@@ -17,6 +17,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/namespaces"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/pods"
 )
@@ -29,6 +30,11 @@ const (
 )
 
 // historyEntry captures the navigation snapshot we restore on Esc.
+//
+// Note: only "rebuildable" views (dashboard / pods / namespaces) end up here.
+// Leaf views like describe push their parent on entry but never end up in
+// history themselves, so popHistory always lands on something we can rebuild
+// from {view, namespace}.
 type historyEntry struct {
 	view      string
 	namespace string
@@ -80,14 +86,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.forwardToView(msg)
 
 	case views.NamespaceSelectedMsg:
-		// Push pre-selection state so Esc returns to the namespaces view with
-		// the namespace it had before the user picked one.
 		m.history = append(m.history, historyEntry{
 			view:      m.current.Title(),
 			namespace: m.namespace,
 		})
 		m.namespace = msg.Namespace
 		m = m.replaceView(viewPods)
+		return m, m.current.Init()
+
+	case views.DescribeRequestMsg:
+		m.history = append(m.history, historyEntry{
+			view:      m.current.Title(),
+			namespace: m.namespace,
+		})
+		m.current = describe.New(m.client, describe.Kind(msg.Kind), msg.Namespace, msg.Name)
 		return m, m.current.Init()
 
 	case tea.KeyMsg:
@@ -100,7 +112,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch {
 		case key.Matches(msg, m.keys.Quit):
-			// q quits on the dashboard, otherwise it goes home.
 			if m.current.Title() == viewDashboard {
 				return m, tea.Quit
 			}
@@ -201,7 +212,8 @@ func (m Model) popHistory() (Model, bool) {
 	return m.replaceView(last.view), true
 }
 
-// View composes header / body / footer with the footer pinned to the bottom.
+// View composes header / body / footer with the footer pinned near the
+// bottom (one line of breathing room — see styles.Footer.PaddingBottom).
 func (m Model) View() string {
 	header := m.renderHeader()
 	footer := m.renderFooter()
