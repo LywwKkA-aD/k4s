@@ -10,9 +10,10 @@ import (
 )
 
 // Client wraps a Kubernetes clientset together with the kubeconfig context it
-// was built from.
+// was built from. Clientset is typed as the kubernetes.Interface so tests can
+// substitute fake.NewSimpleClientset.
 type Client struct {
-	Clientset *kubernetes.Clientset
+	Clientset kubernetes.Interface
 	Context   string
 }
 

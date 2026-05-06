@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-with-sidecar
+  namespace: k4s-demo
+  labels:
+    app: web-with-sidecar
+spec:
+  containers:
+    - name: web
+      image: nginx:1.27-alpine
+      ports:
+        - containerPort: 80
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+    - name: tailer
+      image: busybox:1.37
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          while true; do
+            echo "[tailer] $(date -Iseconds) heartbeat from $(hostname)";
+            sleep 3;
+          done
+      resources:
+        requests: { cpu: 10m, memory: 8Mi }
+        limits:   { cpu: 50m, memory: 32Mi }

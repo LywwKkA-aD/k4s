@@ -31,6 +31,25 @@ KUBECONFIG=$(pwd)/.kube/config make run
 
 `make help` lists every target.
 
+## Local demo workloads
+
+After `make k3s-up`, populate the cluster with realistic-looking demo resources:
+
+```bash
+make seed       # apply deploy/seed/*.yaml
+make seed-down  # remove them
+make demo       # = k3s-up + seed
+```
+
+The seed includes:
+
+- `k4s-demo` and `k4s-broken` namespaces
+- `nginx` Deployment (3 replicas) + Service + ConfigMap
+- `web-with-sidecar` — Pod with two containers (web + tailing sidecar) for container-switching tests
+- `log-spammer` Deployment (2 replicas), each pod prints once per second — handy for multi-log streaming tests
+- `crash-loop` Pod that intentionally fails — exercises CrashLoopBackOff rendering
+- A demo Secret and a CronJob (every 2 minutes) for read-only browsing
+
 ## Project layout
 
 ```

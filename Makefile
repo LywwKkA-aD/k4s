@@ -2,9 +2,11 @@ GO   ?= go
 BIN  ?= bin/k4s
 PKGS := ./...
 
+KUBECONFIG_PATH := $(CURDIR)/.kube/config
+
 .DEFAULT_GOAL := help
 
-.PHONY: help build run test tidy lint clean k3s-up k3s-down kubeconfig
+.PHONY: help build run test tidy lint clean k3s-up k3s-down kubeconfig seed seed-down demo
 
 help: ## show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -47,4 +49,14 @@ kubeconfig: ## rewrite the k3s kubeconfig with localhost server URL
 		.k3s/output/kubeconfig.yaml > .kube/config
 	@chmod 600 .kube/config
 	@echo "kubeconfig written to .kube/config"
-	@echo "  export KUBECONFIG=$$(pwd)/.kube/config"
+	@echo "  export KUBECONFIG=$(KUBECONFIG_PATH)"
+
+seed: ## apply demo workloads to the local k3s
+	@command -v kubectl >/dev/null || { echo "kubectl not on PATH"; exit 1; }
+	@KUBECONFIG=$(KUBECONFIG_PATH) kubectl apply -f deploy/seed/
+
+seed-down: ## remove demo workloads
+	@KUBECONFIG=$(KUBECONFIG_PATH) kubectl delete -f deploy/seed/ --ignore-not-found
+
+demo: k3s-up seed ## bring up k3s and apply demo workloads
+	@echo "demo cluster ready — export KUBECONFIG=$(KUBECONFIG_PATH)"

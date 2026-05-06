@@ -6,8 +6,9 @@ import "github.com/charmbracelet/bubbles/key"
 
 // Map is the set of global key bindings k4s exposes.
 type Map struct {
-	Quit key.Binding
-	Help key.Binding
+	Quit    key.Binding
+	Help    key.Binding
+	Refresh key.Binding
 }
 
 // Default returns the baseline keymap.
@@ -20,6 +21,10 @@ func Default() Map {
 		Help: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "help"),
+		),
+		Refresh: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "refresh"),
 		),
 	}
 }

@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-spammer
+  namespace: k4s-demo
+  labels:
+    app: log-spammer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: log-spammer
+  template:
+    metadata:
+      labels:
+        app: log-spammer
+    spec:
+      containers:
+        - name: spammer
+          image: busybox:1.37
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              i=0
+              while true; do
+                i=$((i+1))
+                echo "[$(date -Iseconds)] $(hostname) tick #$i — multi-log stream test"
+                sleep 1
+              done
+          resources:
+            requests: { cpu: 10m, memory: 8Mi }
+            limits:   { cpu: 50m, memory: 32Mi }

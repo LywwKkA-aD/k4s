@@ -18,4 +18,11 @@ var (
 	Hint     = lipgloss.NewStyle().Foreground(colorMuted).Faint(true)
 	OK       = lipgloss.NewStyle().Foreground(colorSuccess)
 	Warn     = lipgloss.NewStyle().Foreground(colorWarn)
+
+	Stat = lipgloss.NewStyle().
+		Foreground(colorAccent).
+		Bold(true).
+		Padding(0, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorMuted)
 )

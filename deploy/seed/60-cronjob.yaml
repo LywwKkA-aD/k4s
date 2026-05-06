@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: heartbeat
+  namespace: k4s-demo
+spec:
+  schedule: "*/2 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: heartbeat
+              image: busybox:1.37
+              command: ["/bin/sh", "-c"]
+              args:
+                - 'echo "$(date -Iseconds) heartbeat from k4s cronjob"'
+              resources:
+                requests: { cpu: 10m, memory: 8Mi }
+                limits:   { cpu: 50m, memory: 32Mi }
