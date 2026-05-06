@@ -1,0 +1,25 @@
+services:
+  k3s:
+    image: rancher/k3s:v1.31.4-k3s1
+    container_name: k4s-k3s
+    privileged: true
+    restart: unless-stopped
+    command:
+      - server
+      - --tls-san=127.0.0.1
+      - --write-kubeconfig-mode=666
+      - --disable=traefik
+    environment:
+      - K3S_TOKEN=k4s-dev
+      - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+      - K3S_KUBECONFIG_MODE=666
+    ports:
+      - "6443:6443"
+    volumes:
+      - ./.k3s/output:/output
+      - ./.k3s/data:/var/lib/rancher/k3s
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl get nodes >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30

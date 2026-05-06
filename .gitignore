@@ -1,0 +1,27 @@
+# Build artifacts
+/bin/
+/dist/
+/k4s
+
+# Test artifacts
+*.out
+coverage.*
+*.test
+
+# Go
+vendor/
+
+# IDE / editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# k4s local state (k3s data dir + generated kubeconfig)
+.k3s/
+.kube/
