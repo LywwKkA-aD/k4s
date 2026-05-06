@@ -7,7 +7,7 @@ KUBECONFIG_PATH := $(CURDIR)/.kube/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build run test tidy fmt lint vuln ci clean k3s-up k3s-down kubeconfig seed seed-down demo
+.PHONY: help build run test tidy fmt lint vuln ci clean k3s-up k3s-down k3s-clean kubeconfig seed seed-down demo
 
 help: ## show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -53,8 +53,13 @@ k3s-up: ## start local k3s in docker and write .kube/config
 	done
 	@$(MAKE) --no-print-directory kubeconfig
 
-k3s-down: ## stop local k3s
+k3s-down: ## stop local k3s (preserves volume)
 	docker compose down
+
+k3s-clean: ## stop k3s, drop the persistent volume, and forget kubeconfig
+	docker compose down -v
+	rm -rf .k3s .kube
+	@echo "k3s container + volume + local kubeconfig wiped"
 
 kubeconfig: ## rewrite the k3s kubeconfig with localhost server URL
 	@mkdir -p .kube

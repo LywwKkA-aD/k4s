@@ -8,18 +8,42 @@ services:
       - server
       - --tls-san=127.0.0.1
       - --write-kubeconfig-mode=666
+      # traefik / servicelb / metrics-server are heavy and require host-level
+      # cgroups that Docker Desktop's linuxkit VM does not expose. Disabling
+      # them keeps the cluster boot clean for k4s development.
       - --disable=traefik
+      - --disable=servicelb
+      - --disable=metrics-server
     environment:
       - K3S_TOKEN=k4s-dev
       - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
       - K3S_KUBECONFIG_MODE=666
+    # Without tmpfs over /run + /var/run, containerd cannot create its
+    # runtime state and every pod sandbox fails with "proc: read-only file
+    # system". This is the single fix that unblocks the cluster on Docker
+    # Desktop / macOS.
+    tmpfs:
+      - /run
+      - /var/run
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
     ports:
       - "6443:6443"
     volumes:
+      # Named volume — overlayfs (containerd's snapshotter) does not survive
+      # a bind mount on macOS, so the k3s state lives inside Docker.
+      - k3s-server:/var/lib/rancher/k3s
+      # Plain bind for the generated kubeconfig only.
       - ./.k3s/output:/output
-      - ./.k3s/data:/var/lib/rancher/k3s
     healthcheck:
       test: ["CMD-SHELL", "kubectl get nodes >/dev/null 2>&1"]
       interval: 5s
       timeout: 5s
-      retries: 30
+      retries: 60
+
+volumes:
+  k3s-server:
+    name: k4s-k3s-server
