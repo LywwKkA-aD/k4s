@@ -50,6 +50,21 @@ The seed includes:
 - `crash-loop` Pod that intentionally fails — exercises CrashLoopBackOff rendering
 - A demo Secret and a CronJob (every 2 minutes) for read-only browsing
 
+## Quality gate
+
+All linters and security scanners are pinned through the `tool` directive in
+`go.mod` — no global installs needed.
+
+```bash
+make fmt    # auto-format (gofmt + goimports)
+make lint   # golangci-lint v2: errcheck, staticcheck, gosec, revive, gocyclo, ...
+make vuln   # govulncheck — scan deps for known CVEs
+make ci     # vet + lint + test + vuln
+```
+
+`gosec` runs as part of `make lint` and covers hardcoded credentials, weak
+crypto, integer overflows, path traversal and other OWASP-aligned checks.
+
 ## Project layout
 
 ```

@@ -1,4 +1,5 @@
 GO   ?= go
+TOOL := $(GO) tool
 BIN  ?= bin/k4s
 PKGS := ./...
 
@@ -6,7 +7,7 @@ KUBECONFIG_PATH := $(CURDIR)/.kube/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build run test tidy lint clean k3s-up k3s-down kubeconfig seed seed-down demo
+.PHONY: help build run test tidy fmt lint vuln ci clean k3s-up k3s-down kubeconfig seed seed-down demo
 
 help: ## show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -24,9 +25,21 @@ test: ## run tests with race detector and coverage
 tidy: ## sync go.mod / go.sum
 	$(GO) mod tidy
 
-lint: ## run golangci-lint (must be installed)
-	@command -v golangci-lint >/dev/null || { echo "golangci-lint not installed: https://golangci-lint.run"; exit 1; }
-	golangci-lint run $(PKGS)
+fmt: ## auto-format the code (gofmt + goimports via golangci-lint)
+	$(TOOL) golangci-lint fmt
+
+lint: ## run golangci-lint (correctness, security, style)
+	$(TOOL) golangci-lint run $(PKGS)
+
+vuln: ## scan dependencies for known vulnerabilities (govulncheck)
+	$(TOOL) govulncheck $(PKGS)
+
+ci: ## full quality gate: vet + lint + test + vuln
+	$(GO) vet $(PKGS)
+	$(TOOL) golangci-lint run $(PKGS)
+	$(GO) test -race -cover $(PKGS)
+	$(TOOL) govulncheck $(PKGS)
+	@echo "all checks passed"
 
 clean: ## remove build artifacts
 	rm -rf bin

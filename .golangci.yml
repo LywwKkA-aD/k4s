@@ -1,0 +1,61 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - errorlint
+    - copyloopvar
+    - nakedret
+
+    # Security
+    - gosec
+
+    # Style / hygiene
+    - revive
+    - misspell
+    - whitespace
+    - prealloc
+    - unparam
+
+    # Complexity
+    - gocyclo
+
+  settings:
+    gosec:
+      excludes:
+        # G304: file inclusion via variable. We intentionally accept user-supplied
+        # kubeconfig paths in internal/k8s/client.go; the value is supplied by the
+        # operator running the tool, not by an untrusted caller.
+        - G304
+    gocyclo:
+      min-complexity: 15
+    revive:
+      rules:
+        - name: var-naming
+        - name: unexported-return
+        - name: errorf
+        - name: indent-error-flow
+        - name: superfluous-else
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/LywwKkA-aD/k4s
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
