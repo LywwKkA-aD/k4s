@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -33,9 +34,11 @@ type Model struct {
 	namespace string
 	name      string
 
-	viewport viewport.Model
-	err      error
-	loaded   bool
+	viewport     viewport.Model
+	rawContent   string // last-fetched content, kept so we can re-wrap on resize
+	contentWidth int    // width the viewport was last sized to
+	err          error
+	loaded       bool
 
 	refreshKey key.Binding
 }
@@ -94,6 +97,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.viewport.Width = msg.Width
 		m.viewport.Height = max(msg.Height-chromeReserve, minViewportHeight)
+		m.contentWidth = msg.Width
+		// Reflow the cached content for the new width — without this the
+		// viewport keeps the original wrapping and lines clip on shrink.
+		if m.rawContent != "" {
+			m.viewport.SetContent(wrap(m.rawContent, m.contentWidth))
+		}
 	case tea.KeyMsg:
 		if key.Matches(msg, m.refreshKey) && m.client != nil {
 			return m, fetchCmd(m.client, m.kind, m.namespace, m.name)
@@ -102,7 +111,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		m.loaded = true
 		if msg.err == nil {
-			m.viewport.SetContent(msg.content)
+			m.rawContent = msg.content
+			m.viewport.SetContent(wrap(msg.content, m.contentWidth))
 			m.viewport.GotoTop()
 		}
 		return m, nil
@@ -110,6 +120,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+// wrap reflows long lines to the given width using lipgloss's text wrapping.
+// width <= 0 means "don't wrap" (we have not been sized yet).
+func wrap(content string, width int) string {
+	if width <= 0 {
+		return content
+	}
+	return lipgloss.NewStyle().Width(width).Render(content)
 }
 
 // View renders the viewport or a placeholder.

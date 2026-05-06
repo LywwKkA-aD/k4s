@@ -11,6 +11,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// kubectl writes the entire pod spec back as this annotation on every apply,
+// which is huge, multiline JSON. Hide it the same way `kubectl describe` would
+// in spirit — users that actually want it can read the raw object.
+const lastAppliedConfigKey = "kubectl.kubernetes.io/last-applied-configuration"
+
+// maxAnnotationValueLen caps annotation values rendered in the TUI. Anything
+// longer is replaced with the prefix + an ellipsis, since the TUI is the wrong
+// surface for inspecting multi-KB JSON blobs.
+const maxAnnotationValueLen = 200
+
 // DescribePod returns a human-readable description of the given pod, modelled
 // after `kubectl describe pod` but trimmed to the fields k4s users care about.
 func (c *Client) DescribePod(ctx context.Context, namespace, name string) (string, error) {
@@ -39,8 +49,8 @@ func (c *Client) DescribePod(ctx context.Context, namespace, name string) (strin
 		field("QoS Class:", string(pod.Status.QOSClass))
 	}
 
-	writeStringMap(&sb, "Labels", pod.Labels)
-	writeStringMap(&sb, "Annotations", pod.Annotations)
+	writeStringMap(&sb, "Labels", pod.Labels, nil, 0)
+	writeStringMap(&sb, "Annotations", pod.Annotations, []string{lastAppliedConfigKey}, maxAnnotationValueLen)
 
 	sb.WriteString("\nContainers:\n")
 	for i := range pod.Spec.Containers {
@@ -61,23 +71,57 @@ func (c *Client) DescribePod(ctx context.Context, namespace, name string) (strin
 		}
 	}
 
+	// Events are best-effort — a permission failure on the events resource
+	// should not break the whole describe view.
+	writeEvents(ctx, c, &sb, namespace, name)
+
 	return sb.String(), nil
 }
 
-func writeStringMap(w *strings.Builder, label string, m map[string]string) {
-	if len(m) == 0 {
+// writeStringMap renders a string map as a "Label:\n  k=v" block.
+//   - skipKeys are filtered out before rendering (e.g. last-applied-configuration).
+//   - maxValueLen >0 truncates long values; 0 means render in full.
+//   - newlines inside values are replaced with spaces so a single annotation
+//     never spans multiple lines (which broke the layout in the previous run).
+func writeStringMap(w *strings.Builder, label string, m map[string]string, skipKeys []string, maxValueLen int) {
+	skip := make(map[string]bool, len(skipKeys))
+	for _, k := range skipKeys {
+		skip[k] = true
+	}
+
+	// Filter first so the "<none>" branch fires when *visible* keys are empty.
+	visible := make(map[string]string, len(m))
+	for k, v := range m {
+		if skip[k] {
+			continue
+		}
+		visible[k] = v
+	}
+
+	if len(visible) == 0 {
 		fmt.Fprintf(w, "%-13s <none>\n", label+":")
 		return
 	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
+	keys := make([]string, 0, len(visible))
+	for k := range visible {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	fmt.Fprintf(w, "%s:\n", label)
 	for _, k := range keys {
-		fmt.Fprintf(w, "  %s=%s\n", k, m[k])
+		v := strings.ReplaceAll(visible[k], "\n", " ")
+		if maxValueLen > 0 {
+			v = truncateString(v, maxValueLen)
+		}
+		fmt.Fprintf(w, "  %s=%s\n", k, v)
 	}
+}
+
+func truncateString(s string, maxLen int) string {
+	if maxLen <= 1 || len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-1] + "…"
 }
 
 func writeContainer(w *strings.Builder, c *corev1.Container, status *corev1.ContainerStatus) {
@@ -137,6 +181,52 @@ func writeVolume(w *strings.Builder, v corev1.Volume) {
 	default:
 		fmt.Fprintln(w, "    type:  (other)")
 	}
+}
+
+// writeEvents queries Events in the pod's namespace and renders the ones whose
+// involvedObject is the pod, most recent first. Filtering is done client-side
+// because the fake clientset does not honour FieldSelector and we want the
+// production and test code paths to behave identically.
+func writeEvents(ctx context.Context, c *Client, w *strings.Builder, namespace, name string) {
+	list, err := c.Clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return
+	}
+	mine := make([]corev1.Event, 0)
+	for _, e := range list.Items {
+		if e.InvolvedObject.Kind == "Pod" && e.InvolvedObject.Name == name {
+			mine = append(mine, e)
+		}
+	}
+	if len(mine) == 0 {
+		return
+	}
+	sort.Slice(mine, func(i, j int) bool {
+		return eventTime(mine[i]).After(eventTime(mine[j]))
+	})
+
+	w.WriteString("\nEvents:\n")
+	fmt.Fprintf(w, "  %-8s %-22s %-8s %s\n", "TYPE", "REASON", "AGE", "MESSAGE")
+	for _, e := range mine {
+		age := "?"
+		if t := eventTime(e); !t.IsZero() {
+			age = HumanizeDuration(time.Since(t))
+		}
+		msg := strings.ReplaceAll(e.Message, "\n", " ")
+		fmt.Fprintf(w, "  %-8s %-22s %-8s %s\n", e.Type, e.Reason, age, msg)
+	}
+}
+
+// eventTime picks the most informative timestamp Kubernetes recorded for the
+// event. New-style events use EventTime; classic events use LastTimestamp.
+func eventTime(e corev1.Event) time.Time {
+	if !e.LastTimestamp.IsZero() {
+		return e.LastTimestamp.Time
+	}
+	if !e.EventTime.IsZero() {
+		return e.EventTime.Time
+	}
+	return e.FirstTimestamp.Time
 }
 
 func containerStateString(s corev1.ContainerState) string {
