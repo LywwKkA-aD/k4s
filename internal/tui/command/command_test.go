@@ -27,6 +27,8 @@ func TestResolveCanonicalAndAliases(t *testing.T) {
 		{"contexts", "contexts", true},
 		{"ctx", "contexts", true},
 		{"context", "contexts", true},
+		{"top", "top", true},
+		{"metrics", "top", true},
 		{"foobar", "", false},
 		{"", "", false},
 	}
@@ -50,6 +52,7 @@ func TestAllReturnsEveryCanonical(t *testing.T) {
 		"deployments": true,
 		"services":    true,
 		"contexts":    true,
+		"top":         true,
 	}
 	if len(all) != len(want) {
 		t.Fatalf("All() = %v; want %d commands", all, len(want))
