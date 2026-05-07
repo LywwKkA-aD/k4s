@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -254,5 +255,77 @@ func TestDescribePodIncludesEvents(t *testing.T) {
 	pulledIdx := strings.Index(out, "Pulled")
 	if backOffIdx == -1 || pulledIdx == -1 || backOffIdx >= pulledIdx {
 		t.Errorf("events should be sorted newest first; backoff=%d pulled=%d:\n%s", backOffIdx, pulledIdx, out)
+	}
+}
+
+func TestDescribeDeploymentRendersHeaderReplicasTemplateAndEvents(t *testing.T) {
+	t.Parallel()
+
+	desired := int32(3)
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "nginx",
+			Namespace:         "demo",
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-10 * time.Minute)),
+			Labels:            map[string]string{"app": "nginx"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &desired,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx"}},
+			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "nginx", "tier": "front"}},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "nginx", Image: "nginx:1.27-alpine"},
+					},
+				},
+			},
+		},
+		Status: appsv1.DeploymentStatus{
+			Replicas:          3,
+			ReadyReplicas:     2,
+			UpdatedReplicas:   3,
+			AvailableReplicas: 2,
+			Conditions: []appsv1.DeploymentCondition{
+				{Type: appsv1.DeploymentAvailable, Status: corev1.ConditionTrue, Reason: "MinimumReplicasAvailable"},
+			},
+		},
+	}
+	scaledEvent := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "nginx.scaled", Namespace: "demo"},
+		InvolvedObject: corev1.ObjectReference{Kind: "Deployment", Name: "nginx", Namespace: "demo"},
+		Type:           "Normal",
+		Reason:         "ScalingReplicaSet",
+		Message:        "Scaled up replica set nginx-7d to 3",
+		LastTimestamp:  metav1.Now(),
+	}
+
+	c := &Client{
+		Clientset: fake.NewSimpleClientset(runtime.Object(dep), runtime.Object(scaledEvent)),
+		Context:   "test",
+	}
+
+	out, err := c.DescribeDeployment(context.Background(), "demo", "nginx")
+	if err != nil {
+		t.Fatalf("DescribeDeployment: %v", err)
+	}
+
+	mustContain := []string{
+		"Name:", "nginx",
+		"Namespace:", "demo",
+		"Selector:", "app=nginx",
+		"Strategy:", "RollingUpdate",
+		"Replicas:", "3 desired", "2 ready", "3 updated", "2 available",
+		"Pod Template:",
+		"Labels: app=nginx, tier=front",
+		"Containers:", "nginx:1.27-alpine",
+		"Conditions:", "MinimumReplicasAvailable",
+		"Events:", "ScalingReplicaSet", "Scaled up replica set",
+	}
+	for _, frag := range mustContain {
+		if !strings.Contains(out, frag) {
+			t.Errorf("describe output missing %q\n---\n%s\n---", frag, out)
+		}
 	}
 }

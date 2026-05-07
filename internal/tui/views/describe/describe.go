@@ -23,8 +23,11 @@ const (
 // Kind enumerates the resources the describe view supports.
 type Kind string
 
-// KindPod is the only kind in the MVP; deployment / service follow.
-const KindPod Kind = "pod"
+// Supported kinds.
+const (
+	KindPod        Kind = "pod"
+	KindDeployment Kind = "deployment"
+)
 
 // Model is the describe view (scrollable text).
 type Model struct {
@@ -90,6 +93,8 @@ func fetchCmd(c *k8s.Client, kind Kind, ns, name string) tea.Cmd {
 		switch kind {
 		case KindPod:
 			content, err = c.DescribePod(ctx, ns, name)
+		case KindDeployment:
+			content, err = c.DescribeDeployment(ctx, ns, name)
 		default:
 			err = fmt.Errorf("unsupported kind: %s", kind)
 		}

@@ -17,6 +17,10 @@ func TestResolveCanonicalAndAliases(t *testing.T) {
 		{"namespaces", "namespaces", true},
 		{"home", "dashboard", true},
 		{"dashboard", "dashboard", true},
+		{"deployments", "deployments", true},
+		{"deploy", "deployments", true},
+		{"dp", "deployments", true},
+		{"DP", "deployments", true},
 		{"foobar", "", false},
 		{"", "", false},
 	}
@@ -33,7 +37,12 @@ func TestAllReturnsEveryCanonical(t *testing.T) {
 	t.Parallel()
 
 	all := All()
-	want := map[string]bool{"dashboard": true, "pods": true, "namespaces": true}
+	want := map[string]bool{
+		"dashboard":   true,
+		"pods":        true,
+		"namespaces":  true,
+		"deployments": true,
+	}
 	if len(all) != len(want) {
 		t.Fatalf("All() = %v; want %d commands", all, len(want))
 	}

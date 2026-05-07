@@ -73,9 +73,92 @@ func (c *Client) DescribePod(ctx context.Context, namespace, name string) (strin
 
 	// Events are best-effort — a permission failure on the events resource
 	// should not break the whole describe view.
-	writeEvents(ctx, c, &sb, namespace, name)
+	writeEvents(ctx, c, &sb, namespace, "Pod", name)
 
 	return sb.String(), nil
+}
+
+// DescribeDeployment is the kubectl-describe equivalent for a Deployment.
+// Reuses the helpers (writeStringMap, writeContainer, writeEvents) that the
+// pod-describe path defines, so the visual format stays consistent.
+func (c *Client) DescribeDeployment(ctx context.Context, namespace, name string) (string, error) {
+	dep, err := c.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("get deployment: %w", err)
+	}
+
+	var sb strings.Builder
+	field := func(label, value string) { fmt.Fprintf(&sb, "%-13s %s\n", label, value) }
+
+	field("Name:", dep.Name)
+	field("Namespace:", dep.Namespace)
+	if !dep.CreationTimestamp.IsZero() {
+		field("Age:", HumanizeDuration(time.Since(dep.CreationTimestamp.Time)))
+		field("Created:", dep.CreationTimestamp.Format(time.RFC3339))
+	}
+	if dep.Spec.Selector != nil {
+		sel, err := metav1.LabelSelectorAsSelector(dep.Spec.Selector)
+		if err == nil {
+			field("Selector:", sel.String())
+		}
+	}
+	field("Strategy:", string(dep.Spec.Strategy.Type))
+
+	desired := int32(0)
+	if dep.Spec.Replicas != nil {
+		desired = *dep.Spec.Replicas
+	}
+	field("Replicas:", fmt.Sprintf(
+		"%d desired · %d current · %d ready · %d updated · %d available",
+		desired,
+		dep.Status.Replicas,
+		dep.Status.ReadyReplicas,
+		dep.Status.UpdatedReplicas,
+		dep.Status.AvailableReplicas,
+	))
+
+	writeStringMap(&sb, "Labels", dep.Labels, nil, 0)
+	writeStringMap(&sb, "Annotations", dep.Annotations, []string{lastAppliedConfigKey}, maxAnnotationValueLen)
+
+	sb.WriteString("\nPod Template:\n")
+	if labels := dep.Spec.Template.Labels; len(labels) > 0 {
+		fmt.Fprintf(&sb, "  Labels: %s\n", inlineLabels(labels))
+	}
+	sb.WriteString("  Containers:\n")
+	for i := range dep.Spec.Template.Spec.Containers {
+		writeContainer(&sb, &dep.Spec.Template.Spec.Containers[i], nil)
+	}
+
+	if len(dep.Status.Conditions) > 0 {
+		sb.WriteString("\nConditions:\n")
+		for _, cnd := range dep.Status.Conditions {
+			reason := cnd.Reason
+			if reason == "" {
+				reason = "—"
+			}
+			fmt.Fprintf(&sb, "  %-20s %s · %s\n", cnd.Type, cnd.Status, reason)
+		}
+	}
+
+	writeEvents(ctx, c, &sb, namespace, "Deployment", name)
+
+	return sb.String(), nil
+}
+
+// inlineLabels formats a label map as "k1=v1, k2=v2" with sorted keys, for
+// places where a single-line summary is more useful than the indented
+// "Labels:\n  k=v" block writeStringMap produces.
+func inlineLabels(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, 0, len(keys))
+	for _, k := range keys {
+		pairs = append(pairs, k+"="+m[k])
+	}
+	return strings.Join(pairs, ", ")
 }
 
 // writeStringMap renders a string map as a "Label:\n  k=v" block.
@@ -183,18 +266,18 @@ func writeVolume(w *strings.Builder, v corev1.Volume) {
 	}
 }
 
-// writeEvents queries Events in the pod's namespace and renders the ones whose
-// involvedObject is the pod, most recent first. Filtering is done client-side
-// because the fake clientset does not honour FieldSelector and we want the
-// production and test code paths to behave identically.
-func writeEvents(ctx context.Context, c *Client, w *strings.Builder, namespace, name string) {
+// writeEvents queries Events in the namespace and renders the ones whose
+// involvedObject matches (kind, name), most recent first. Filtering is done
+// client-side because the fake clientset does not honour FieldSelector and
+// we want the production and test code paths to behave identically.
+func writeEvents(ctx context.Context, c *Client, w *strings.Builder, namespace, kind, name string) {
 	list, err := c.Clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return
 	}
 	mine := make([]corev1.Event, 0)
 	for _, e := range list.Items {
-		if e.InvolvedObject.Kind == "Pod" && e.InvolvedObject.Name == name {
+		if e.InvolvedObject.Kind == kind && e.InvolvedObject.Name == name {
 			mine = append(mine, e)
 		}
 	}
