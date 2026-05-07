@@ -18,6 +18,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views/contexts"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/deployments"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
@@ -34,6 +35,7 @@ const (
 	viewNamespaces  = "namespaces"
 	viewDeployments = "deployments"
 	viewServices    = "services"
+	viewContexts    = "contexts"
 )
 
 // cmdBarMode tracks what the bottom input bar is currently being used for.
@@ -132,6 +134,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onRelayout()
 	case views.NamespaceSelectedMsg:
 		return m.onNamespaceSelected(msg)
+	case views.ContextSelectedMsg:
+		return m.onContextSelected(msg)
 	case views.DescribeRequestMsg:
 		return m.onDescribeRequest(msg)
 	case views.TailPromptRequestMsg:
@@ -166,6 +170,29 @@ func (m Model) onRelayout() (tea.Model, tea.Cmd) {
 	}
 	bodyMsg := tea.WindowSizeMsg{Width: m.width, Height: m.bodyHeight()}
 	return m.forwardToView(bodyMsg)
+}
+
+// onContextSelected swaps the active k8s.Client to the chosen context. We
+// drop the navigation history (its entries reference resources that may not
+// exist in the new cluster) and the active namespace (likewise) and land
+// the user back on the dashboard. Failures surface in the command-bar
+// error line so the user gets feedback without losing their place — the
+// previous client stays active.
+func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.Cmd) {
+	client, err := k8s.LoadFromKubeconfigContext("", msg.Name)
+	if err != nil {
+		m.cmdError = "context: " + err.Error()
+		return m, nil
+	}
+	if m.current != nil {
+		_ = m.current.Close()
+	}
+	m.client = client
+	m.namespace = ""
+	m.history = nil
+	m.cmdError = ""
+	m.current = dashboard.New(m.client)
+	return m, m.relayoutCmd()
 }
 
 func (m Model) onNamespaceSelected(msg views.NamespaceSelectedMsg) (tea.Model, tea.Cmd) {
@@ -506,8 +533,20 @@ func (m Model) replaceView(name string) Model {
 		return m.swap(services.New(m.client, m.namespace))
 	case viewDashboard:
 		return m.swap(dashboard.New(m.client))
+	case viewContexts:
+		return m.swap(contexts.New(currentContextName(m.client)))
 	}
 	return m
+}
+
+// currentContextName is a small helper so the contexts view can render the
+// "★ current" marker without us reaching into k8s.Client at the call site
+// (and gracefully handling the nil-client case before kubeconfig is loaded).
+func currentContextName(c *k8s.Client) string {
+	if c == nil {
+		return ""
+	}
+	return c.Context
 }
 
 // swap closes the outgoing view (so its goroutines / streams are stopped)

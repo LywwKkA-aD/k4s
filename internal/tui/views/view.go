@@ -42,6 +42,15 @@ type NamespaceSelectedMsg struct {
 	Namespace string
 }
 
+// ContextSelectedMsg is emitted by the contexts view when the user picks a
+// kubeconfig context. The root model rebuilds k8s.Client against that
+// context, drops navigation history (it referenced resources that may not
+// exist in the new cluster), resets the active namespace and lands the
+// user on the dashboard.
+type ContextSelectedMsg struct {
+	Name string
+}
+
 // DescribeRequestMsg is emitted when a list view (pods, deployments, ...) wants
 // to open a describe screen for the resource currently under the cursor.
 type DescribeRequestMsg struct {
