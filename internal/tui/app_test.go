@@ -171,3 +171,40 @@ func TestSwitchToSamePageDoesNotPushHistory(t *testing.T) {
 		t.Errorf("switchTo on same view pushed history: %+v", m.history)
 	}
 }
+
+// TestHelpPopupOpensAndCloses asserts '?' opens the help mode and the next
+// key — any key — closes it again. The popup blocks key forwarding to the
+// active view, so the dashboard underneath stays untouched.
+func TestHelpPopupOpensAndCloses(t *testing.T) {
+	t.Parallel()
+
+	m := New(nil)
+	upd, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = upd.(Model)
+
+	upd, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = upd.(Model)
+	if m.cmdMode != cmdBarHelp {
+		t.Fatalf("cmdMode after '?' = %v, want cmdBarHelp", m.cmdMode)
+	}
+
+	out := m.View()
+	if !contains(out, "help") {
+		t.Errorf("help popup should render the title 'help'; got:\n%s", out)
+	}
+
+	upd, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = upd.(Model)
+	if m.cmdMode != cmdBarOff {
+		t.Fatalf("cmdMode after Esc = %v, want cmdBarOff", m.cmdMode)
+	}
+}
+
+func contains(haystack, needle string) bool {
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if haystack[i:i+len(needle)] == needle {
+			return true
+		}
+	}
+	return false
+}

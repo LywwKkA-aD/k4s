@@ -46,6 +46,7 @@ const (
 	cmdBarCommand
 	cmdBarTailPrompt
 	cmdBarContainerPrompt
+	cmdBarHelp
 )
 
 // relayoutMsg is an internal signal that says "re-send the current view a
@@ -277,6 +278,9 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cmdBar.SetValue("")
 		m.cmdBar.Focus()
 		return m, textinput.Blink
+	case key.Matches(msg, m.keys.Help):
+		m.cmdMode = cmdBarHelp
+		return m, nil
 	case key.Matches(msg, m.keys.Back):
 		if next, ok := m.popHistory(); ok {
 			return next, next.relayoutCmd()
@@ -327,9 +331,12 @@ func (m Model) bodyHeight() int {
 }
 
 // handleCmdBar dispatches based on the prompt mode. Container picker is a
-// list and has its own keymap; everything else (command, tail) shares the
-// textinput-driven path.
+// list and has its own keymap; help is a static popup that closes on any
+// key; everything else (command, tail) shares the textinput-driven path.
 func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.cmdMode == cmdBarHelp {
+		return m.closeCmdBar(), nil
+	}
 	if m.cmdMode == cmdBarContainerPrompt {
 		return m.handleContainerPickerKey(msg)
 	}
@@ -537,7 +544,7 @@ func (m Model) View() string {
 	bodyWidth := max(m.width, 0)
 
 	content := m.current.View()
-	if m.cmdMode == cmdBarTailPrompt || m.cmdMode == cmdBarContainerPrompt {
+	if m.cmdMode == cmdBarTailPrompt || m.cmdMode == cmdBarContainerPrompt || m.cmdMode == cmdBarHelp {
 		content = m.renderPromptPopup(bodyWidth, bodyHeight)
 	}
 
@@ -566,6 +573,8 @@ func (m Model) renderPromptPopup(width, height int) string {
 		)
 	case cmdBarContainerPrompt:
 		inner = m.renderContainerPickerInner()
+	case cmdBarHelp:
+		inner = m.renderHelpPopupInner()
 	default:
 		return ""
 	}
@@ -644,7 +653,7 @@ func (m Model) footerBindings() []string {
 	if m.current.Title() != viewDashboard {
 		quitLabel = "q home"
 	}
-	bindings := []string{quitLabel, "^c quit", "esc back", ": command"}
+	bindings := []string{quitLabel, "^c quit", "esc back", ": command", "? help"}
 	for _, b := range m.current.Help() {
 		h := b.Help()
 		if h.Key != "" && h.Desc != "" {

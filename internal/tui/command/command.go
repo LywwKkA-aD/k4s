@@ -25,6 +25,25 @@ func All() []string {
 	return out
 }
 
+// Aliases returns the comma-separated list of alternate spellings for the
+// canonical command name (excluding the canonical itself). Empty when the
+// canonical has no extra aliases or is unknown.
+func Aliases(canonical string) string {
+	for _, c := range commands {
+		if c.canonical != canonical {
+			continue
+		}
+		extras := make([]string, 0, len(c.aliases))
+		for _, a := range c.aliases {
+			if a != canonical {
+				extras = append(extras, a)
+			}
+		}
+		return strings.Join(extras, ", ")
+	}
+	return ""
+}
+
 type entry struct {
 	canonical string
 	aliases   []string

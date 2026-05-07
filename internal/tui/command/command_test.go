@@ -56,3 +56,62 @@ func TestAllReturnsEveryCanonical(t *testing.T) {
 		}
 	}
 }
+
+func TestAliasesExcludesCanonical(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		canonical string
+		mustHave  []string
+		mustNot   string // canonical name must not appear in its own alias list
+	}{
+		{canonical: "pods", mustHave: []string{"po", "pod"}, mustNot: "pods"},
+		{canonical: "namespaces", mustHave: []string{"ns"}, mustNot: "namespaces"},
+		{canonical: "dashboard", mustHave: []string{"home"}, mustNot: "dashboard"},
+		{canonical: "deployments", mustHave: []string{"deploy", "deployment", "dp"}, mustNot: "deployments"},
+		{canonical: "services", mustHave: []string{"svc", "service"}, mustNot: "services"},
+		{canonical: "unknown", mustHave: nil, mustNot: ""},
+	}
+	for _, tc := range cases {
+		got := Aliases(tc.canonical)
+		for _, alias := range tc.mustHave {
+			if !contains(got, alias) {
+				t.Errorf("Aliases(%q) = %q; want to contain %q", tc.canonical, got, alias)
+			}
+		}
+		if tc.mustNot != "" && contains(got, tc.mustNot) {
+			t.Errorf("Aliases(%q) = %q; must not contain canonical %q", tc.canonical, got, tc.mustNot)
+		}
+	}
+}
+
+func contains(haystack, needle string) bool {
+	for _, p := range splitAndTrim(haystack) {
+		if p == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func splitAndTrim(s string) []string {
+	out := []string{}
+	current := ""
+	for _, r := range s {
+		switch r {
+		case ',':
+			if current != "" {
+				out = append(out, current)
+				current = ""
+			}
+		case ' ':
+			// skip whitespace between tokens
+		default:
+			current += string(r)
+		}
+	}
+	if current != "" {
+		out = append(out, current)
+	}
+	return out
+}
