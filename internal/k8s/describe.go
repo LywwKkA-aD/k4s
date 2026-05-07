@@ -161,6 +161,74 @@ func inlineLabels(m map[string]string) string {
 	return strings.Join(pairs, ", ")
 }
 
+// DescribeService is the kubectl-describe equivalent for a Service. We do
+// not list endpoints in the MVP — that needs a second API call against the
+// Endpoints/EndpointSlices resource and is rarely the first thing you want
+// from a TUI.
+func (c *Client) DescribeService(ctx context.Context, namespace, name string) (string, error) {
+	svc, err := c.Clientset.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("get service: %w", err)
+	}
+
+	var sb strings.Builder
+	field := func(label, value string) { fmt.Fprintf(&sb, "%-17s %s\n", label, value) }
+
+	field("Name:", svc.Name)
+	field("Namespace:", svc.Namespace)
+	if !svc.CreationTimestamp.IsZero() {
+		field("Age:", HumanizeDuration(time.Since(svc.CreationTimestamp.Time)))
+		field("Created:", svc.CreationTimestamp.Format(time.RFC3339))
+	}
+	field("Type:", string(svc.Spec.Type))
+	field("Cluster IP:", serviceClusterIP(svc))
+	if ext := serviceExternalIP(svc); ext != "<none>" {
+		field("External IP:", ext)
+	}
+	if len(svc.Spec.Selector) > 0 {
+		field("Selector:", inlineLabels(svc.Spec.Selector))
+	} else {
+		field("Selector:", "<none>")
+	}
+	if svc.Spec.SessionAffinity != "" {
+		field("Session Affinity:", string(svc.Spec.SessionAffinity))
+	}
+
+	writeStringMap(&sb, "Labels", svc.Labels, nil, 0)
+	writeStringMap(&sb, "Annotations", svc.Annotations, []string{lastAppliedConfigKey}, maxAnnotationValueLen)
+
+	if len(svc.Spec.Ports) > 0 {
+		sb.WriteString("\nPorts:\n")
+		for _, p := range svc.Spec.Ports {
+			proto := p.Protocol
+			if proto == "" {
+				proto = corev1.ProtocolTCP
+			}
+			line := fmt.Sprintf("  %s  %d/%s", portName(p), p.Port, proto)
+			if p.TargetPort.IntVal != 0 || p.TargetPort.StrVal != "" {
+				line += fmt.Sprintf(" → %s", p.TargetPort.String())
+			}
+			if p.NodePort > 0 {
+				line += fmt.Sprintf(" (NodePort %d)", p.NodePort)
+			}
+			fmt.Fprintln(&sb, line)
+		}
+	}
+
+	writeEvents(ctx, c, &sb, namespace, "Service", name)
+
+	return sb.String(), nil
+}
+
+// portName returns either the named port or "<unnamed>" so the describe
+// table column always has something concrete in it.
+func portName(p corev1.ServicePort) string {
+	if p.Name == "" {
+		return "<unnamed>"
+	}
+	return p.Name
+}
+
 // writeStringMap renders a string map as a "Label:\n  k=v" block.
 //   - skipKeys are filtered out before rendering (e.g. last-applied-configuration).
 //   - maxValueLen >0 truncates long values; 0 means render in full.

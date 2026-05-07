@@ -23,6 +23,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/logs"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/namespaces"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/pods"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views/services"
 )
 
 // View names used both for routing and for history entries.
@@ -31,6 +32,7 @@ const (
 	viewPods        = "pods"
 	viewNamespaces  = "namespaces"
 	viewDeployments = "deployments"
+	viewServices    = "services"
 )
 
 // cmdBarMode tracks what the bottom input bar is currently being used for.
@@ -336,6 +338,8 @@ func (m Model) replaceView(name string) Model {
 		return m.swap(namespaces.New(m.client))
 	case viewDeployments:
 		return m.swap(deployments.New(m.client, m.namespace))
+	case viewServices:
+		return m.swap(services.New(m.client, m.namespace))
 	case viewDashboard:
 		return m.swap(dashboard.New(m.client))
 	}

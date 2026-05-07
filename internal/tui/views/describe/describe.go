@@ -27,6 +27,7 @@ type Kind string
 const (
 	KindPod        Kind = "pod"
 	KindDeployment Kind = "deployment"
+	KindService    Kind = "service"
 )
 
 // Model is the describe view (scrollable text).
@@ -95,6 +96,8 @@ func fetchCmd(c *k8s.Client, kind Kind, ns, name string) tea.Cmd {
 			content, err = c.DescribePod(ctx, ns, name)
 		case KindDeployment:
 			content, err = c.DescribeDeployment(ctx, ns, name)
+		case KindService:
+			content, err = c.DescribeService(ctx, ns, name)
 		default:
 			err = fmt.Errorf("unsupported kind: %s", kind)
 		}

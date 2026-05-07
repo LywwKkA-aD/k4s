@@ -329,3 +329,58 @@ func TestDescribeDeploymentRendersHeaderReplicasTemplateAndEvents(t *testing.T) 
 		}
 	}
 }
+
+func TestDescribeServiceRendersTypeIPsPortsSelectorEvents(t *testing.T) {
+	t.Parallel()
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "nginx",
+			Namespace:         "demo",
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-time.Hour)),
+			Labels:            map[string]string{"app": "nginx"},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:            corev1.ServiceTypeNodePort,
+			ClusterIP:       "10.0.0.5",
+			Selector:        map[string]string{"app": "nginx"},
+			SessionAffinity: corev1.ServiceAffinityNone,
+			Ports: []corev1.ServicePort{
+				{Name: "http", Port: 80, NodePort: 31000, Protocol: corev1.ProtocolTCP},
+			},
+		},
+	}
+	event := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "nginx.up", Namespace: "demo"},
+		InvolvedObject: corev1.ObjectReference{Kind: "Service", Name: "nginx", Namespace: "demo"},
+		Type:           "Normal",
+		Reason:         "EnsuringLoadBalancer",
+		Message:        "Ensuring load balancer",
+		LastTimestamp:  metav1.Now(),
+	}
+
+	c := &Client{Clientset: fake.NewSimpleClientset(runtime.Object(svc), runtime.Object(event)), Context: "test"}
+
+	out, err := c.DescribeService(context.Background(), "demo", "nginx")
+	if err != nil {
+		t.Fatalf("DescribeService: %v", err)
+	}
+
+	mustContain := []string{
+		"Name:", "nginx",
+		"Namespace:", "demo",
+		"Type:", "NodePort",
+		"Cluster IP:", "10.0.0.5",
+		"Selector:", "app=nginx",
+		"Session Affinity:", "None",
+		"Ports:",
+		"http", "80/TCP",
+		"NodePort 31000",
+		"Events:", "EnsuringLoadBalancer", "Ensuring load balancer",
+	}
+	for _, frag := range mustContain {
+		if !strings.Contains(out, frag) {
+			t.Errorf("service describe output missing %q\n---\n%s\n---", frag, out)
+		}
+	}
+}
