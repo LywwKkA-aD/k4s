@@ -38,15 +38,26 @@ type NamespaceSelectedMsg struct {
 // DescribeRequestMsg is emitted when a list view (pods, deployments, ...) wants
 // to open a describe screen for the resource currently under the cursor.
 type DescribeRequestMsg struct {
-	Kind      string // "pod", future: "deployment", "service", ...
+	Kind      string
 	Namespace string
 	Name      string
 }
 
-// LogsRequestMsg is emitted when a list view wants to open a streaming logs
-// view for one or more pods. Multiple pods are supported so a future
-// deployments view can ask for "tail every replica" in one shot.
+// TailPromptRequestMsg asks the root model to open the tail-lines prompt for
+// the given pods. The user picks a number, the root then dispatches a
+// LogsRequestMsg with that Tail. The two-step dance keeps prompt UI
+// (textinput, focus, blink) centralised in the root rather than duplicated
+// across every list view that wants to ask "tail how many?".
+type TailPromptRequestMsg struct {
+	Namespace string
+	Pods      []string
+}
+
+// LogsRequestMsg is emitted (typically by the root model after the tail
+// prompt) to open the streaming logs view. Multiple pods are supported so a
+// future deployments view can ask for "tail every replica" in one shot.
 type LogsRequestMsg struct {
 	Namespace string
 	Pods      []string
+	Tail      int64
 }

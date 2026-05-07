@@ -122,7 +122,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if row != nil {
 				ns, name := podCoords(row, m.namespace)
 				return m, func() tea.Msg {
-					return views.LogsRequestMsg{Namespace: ns, Pods: []string{name}}
+					// Ask the root to prompt for tail; it will dispatch
+					// LogsRequestMsg once the user submits a value.
+					return views.TailPromptRequestMsg{Namespace: ns, Pods: []string{name}}
 				}
 			}
 		}

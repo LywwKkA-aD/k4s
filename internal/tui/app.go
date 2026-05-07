@@ -4,6 +4,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -28,6 +29,17 @@ const (
 	viewDashboard  = "dashboard"
 	viewPods       = "pods"
 	viewNamespaces = "namespaces"
+)
+
+// cmdBarMode tracks what the bottom input bar is currently being used for.
+// "command" is the colon-driven view router; "tail" is the tail-lines prompt
+// that opens before the logs view.
+type cmdBarMode int
+
+const (
+	cmdBarOff cmdBarMode = iota
+	cmdBarCommand
+	cmdBarTailPrompt
 )
 
 // relayoutMsg is an internal signal that says "re-send the current view a
@@ -58,16 +70,19 @@ type Model struct {
 	current   views.View
 	history   []historyEntry
 
-	cmdBar     textinput.Model
-	cmdBarOpen bool
-	cmdError   string
+	cmdBar   textinput.Model
+	cmdMode  cmdBarMode
+	cmdError string
+
+	// pendingTail* hold the parameters for a tail prompt currently in flight.
+	// Cleared once the user submits or cancels.
+	pendingTailNamespace string
+	pendingTailPods      []string
 }
 
 // New constructs the root model with the dashboard as the landing screen.
 func New(client *k8s.Client) Model {
 	ti := textinput.New()
-	ti.Prompt = ": "
-	ti.Placeholder = "pods, ns, dashboard"
 	ti.CharLimit = 64
 	ti.Width = 40
 
@@ -96,6 +111,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onNamespaceSelected(msg)
 	case views.DescribeRequestMsg:
 		return m.onDescribeRequest(msg)
+	case views.TailPromptRequestMsg:
+		return m.onTailPromptRequest(msg)
 	case views.LogsRequestMsg:
 		return m.onLogsRequest(msg)
 	case tea.KeyMsg:
@@ -107,16 +124,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) onWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
-	// Forward a body-sized WindowSizeMsg so views fill the space between
-	// header and footer without re-implementing the chrome math.
 	bodyMsg := tea.WindowSizeMsg{Width: msg.Width, Height: m.bodyHeight()}
 	return m.forwardToView(bodyMsg)
 }
 
 func (m Model) onRelayout() (tea.Model, tea.Cmd) {
-	// Re-size only — never touch m.height/m.width, otherwise we'd shrink
-	// m.height by chrome on every view switch (regression: footer climbing
-	// up the screen).
 	if m.width == 0 || m.height == 0 {
 		return m, nil
 	}
@@ -143,21 +155,35 @@ func (m Model) onDescribeRequest(msg views.DescribeRequestMsg) (tea.Model, tea.C
 	return m, m.relayoutCmd()
 }
 
+// onTailPromptRequest opens the tail-lines prompt prefilled with 100. When
+// the user submits, handleCmdBar dispatches a LogsRequestMsg with the parsed
+// number; the actual logs view is created in onLogsRequest.
+func (m Model) onTailPromptRequest(msg views.TailPromptRequestMsg) (tea.Model, tea.Cmd) {
+	m.cmdMode = cmdBarTailPrompt
+	m.pendingTailNamespace = msg.Namespace
+	m.pendingTailPods = msg.Pods
+	m.cmdBar.Prompt = "tail lines: "
+	m.cmdBar.Placeholder = "100"
+	m.cmdBar.SetValue("100")
+	m.cmdBar.CursorEnd()
+	m.cmdBar.Focus()
+	return m, textinput.Blink
+}
+
 func (m Model) onLogsRequest(msg views.LogsRequestMsg) (tea.Model, tea.Cmd) {
 	m.history = append(m.history, historyEntry{
 		view:      m.current.Title(),
 		namespace: m.namespace,
 	})
-	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods))
+	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods, msg.Tail))
 	return m, m.relayoutCmd()
 }
 
 func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// ctrl+c is the always-quit escape hatch — even inside the cmd bar.
 	if msg.Type == tea.KeyCtrlC {
 		return m, tea.Quit
 	}
-	if m.cmdBarOpen {
+	if m.cmdMode != cmdBarOff {
 		return m.handleCmdBar(msg)
 	}
 	switch {
@@ -168,8 +194,11 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		next := m.goHome()
 		return next, next.relayoutCmd()
 	case key.Matches(msg, m.keys.Command):
-		m.cmdBarOpen = true
+		m.cmdMode = cmdBarCommand
 		m.cmdError = ""
+		m.cmdBar.Prompt = ": "
+		m.cmdBar.Placeholder = "pods, ns, dashboard"
+		m.cmdBar.SetValue("")
 		m.cmdBar.Focus()
 		return m, textinput.Blink
 	case key.Matches(msg, m.keys.Back):
@@ -210,8 +239,7 @@ func (m Model) relayoutCmd() tea.Cmd {
 
 // bodyHeight returns the number of lines available between header and footer,
 // computed from the *current* chrome so we match whatever lipgloss actually
-// rendered (header / footer have variable height depending on padding +
-// command bar state + kubectl hint presence).
+// rendered.
 func (m Model) bodyHeight() int {
 	hh := lipgloss.Height(m.renderHeader())
 	fh := lipgloss.Height(m.renderFooter())
@@ -222,23 +250,57 @@ func (m Model) bodyHeight() int {
 	return h
 }
 
+// handleCmdBar routes input while the prompt bar is active. Esc cancels,
+// Enter dispatches based on the current cmdMode, anything else is forwarded
+// to the textinput.
 func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
-		m.cmdBarOpen = false
-		m.cmdBar.Reset()
-		m.cmdBar.Blur()
-		return m, nil
+		return m.closeCmdBar(), nil
 	case tea.KeyEnter:
-		input := m.cmdBar.Value()
-		m.cmdBarOpen = false
-		m.cmdBar.Reset()
-		m.cmdBar.Blur()
-		return m.execCmd(input)
+		value := m.cmdBar.Value()
+		mode := m.cmdMode
+		// Snapshot the pending-tail context BEFORE closeCmdBar wipes it.
+		ns := m.pendingTailNamespace
+		pods := m.pendingTailPods
+		next := m.closeCmdBar()
+		switch mode {
+		case cmdBarCommand:
+			return next.execCmd(value)
+		case cmdBarTailPrompt:
+			return next, dispatchTailCmd(ns, pods, value)
+		}
+		return next, nil
 	}
 	var cmd tea.Cmd
 	m.cmdBar, cmd = m.cmdBar.Update(msg)
 	return m, cmd
+}
+
+// closeCmdBar resets the prompt bar and clears any prompt-specific state.
+// Always go through this on Esc / Enter so pending* fields don't linger.
+func (m Model) closeCmdBar() Model {
+	m.cmdMode = cmdBarOff
+	m.cmdBar.Reset()
+	m.cmdBar.Blur()
+	m.cmdBar.Prompt = ": "
+	m.cmdBar.Placeholder = ""
+	m.pendingTailNamespace = ""
+	m.pendingTailPods = nil
+	return m
+}
+
+// dispatchTailCmd parses the tail-prompt value and returns a Cmd that emits
+// LogsRequestMsg with the chosen tail. Invalid / non-positive input falls
+// back to 100 — a casual prompt should never surface a hard error.
+func dispatchTailCmd(ns string, pods []string, value string) tea.Cmd {
+	n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || n <= 0 {
+		n = 100
+	}
+	return func() tea.Msg {
+		return views.LogsRequestMsg{Namespace: ns, Pods: pods, Tail: n}
+	}
 }
 
 func (m Model) execCmd(input string) (Model, tea.Cmd) {
@@ -277,8 +339,7 @@ func (m Model) replaceView(name string) Model {
 }
 
 // swap closes the outgoing view (so its goroutines / streams are stopped)
-// and installs the incoming one. Used by every code path that swaps the
-// active view — replaceView, DescribeRequestMsg, LogsRequestMsg.
+// and installs the incoming one.
 func (m Model) swap(next views.View) Model {
 	if m.current != nil {
 		_ = m.current.Close()
@@ -306,11 +367,6 @@ func (m Model) popHistory() (Model, bool) {
 
 // View composes header / body / footer with the body filling all the space
 // between them so the chrome stays at the edges regardless of view content.
-//
-// We use Style.Width().Height() rather than lipgloss.Place because Place
-// does not reliably pad short content (e.g. a viewport with fewer rendered
-// lines than its declared Height) up to the requested box height — the
-// footer then floated mid-screen.
 func (m Model) View() string {
 	header := m.renderHeader()
 	footer := m.renderFooter()
@@ -348,7 +404,7 @@ func (m Model) renderHeader() string {
 func (m Model) renderFooter() string {
 	w := max(m.width-2, 0)
 
-	if m.cmdBarOpen {
+	if m.cmdMode != cmdBarOff {
 		return styles.Footer.Width(w).Render(m.cmdBar.View())
 	}
 

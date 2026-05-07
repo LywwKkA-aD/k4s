@@ -45,6 +45,12 @@ var (
 	KubectlHint = lipgloss.NewStyle().
 			Foreground(colorAccent).
 			Italic(true)
+
+	// Highlight is used for search matches in the logs view.
+	Highlight = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#000000")).
+			Background(lipgloss.Color("#FFD166")).
+			Bold(true)
 )
 
 // Table returns the table styles used across views.
