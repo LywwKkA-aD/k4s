@@ -192,6 +192,114 @@ func TestGotoMatchOnEmptyMatchesIsNoOp(t *testing.T) {
 	}
 }
 
+func TestCancelSearchClearsQueryButPreservesLogs(t *testing.T) {
+	t.Parallel()
+
+	m := New(nil, "ns", []string{"foo"}, 100)
+	m.appendLine("alpha tick")
+	m.appendLine("beta tick")
+	m.appendLine("gamma")
+
+	m.searchQuery = "tick"
+	m.computeMatches()
+	if len(m.matches) != 2 {
+		t.Fatalf("setup: expected 2 matches, got %d", len(m.matches))
+	}
+
+	m.cancelSearch()
+
+	if m.searchQuery != "" {
+		t.Errorf("query not cleared: %q", m.searchQuery)
+	}
+	if len(m.matches) != 0 {
+		t.Errorf("matches not cleared: %v", m.matches)
+	}
+	if m.matchIdx != 0 {
+		t.Errorf("matchIdx not reset: %d", m.matchIdx)
+	}
+	if len(m.lines) != 3 {
+		t.Errorf("cancelSearch wiped log buffer (got %d lines, want 3)", len(m.lines))
+	}
+}
+
+func TestCancelSearchPreservesAutoFollow(t *testing.T) {
+	t.Parallel()
+
+	for _, follow := range []bool{true, false} {
+		m := New(nil, "ns", []string{"foo"}, 100)
+		m.searchQuery = "x"
+		m.autoFollow = follow
+
+		m.cancelSearch()
+
+		if m.autoFollow != follow {
+			t.Errorf("autoFollow flipped: was %v, after cancelSearch %v", follow, m.autoFollow)
+		}
+	}
+}
+
+func TestClearLogsPreservesAutoFollow(t *testing.T) {
+	t.Parallel()
+
+	m := New(nil, "ns", []string{"foo"}, 100)
+	m.appendLine("a")
+	m.appendLine("b")
+	m.autoFollow = false // user paused
+
+	m.clearLogs()
+
+	if m.autoFollow {
+		t.Error("clearLogs flipped autoFollow back to true — paused state must persist")
+	}
+	if len(m.lines) != 0 {
+		t.Errorf("clearLogs left lines behind: %d", len(m.lines))
+	}
+}
+
+func TestClearLogsLeavesSearchAlone(t *testing.T) {
+	t.Parallel()
+
+	m := New(nil, "ns", []string{"foo"}, 100)
+	m.searchQuery = "tick"
+
+	m.clearLogs()
+
+	if m.searchQuery != "tick" {
+		t.Errorf("clearLogs touched search query: %q", m.searchQuery)
+	}
+}
+
+func TestStatusLineCombinesPauseAndSearch(t *testing.T) {
+	t.Parallel()
+
+	m := New(nil, "ns", []string{"foo"}, 100)
+	m.appendLine("hello tick")
+	m.searchQuery = "tick"
+	m.computeMatches()
+	m.autoFollow = false
+
+	got := m.statusLine()
+
+	if !strings.Contains(got, "paused") {
+		t.Errorf("status line missing pause marker: %q", got)
+	}
+	if !strings.Contains(got, "/tick") {
+		t.Errorf("status line missing query: %q", got)
+	}
+	if !strings.Contains(got, "1/1") {
+		t.Errorf("status line missing match counter: %q", got)
+	}
+}
+
+func TestStatusLineEmptyWhenIdle(t *testing.T) {
+	t.Parallel()
+
+	m := New(nil, "ns", []string{"foo"}, 100)
+	if got := m.statusLine(); got != "" {
+		t.Errorf("idle status line should be empty, got %q", got)
+	}
+}
+
 func TestHighlightContentReplacesMatches(t *testing.T) {
 	t.Parallel()
 	out := highlightContent("hello alpha world alpha", "alpha")

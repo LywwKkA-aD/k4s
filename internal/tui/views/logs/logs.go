@@ -36,7 +36,11 @@ const (
 	scannerBufferSize = 1024 * 1024
 	eventBufferSize   = 256
 	searchInputPrompt = "/"
-	searchChromeRows  = 2 // search input + spacer
+	// The view always renders one row of status above the viewport
+	// (paused banner / search summary / blank). When the search prompt
+	// is open it grows to two rows (input + spacer).
+	statusRowsClosed = 1
+	statusRowsOpen   = 2
 )
 
 // Model is the streaming logs view.
@@ -229,13 +233,14 @@ func (m Model) onWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// layoutViewport re-sizes the inner viewport, leaving room for the search
-// input / status banner when search is open.
+// layoutViewport re-sizes the inner viewport, always reserving a row for the
+// status banner so it never gets clipped by the root model's MaxHeight.
 func (m *Model) layoutViewport() {
-	h := m.bodyH
+	chrome := statusRowsClosed
 	if m.searchOpen {
-		h -= searchChromeRows
+		chrome = statusRowsOpen
 	}
+	h := m.bodyH - chrome
 	m.viewport.Width = m.width
 	m.viewport.Height = max(h, minViewportHeight)
 }
@@ -300,15 +305,41 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		m.gotoMatch(-1)
 		return m, nil, true
 	case key.Matches(msg, m.clearKey):
-		m.lines = nil
-		m.matches = nil
-		m.matchIdx = 0
-		m.searchQuery = ""
-		m.searchInput.Reset()
-		m.viewport.SetContent("")
+		// Two-step clear: while a search is active (prompt open or query
+		// set), 'c' cancels the search first; only when there is no search
+		// does it actually wipe the buffer. Clearing the buffer must NEVER
+		// touch autoFollow — the user's paused state stays paused.
+		if m.searchOpen || m.searchQuery != "" {
+			m.cancelSearch()
+			m.refreshContent()
+			return m, nil, true
+		}
+		m.clearLogs()
 		return m, nil, true
 	}
 	return m, nil, false
+}
+
+// cancelSearch wipes search state but leaves the log buffer alone. Used by
+// the 'c' key when search is active and (defensively) anywhere else we need
+// to leave search mode without clearing logs.
+func (m *Model) cancelSearch() {
+	m.searchQuery = ""
+	m.matches = nil
+	m.matchIdx = 0
+	m.searchInput.Reset()
+	if m.searchOpen {
+		m.searchOpen = false
+		m.searchInput.Blur()
+		m.layoutViewport()
+	}
+}
+
+// clearLogs wipes only the log buffer. autoFollow is intentionally untouched
+// so a paused viewer stays paused even after a clear.
+func (m *Model) clearLogs() {
+	m.lines = nil
+	m.viewport.SetContent("")
 }
 
 func (m Model) onSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -423,7 +454,8 @@ func highlightContent(content, query string) string {
 	return strings.ReplaceAll(content, query, styles.Highlight.Render(query))
 }
 
-// View renders the search input + status banner + viewport.
+// View renders the status row(s) above the viewport. Layout always reserves
+// space for the status row so the banner is never clipped by the root model.
 func (m Model) View() string {
 	if m.client == nil {
 		return styles.Warn.Render("no kubeconfig")
@@ -434,15 +466,32 @@ func (m Model) View() string {
 		body = styles.Hint.Render(fmt.Sprintf("waiting for logs… (tail %d)", m.tail))
 	}
 
-	parts := []string{}
+	top := make([]string, 0, statusRowsOpen)
 	if m.searchOpen {
-		parts = append(parts, m.searchInput.View(), "")
+		top = append(top, m.searchInput.View(), "")
+	} else {
+		top = append(top, m.statusLine())
 	}
+	return lipgloss.JoinVertical(lipgloss.Left, append(top, body)...)
+}
+
+// statusLine renders the one-line status above the viewport: any combination
+// of "[paused]" and "/query · M/N". Empty string when neither applies — the
+// row stays present so the layout does not jiggle when state changes.
+func (m Model) statusLine() string {
+	bits := make([]string, 0, 2)
 	if !m.autoFollow {
-		parts = append(parts, styles.Warn.Render("[paused — press f to resume]"))
+		bits = append(bits, styles.Warn.Render("[paused — press f to follow]"))
 	}
-	parts = append(parts, body)
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	switch {
+	case m.searchQuery != "" && len(m.matches) > 0:
+		bits = append(bits, styles.Hint.Render(fmt.Sprintf(
+			"/%s · %d/%d (n/N step · c cancel)", m.searchQuery, m.matchIdx+1, len(m.matches))))
+	case m.searchQuery != "":
+		bits = append(bits, styles.Hint.Render(fmt.Sprintf(
+			"/%s · no match (c cancel)", m.searchQuery)))
+	}
+	return strings.Join(bits, " · ")
 }
 
 // Title implements views.View.
