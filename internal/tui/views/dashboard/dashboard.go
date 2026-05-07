@@ -102,3 +102,7 @@ func (m Model) KubectlEquivalent() string { return "kubectl get all -A" }
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding { return []key.Binding{m.refreshKey} }
+
+// Close implements views.View. Dashboard owns no resources beyond the in-flight
+// stats fetch (bounded by ctx + 5s timeout), so this is a no-op.
+func (m Model) Close() error { return nil }

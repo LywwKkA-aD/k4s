@@ -21,6 +21,11 @@ type View interface {
 	// Help returns the view-specific bindings to render in the footer next to
 	// the global ones.
 	Help() []key.Binding
+
+	// Close releases resources held by the view (open log streams, watchers,
+	// goroutines). Called by the root model whenever the view is replaced or
+	// popped from history. Must be safe to call multiple times.
+	Close() error
 }
 
 // NamespaceSelectedMsg is emitted by the namespaces view when the user picks
@@ -31,10 +36,17 @@ type NamespaceSelectedMsg struct {
 }
 
 // DescribeRequestMsg is emitted when a list view (pods, deployments, ...) wants
-// to open a describe screen for the resource currently under the cursor. The
-// root model pushes the current view to history and swaps in the describe view.
+// to open a describe screen for the resource currently under the cursor.
 type DescribeRequestMsg struct {
 	Kind      string // "pod", future: "deployment", "service", ...
 	Namespace string
 	Name      string
+}
+
+// LogsRequestMsg is emitted when a list view wants to open a streaming logs
+// view for one or more pods. Multiple pods are supported so a future
+// deployments view can ask for "tail every replica" in one shot.
+type LogsRequestMsg struct {
+	Namespace string
+	Pods      []string
 }

@@ -184,3 +184,6 @@ func (m Model) KubectlEquivalent() string {
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding { return []key.Binding{m.scrollKey, m.refreshKey} }
+
+// Close implements views.View. No long-lived resources held.
+func (m Model) Close() error { return nil }

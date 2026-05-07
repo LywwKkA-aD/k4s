@@ -18,6 +18,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views/logs"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/namespaces"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/pods"
 )
@@ -83,78 +84,100 @@ func (m Model) Init() tea.Cmd {
 	return m.current.Init()
 }
 
-// Update is the message router.
+// Update is the message router. Heavy lifting is split into per-message
+// helpers so each one stays testable and gocyclo-friendly.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		// Forward a *body-sized* WindowSizeMsg so views can fill the entire
-		// space between header and footer without each one re-implementing
-		// the chrome math. Width is forwarded as-is so views can also
-		// wrap content to the full terminal width.
-		bodyMsg := tea.WindowSizeMsg{
-			Width:  msg.Width,
-			Height: m.bodyHeight(),
-		}
-		return m.forwardToView(bodyMsg)
-
+		return m.onWindowResize(msg)
 	case relayoutMsg:
-		// Re-size only — never touch m.height/m.width. The previous
-		// implementation reused tea.WindowSizeMsg here, which made the
-		// terminal-size handler above shrink m.height by the chrome on
-		// every view switch.
-		if m.width == 0 || m.height == 0 {
-			return m, nil
-		}
-		bodyMsg := tea.WindowSizeMsg{Width: m.width, Height: m.bodyHeight()}
-		return m.forwardToView(bodyMsg)
-
+		return m.onRelayout()
 	case views.NamespaceSelectedMsg:
-		m.history = append(m.history, historyEntry{
-			view:      m.current.Title(),
-			namespace: m.namespace,
-		})
-		m.namespace = msg.Namespace
-		m = m.replaceView(viewPods)
-		return m, m.relayoutCmd()
-
+		return m.onNamespaceSelected(msg)
 	case views.DescribeRequestMsg:
-		m.history = append(m.history, historyEntry{
-			view:      m.current.Title(),
-			namespace: m.namespace,
-		})
-		m.current = describe.New(m.client, describe.Kind(msg.Kind), msg.Namespace, msg.Name)
-		return m, m.relayoutCmd()
-
+		return m.onDescribeRequest(msg)
+	case views.LogsRequestMsg:
+		return m.onLogsRequest(msg)
 	case tea.KeyMsg:
-		// ctrl+c is the always-quit escape hatch — even inside the cmd bar.
-		if msg.Type == tea.KeyCtrlC {
+		return m.onKey(msg)
+	}
+	return m.forwardToView(msg)
+}
+
+func (m Model) onWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	m.width = msg.Width
+	m.height = msg.Height
+	// Forward a body-sized WindowSizeMsg so views fill the space between
+	// header and footer without re-implementing the chrome math.
+	bodyMsg := tea.WindowSizeMsg{Width: msg.Width, Height: m.bodyHeight()}
+	return m.forwardToView(bodyMsg)
+}
+
+func (m Model) onRelayout() (tea.Model, tea.Cmd) {
+	// Re-size only — never touch m.height/m.width, otherwise we'd shrink
+	// m.height by chrome on every view switch (regression: footer climbing
+	// up the screen).
+	if m.width == 0 || m.height == 0 {
+		return m, nil
+	}
+	bodyMsg := tea.WindowSizeMsg{Width: m.width, Height: m.bodyHeight()}
+	return m.forwardToView(bodyMsg)
+}
+
+func (m Model) onNamespaceSelected(msg views.NamespaceSelectedMsg) (tea.Model, tea.Cmd) {
+	m.history = append(m.history, historyEntry{
+		view:      m.current.Title(),
+		namespace: m.namespace,
+	})
+	m.namespace = msg.Namespace
+	m = m.replaceView(viewPods)
+	return m, m.relayoutCmd()
+}
+
+func (m Model) onDescribeRequest(msg views.DescribeRequestMsg) (tea.Model, tea.Cmd) {
+	m.history = append(m.history, historyEntry{
+		view:      m.current.Title(),
+		namespace: m.namespace,
+	})
+	m = m.swap(describe.New(m.client, describe.Kind(msg.Kind), msg.Namespace, msg.Name))
+	return m, m.relayoutCmd()
+}
+
+func (m Model) onLogsRequest(msg views.LogsRequestMsg) (tea.Model, tea.Cmd) {
+	m.history = append(m.history, historyEntry{
+		view:      m.current.Title(),
+		namespace: m.namespace,
+	})
+	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods))
+	return m, m.relayoutCmd()
+}
+
+func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// ctrl+c is the always-quit escape hatch — even inside the cmd bar.
+	if msg.Type == tea.KeyCtrlC {
+		return m, tea.Quit
+	}
+	if m.cmdBarOpen {
+		return m.handleCmdBar(msg)
+	}
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		if m.current.Title() == viewDashboard {
 			return m, tea.Quit
 		}
-		if m.cmdBarOpen {
-			return m.handleCmdBar(msg)
-		}
-		switch {
-		case key.Matches(msg, m.keys.Quit):
-			if m.current.Title() == viewDashboard {
-				return m, tea.Quit
-			}
-			next := m.goHome()
+		next := m.goHome()
+		return next, next.relayoutCmd()
+	case key.Matches(msg, m.keys.Command):
+		m.cmdBarOpen = true
+		m.cmdError = ""
+		m.cmdBar.Focus()
+		return m, textinput.Blink
+	case key.Matches(msg, m.keys.Back):
+		if next, ok := m.popHistory(); ok {
 			return next, next.relayoutCmd()
-		case key.Matches(msg, m.keys.Command):
-			m.cmdBarOpen = true
-			m.cmdError = ""
-			m.cmdBar.Focus()
-			return m, textinput.Blink
-		case key.Matches(msg, m.keys.Back):
-			if next, ok := m.popHistory(); ok {
-				return next, next.relayoutCmd()
-			}
-			return m, nil
 		}
+		return m, nil
 	}
-
 	return m.forwardToView(msg)
 }
 
@@ -244,12 +267,23 @@ func (m Model) switchTo(name string) Model {
 func (m Model) replaceView(name string) Model {
 	switch name {
 	case viewPods:
-		m.current = pods.New(m.client, m.namespace)
+		return m.swap(pods.New(m.client, m.namespace))
 	case viewNamespaces:
-		m.current = namespaces.New(m.client)
+		return m.swap(namespaces.New(m.client))
 	case viewDashboard:
-		m.current = dashboard.New(m.client)
+		return m.swap(dashboard.New(m.client))
 	}
+	return m
+}
+
+// swap closes the outgoing view (so its goroutines / streams are stopped)
+// and installs the incoming one. Used by every code path that swaps the
+// active view — replaceView, DescribeRequestMsg, LogsRequestMsg.
+func (m Model) swap(next views.View) Model {
+	if m.current != nil {
+		_ = m.current.Close()
+	}
+	m.current = next
 	return m
 }
 

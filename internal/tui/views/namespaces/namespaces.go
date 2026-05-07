@@ -152,3 +152,6 @@ func (m Model) KubectlEquivalent() string { return "kubectl get namespaces" }
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding { return []key.Binding{m.selectKey, m.refreshKey} }
+
+// Close implements views.View. No streaming resources held.
+func (m Model) Close() error { return nil }

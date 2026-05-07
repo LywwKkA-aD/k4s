@@ -29,6 +29,7 @@ type Model struct {
 	loaded    bool
 
 	selectKey  key.Binding
+	logsKey    key.Binding
 	refreshKey key.Binding
 }
 
@@ -53,6 +54,10 @@ func New(client *k8s.Client, namespace string) Model {
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "describe"),
+		),
+		logsKey: key.NewBinding(
+			key.WithKeys("l"),
+			key.WithHelp("l", "logs"),
 		),
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
@@ -109,6 +114,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ns, name := podCoords(row, m.namespace)
 				return m, func() tea.Msg {
 					return views.DescribeRequestMsg{Kind: "pod", Namespace: ns, Name: name}
+				}
+			}
+		}
+		if key.Matches(msg, m.logsKey) && m.loaded && len(m.table.Rows()) > 0 {
+			row := m.table.SelectedRow()
+			if row != nil {
+				ns, name := podCoords(row, m.namespace)
+				return m, func() tea.Msg {
+					return views.LogsRequestMsg{Namespace: ns, Pods: []string{name}}
 				}
 			}
 		}
@@ -188,4 +202,9 @@ func (m Model) KubectlEquivalent() string {
 }
 
 // Help implements views.View.
-func (m Model) Help() []key.Binding { return []key.Binding{m.selectKey, m.refreshKey} }
+func (m Model) Help() []key.Binding {
+	return []key.Binding{m.selectKey, m.logsKey, m.refreshKey}
+}
+
+// Close implements views.View. No long-lived resources held.
+func (m Model) Close() error { return nil }
