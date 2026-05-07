@@ -92,7 +92,7 @@ func TestPodColorBelongsToPalette(t *testing.T) {
 
 func TestAppendRawEnforcesBufferCap(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", nil, 0)
+	m := New(nil, "ns", nil, 0, "")
 	for i := 0; i < maxBufferedLines+50; i++ {
 		m.appendRaw("foo", "line", lineLog)
 	}
@@ -103,7 +103,7 @@ func TestAppendRawEnforcesBufferCap(t *testing.T) {
 
 func TestCloseIsIdempotent(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	if err := m.Close(); err != nil {
 		t.Errorf("first Close() error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestCloseIsIdempotent(t *testing.T) {
 
 func TestNewWithNoClientClosesChannelImmediately(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	if _, ok := <-m.events; ok {
 		t.Errorf("expected closed events channel when client is nil")
 	}
@@ -123,7 +123,7 @@ func TestNewWithNoClientClosesChannelImmediately(t *testing.T) {
 func TestKubectlEquivalentSingleVsMulti(t *testing.T) {
 	t.Parallel()
 
-	single := New(nil, "demo", []string{"alpha"}, 200)
+	single := New(nil, "demo", []string{"alpha"}, 200, "")
 	if !strings.Contains(single.KubectlEquivalent(), "alpha") {
 		t.Errorf("single-pod equivalent missing pod name: %q", single.KubectlEquivalent())
 	}
@@ -131,7 +131,7 @@ func TestKubectlEquivalentSingleVsMulti(t *testing.T) {
 		t.Errorf("single-pod equivalent missing tail value: %q", single.KubectlEquivalent())
 	}
 
-	multi := New(nil, "demo", []string{"alpha", "beta"}, 50)
+	multi := New(nil, "demo", []string{"alpha", "beta"}, 50, "")
 	if !strings.Contains(multi.KubectlEquivalent(), "alpha,beta") {
 		t.Errorf("multi-pod equivalent missing pod list: %q", multi.KubectlEquivalent())
 	}
@@ -143,7 +143,7 @@ func TestKubectlEquivalentSingleVsMulti(t *testing.T) {
 func TestNewClampsNonPositiveTailToDefault(t *testing.T) {
 	t.Parallel()
 	for _, in := range []int64{0, -1, -100} {
-		m := New(nil, "ns", []string{"foo"}, in)
+		m := New(nil, "ns", []string{"foo"}, in, "")
 		if m.tail != defaultTailLines {
 			t.Errorf("tail=%d → m.tail=%d, want %d", in, m.tail, defaultTailLines)
 		}
@@ -153,7 +153,7 @@ func TestNewClampsNonPositiveTailToDefault(t *testing.T) {
 func TestComputeMatchesOnRawTextNotPrefix(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil, "ns", []string{"alpha", "beta"}, 100)
+	m := New(nil, "ns", []string{"alpha", "beta"}, 100, "")
 	m.appendRaw("alpha", "tick #1", lineLog)
 	m.appendRaw("beta", "tock #1", lineLog)
 	m.appendRaw("alpha", "tick #2", lineLog)
@@ -176,7 +176,7 @@ func TestComputeMatchesOnRawTextNotPrefix(t *testing.T) {
 
 func TestComputeMatchesEmptyQueryClears(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	m.appendRaw("foo", "alpha", lineLog)
 	m.matches = []int{0}
 	m.searchQuery = ""
@@ -188,7 +188,7 @@ func TestComputeMatchesEmptyQueryClears(t *testing.T) {
 
 func TestGotoMatchWrapsForwardsAndBackwards(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	m.matches = []int{0, 2, 5}
 	m.matchIdx = 0
 
@@ -209,7 +209,7 @@ func TestGotoMatchWrapsForwardsAndBackwards(t *testing.T) {
 
 func TestGotoMatchPausesAutoFollow(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	m.matches = []int{0}
 	m.autoFollow = true
 	m.gotoMatch(+1)
@@ -220,7 +220,7 @@ func TestGotoMatchPausesAutoFollow(t *testing.T) {
 
 func TestGotoMatchOnEmptyMatchesIsNoOp(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	m.matches = nil
 	m.matchIdx = 0
 	m.autoFollow = true
@@ -247,7 +247,7 @@ func TestHighlightContentReplacesMatches(t *testing.T) {
 func TestCancelSearchClearsQueryButPreservesLogs(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	m.appendRaw("foo", "alpha tick", lineLog)
 	m.appendRaw("foo", "beta tick", lineLog)
 	m.appendRaw("foo", "gamma", lineLog)
@@ -274,7 +274,7 @@ func TestCancelSearchClearsQueryButPreservesLogs(t *testing.T) {
 func TestCancelSearchPreservesAutoFollow(t *testing.T) {
 	t.Parallel()
 	for _, follow := range []bool{true, false} {
-		m := New(nil, "ns", []string{"foo"}, 100)
+		m := New(nil, "ns", []string{"foo"}, 100, "")
 		m.searchQuery = "x"
 		m.autoFollow = follow
 		m.cancelSearch()
@@ -286,7 +286,7 @@ func TestCancelSearchPreservesAutoFollow(t *testing.T) {
 
 func TestClearLogsPreservesAutoFollow(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	m.appendRaw("foo", "a", lineLog)
 	m.appendRaw("foo", "b", lineLog)
 	m.autoFollow = false
@@ -301,7 +301,7 @@ func TestClearLogsPreservesAutoFollow(t *testing.T) {
 
 func TestClearLogsLeavesSearchAlone(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	m.searchQuery = "tick"
 	m.clearLogs()
 	if m.searchQuery != "tick" {
@@ -312,7 +312,7 @@ func TestClearLogsLeavesSearchAlone(t *testing.T) {
 func TestStatusLineCombinesPauseAndSearch(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	m.appendRaw("foo", "hello tick", lineLog)
 	m.searchQuery = "tick"
 	m.computeMatches()
@@ -333,7 +333,7 @@ func TestStatusLineCombinesPauseAndSearch(t *testing.T) {
 
 func TestStatusLineEmptyWhenIdle(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100)
+	m := New(nil, "ns", []string{"foo"}, 100, "")
 	if got := m.statusLine(); got != "" {
 		t.Errorf("idle status line should be empty, got %q", got)
 	}
@@ -341,7 +341,7 @@ func TestStatusLineEmptyWhenIdle(t *testing.T) {
 
 func TestStatusLineMentionsTagsWhenOn(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"alpha", "beta"}, 100)
+	m := New(nil, "ns", []string{"alpha", "beta"}, 100, "")
 	m.showPodNames = true
 	if !strings.Contains(m.statusLine(), "tags") {
 		t.Errorf("status line should advertise tags-on state: %q", m.statusLine())
@@ -350,7 +350,7 @@ func TestStatusLineMentionsTagsWhenOn(t *testing.T) {
 
 func TestStatusLineHasNoTagsHintForSinglePod(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"only"}, 100)
+	m := New(nil, "ns", []string{"only"}, 100, "")
 	m.showPodNames = true // even if forced, single-pod view never shows tags
 	if strings.Contains(m.statusLine(), "tags") {
 		t.Errorf("single-pod status must not mention tags: %q", m.statusLine())
@@ -359,13 +359,13 @@ func TestStatusLineHasNoTagsHintForSinglePod(t *testing.T) {
 
 func TestHelpAdvertisesTagsKeyOnlyForMultiPod(t *testing.T) {
 	t.Parallel()
-	single := New(nil, "ns", []string{"only"}, 100)
+	single := New(nil, "ns", []string{"only"}, 100, "")
 	for _, b := range single.Help() {
 		if b.Help().Key == "t" {
 			t.Errorf("single-pod help should not include 't'")
 		}
 	}
-	multi := New(nil, "ns", []string{"alpha", "beta"}, 100)
+	multi := New(nil, "ns", []string{"alpha", "beta"}, 100, "")
 	found := false
 	for _, b := range multi.Help() {
 		if b.Help().Key == "t" {

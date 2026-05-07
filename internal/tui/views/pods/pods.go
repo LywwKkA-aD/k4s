@@ -16,9 +16,15 @@ import (
 )
 
 const (
-	fetchTimeout = 5 * time.Second
-	minTableRows = 5
+	fetchTimeout  = 5 * time.Second
+	minTableRows  = 5
+	watchInterval = 5 * time.Second
 )
+
+// tickMsg is the per-view auto-refresh signal. Per-view typing means a
+// stale ticker that fires after the user has navigated away simply gets
+// ignored by whatever view is current — no global ticker plumbing needed.
+type tickMsg time.Time
 
 // Model is the pods list view scoped to a namespace ("" = all).
 type Model struct {
@@ -28,14 +34,31 @@ type Model struct {
 	err       error
 	loaded    bool
 
+	watchEnabled bool
+
 	selectKey  key.Binding
 	logsKey    key.Binding
+	execKey    key.Binding
+	watchKey   key.Binding
 	refreshKey key.Binding
 }
 
 type podsMsg struct {
 	pods []k8s.Pod
 	err  error
+}
+
+// containersResolvedMsg is the result of an async ContainersForPod call.
+// We can't open a TailPromptRequestMsg directly from the key handler because
+// the resolve is an API call — instead the key handler kicks off a Cmd and
+// the result lands here as a message we then translate into the right next
+// step (single-container fast path or container-prompt detour).
+type containersResolvedMsg struct {
+	namespace  string
+	pod        string
+	containers []string
+	nextKind   string // "logs" or "exec"
+	err        error
 }
 
 // New constructs a pods view for the given namespace ("" = all namespaces).
@@ -48,9 +71,10 @@ func New(client *k8s.Client, namespace string) Model {
 	t.SetStyles(styles.Table())
 
 	return Model{
-		client:    client,
-		namespace: namespace,
-		table:     t,
+		client:       client,
+		namespace:    namespace,
+		table:        t,
+		watchEnabled: true,
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "describe"),
@@ -58,6 +82,14 @@ func New(client *k8s.Client, namespace string) Model {
 		logsKey: key.NewBinding(
 			key.WithKeys("l"),
 			key.WithHelp("l", "logs"),
+		),
+		execKey: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "exec"),
+		),
+		watchKey: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "watch"),
 		),
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
@@ -81,12 +113,16 @@ func tableColumns(showNamespace bool) []table.Column {
 	return cols
 }
 
-// Init kicks off the first pod fetch.
+// Init kicks off the first pod fetch and the auto-refresh ticker.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return nil
+		return tickCmd()
 	}
-	return fetchPodsCmd(m.client, m.namespace)
+	return tea.Batch(fetchPodsCmd(m.client, m.namespace), tickCmd())
+}
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 func fetchPodsCmd(c *k8s.Client, namespace string) tea.Cmd {
@@ -98,36 +134,41 @@ func fetchPodsCmd(c *k8s.Client, namespace string) tea.Cmd {
 	}
 }
 
+// resolveContainersCmd is fired from the 'l' / 'e' key handlers; it figures
+// out the pod's containers off the bubbletea event loop and ships the
+// answer back as a containersResolvedMsg for the model to act on.
+func resolveContainersCmd(c *k8s.Client, ns, pod, kind string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		containers, err := c.ContainersForPod(ctx, ns, pod)
+		return containersResolvedMsg{
+			namespace:  ns,
+			pod:        pod,
+			containers: containers,
+			nextKind:   kind,
+			err:        err,
+		}
+	}
+}
+
 // Update handles size/refresh/select and forwards navigation keys to the table.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		// msg.Height is already the body height (root model adjusts it).
 		m.table.SetHeight(max(msg.Height, minTableRows))
+	case tickMsg:
+		cmds := []tea.Cmd{tickCmd()}
+		if m.watchEnabled && m.client != nil {
+			cmds = append(cmds, fetchPodsCmd(m.client, m.namespace))
+		}
+		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
-		if key.Matches(msg, m.refreshKey) && m.client != nil {
-			return m, fetchPodsCmd(m.client, m.namespace)
+		if cmd, handled := m.handleKey(msg); handled {
+			return m, cmd
 		}
-		if key.Matches(msg, m.selectKey) && m.loaded && len(m.table.Rows()) > 0 {
-			row := m.table.SelectedRow()
-			if row != nil {
-				ns, name := podCoords(row, m.namespace)
-				return m, func() tea.Msg {
-					return views.DescribeRequestMsg{Kind: "pod", Namespace: ns, Name: name}
-				}
-			}
-		}
-		if key.Matches(msg, m.logsKey) && m.loaded && len(m.table.Rows()) > 0 {
-			row := m.table.SelectedRow()
-			if row != nil {
-				ns, name := podCoords(row, m.namespace)
-				return m, func() tea.Msg {
-					// Ask the root to prompt for tail; it will dispatch
-					// LogsRequestMsg once the user submits a value.
-					return views.TailPromptRequestMsg{Namespace: ns, Pods: []string{name}}
-				}
-			}
-		}
+	case containersResolvedMsg:
+		return m, m.dispatchContainers(msg)
 	case podsMsg:
 		m.err = msg.err
 		m.loaded = true
@@ -141,14 +182,70 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// handleKey returns (cmd, true) if the key matched a view binding.
+func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+	switch {
+	case key.Matches(msg, m.refreshKey) && m.client != nil:
+		return fetchPodsCmd(m.client, m.namespace), true
+	case key.Matches(msg, m.watchKey):
+		m.watchEnabled = !m.watchEnabled
+		return nil, true
+	case key.Matches(msg, m.selectKey) && m.canActOnRow():
+		ns, name := podCoords(m.table.SelectedRow(), m.namespace)
+		return func() tea.Msg {
+			return views.DescribeRequestMsg{Kind: "pod", Namespace: ns, Name: name}
+		}, true
+	case key.Matches(msg, m.logsKey) && m.canActOnRow():
+		ns, name := podCoords(m.table.SelectedRow(), m.namespace)
+		return resolveContainersCmd(m.client, ns, name, "logs"), true
+	case key.Matches(msg, m.execKey) && m.canActOnRow():
+		ns, name := podCoords(m.table.SelectedRow(), m.namespace)
+		return resolveContainersCmd(m.client, ns, name, "exec"), true
+	}
+	return nil, false
+}
+
+func (m Model) canActOnRow() bool {
+	return m.client != nil && m.loaded && len(m.table.Rows()) > 0 && m.table.SelectedRow() != nil
+}
+
+// dispatchContainers turns the API result into the next msg: skip the
+// container picker for single-container pods, route through the picker
+// otherwise. Errors are silent — the user keeps the table state.
+func (m Model) dispatchContainers(msg containersResolvedMsg) tea.Cmd {
+	if msg.err != nil || len(msg.containers) == 0 {
+		return nil
+	}
+	if len(msg.containers) == 1 {
+		container := msg.containers[0]
+		switch msg.nextKind {
+		case "logs":
+			return func() tea.Msg {
+				return views.TailPromptRequestMsg{Namespace: msg.namespace, Pods: []string{msg.pod}, Container: container}
+			}
+		case "exec":
+			return func() tea.Msg {
+				return views.ExecRequestMsg{Namespace: msg.namespace, Pod: msg.pod, Container: container}
+			}
+		}
+		return nil
+	}
+	return func() tea.Msg {
+		return views.ContainerPromptRequestMsg{
+			Namespace:  msg.namespace,
+			Pods:       []string{msg.pod},
+			Containers: msg.containers,
+			NextKind:   msg.nextKind,
+		}
+	}
+}
+
 // podCoords pulls (namespace, name) out of the selected row, accounting for
 // whether the table is rendering the NAMESPACE column or not.
 func podCoords(row table.Row, scopedNamespace string) (string, string) {
 	if scopedNamespace == "" {
-		// All namespaces: NAMESPACE | NAME | ...
 		return row[0], row[1]
 	}
-	// Single namespace: NAME | ...
 	return scopedNamespace, row[0]
 }
 
@@ -192,20 +289,26 @@ func (m Model) View() string {
 	return m.table.View()
 }
 
-// Title implements views.View.
+// Title implements views.View. Routing depends on Title returning the
+// stable view name; the watch state is signalled via the "--watch" suffix
+// in KubectlEquivalent.
 func (m Model) Title() string { return "pods" }
 
 // KubectlEquivalent implements views.View.
 func (m Model) KubectlEquivalent() string {
-	if m.namespace == "" {
-		return "kubectl get pods -A"
+	suffix := ""
+	if m.watchEnabled {
+		suffix = " --watch"
 	}
-	return "kubectl get pods -n " + m.namespace
+	if m.namespace == "" {
+		return "kubectl get pods -A" + suffix
+	}
+	return "kubectl get pods -n " + m.namespace + suffix
 }
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.logsKey, m.refreshKey}
+	return []key.Binding{m.selectKey, m.logsKey, m.execKey, m.watchKey, m.refreshKey}
 }
 
 // Close implements views.View. No long-lived resources held.

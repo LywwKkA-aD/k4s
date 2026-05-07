@@ -17,9 +17,12 @@ import (
 )
 
 const (
-	fetchTimeout = 5 * time.Second
-	minTableRows = 5
+	fetchTimeout  = 5 * time.Second
+	minTableRows  = 5
+	watchInterval = 5 * time.Second
 )
+
+type tickMsg time.Time
 
 // Model is the services list view scoped to a namespace ("" = all).
 type Model struct {
@@ -29,7 +32,10 @@ type Model struct {
 	err       error
 	loaded    bool
 
+	watchEnabled bool
+
 	selectKey  key.Binding
+	watchKey   key.Binding
 	refreshKey key.Binding
 }
 
@@ -48,18 +54,27 @@ func New(client *k8s.Client, namespace string) Model {
 	t.SetStyles(styles.Table())
 
 	return Model{
-		client:    client,
-		namespace: namespace,
-		table:     t,
+		client:       client,
+		namespace:    namespace,
+		table:        t,
+		watchEnabled: true,
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "describe"),
+		),
+		watchKey: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "watch"),
 		),
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
 		),
 	}
+}
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 func tableColumns(showNamespace bool) []table.Column {
@@ -78,12 +93,12 @@ func tableColumns(showNamespace bool) []table.Column {
 	return cols
 }
 
-// Init kicks off the first services fetch.
+// Init kicks off the first services fetch and the watch ticker.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return nil
+		return tickCmd()
 	}
-	return fetchCmd(m.client, m.namespace)
+	return tea.Batch(fetchCmd(m.client, m.namespace), tickCmd())
 }
 
 func fetchCmd(c *k8s.Client, namespace string) tea.Cmd {
@@ -100,7 +115,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.table.SetHeight(max(msg.Height, minTableRows))
+	case tickMsg:
+		cmds := []tea.Cmd{tickCmd()}
+		if m.watchEnabled && m.client != nil {
+			cmds = append(cmds, fetchCmd(m.client, m.namespace))
+		}
+		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
+		if key.Matches(msg, m.watchKey) {
+			m.watchEnabled = !m.watchEnabled
+			return m, nil
+		}
 		if cmd, handled := m.handleKey(msg); handled {
 			return m, cmd
 		}
@@ -182,20 +207,25 @@ func (m Model) View() string {
 	return m.table.View()
 }
 
-// Title implements views.View.
+// Title implements views.View. Stable routing name; watch state is in
+// KubectlEquivalent's "--watch" suffix.
 func (m Model) Title() string { return "services" }
 
 // KubectlEquivalent implements views.View.
 func (m Model) KubectlEquivalent() string {
-	if m.namespace == "" {
-		return "kubectl get services -A"
+	suffix := ""
+	if m.watchEnabled {
+		suffix = " --watch"
 	}
-	return "kubectl get services -n " + m.namespace
+	if m.namespace == "" {
+		return "kubectl get services -A" + suffix
+	}
+	return "kubectl get services -n " + m.namespace + suffix
 }
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.refreshKey}
+	return []key.Binding{m.selectKey, m.watchKey, m.refreshKey}
 }
 
 // Close implements views.View.

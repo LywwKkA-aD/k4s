@@ -13,7 +13,12 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
-const fetchTimeout = 5 * time.Second
+const (
+	fetchTimeout  = 5 * time.Second
+	watchInterval = 5 * time.Second
+)
+
+type tickMsg time.Time
 
 // Model is the dashboard view.
 type Model struct {
@@ -23,7 +28,10 @@ type Model struct {
 	loaded bool
 	busy   bool
 
+	watchEnabled bool
+
 	refreshKey key.Binding
+	watchKey   key.Binding
 }
 
 type statsMsg struct {
@@ -34,20 +42,29 @@ type statsMsg struct {
 // New constructs the dashboard view.
 func New(client *k8s.Client) Model {
 	return Model{
-		client: client,
+		client:       client,
+		watchEnabled: true,
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
 		),
+		watchKey: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "watch"),
+		),
 	}
 }
 
-// Init kicks off the first stats fetch.
+func tickCmd() tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+// Init kicks off the first stats fetch and the watch ticker.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return nil
+		return tickCmd()
 	}
-	return fetchStatsCmd(m.client)
+	return tea.Batch(fetchStatsCmd(m.client), tickCmd())
 }
 
 func fetchStatsCmd(c *k8s.Client) tea.Cmd {
@@ -59,10 +76,21 @@ func fetchStatsCmd(c *k8s.Client) tea.Cmd {
 	}
 }
 
-// Update handles refresh keystrokes and stats deliveries.
+// Update handles refresh keystrokes, stats deliveries, and watch ticks.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tickMsg:
+		cmds := []tea.Cmd{tickCmd()}
+		if m.watchEnabled && m.client != nil && !m.busy {
+			m.busy = true
+			cmds = append(cmds, fetchStatsCmd(m.client))
+		}
+		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
+		if key.Matches(msg, m.watchKey) {
+			m.watchEnabled = !m.watchEnabled
+			return m, nil
+		}
 		if key.Matches(msg, m.refreshKey) && m.client != nil && !m.busy {
 			m.busy = true
 			return m, fetchStatsCmd(m.client)
@@ -94,14 +122,22 @@ func (m Model) View() string {
 	return styles.Stat.Render(line)
 }
 
-// Title implements views.View.
+// Title implements views.View. Stable routing name; watch state is in
+// KubectlEquivalent's "--watch" suffix.
 func (m Model) Title() string { return "dashboard" }
 
 // KubectlEquivalent implements views.View.
-func (m Model) KubectlEquivalent() string { return "kubectl get all -A" }
+func (m Model) KubectlEquivalent() string {
+	if m.watchEnabled {
+		return "kubectl get all -A --watch"
+	}
+	return "kubectl get all -A"
+}
 
 // Help implements views.View.
-func (m Model) Help() []key.Binding { return []key.Binding{m.refreshKey} }
+func (m Model) Help() []key.Binding {
+	return []key.Binding{m.refreshKey, m.watchKey}
+}
 
 // Close implements views.View. Dashboard owns no resources beyond the in-flight
 // stats fetch (bounded by ctx + 5s timeout), so this is a no-op.

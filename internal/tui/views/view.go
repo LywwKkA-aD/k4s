@@ -44,20 +44,48 @@ type DescribeRequestMsg struct {
 }
 
 // TailPromptRequestMsg asks the root model to open the tail-lines prompt for
-// the given pods. The user picks a number, the root then dispatches a
-// LogsRequestMsg with that Tail. The two-step dance keeps prompt UI
-// (textinput, focus, blink) centralised in the root rather than duplicated
-// across every list view that wants to ask "tail how many?".
+// the given pods. Container is forwarded through to the eventual
+// LogsRequestMsg — list views that already know the target container (e.g.
+// pods view after a successful container picker round-trip) populate it,
+// list views that don't (single-container pods) leave it empty so kubectl
+// picks the default container.
 type TailPromptRequestMsg struct {
 	Namespace string
 	Pods      []string
+	Container string
 }
 
-// LogsRequestMsg is emitted (typically by the root model after the tail
-// prompt) to open the streaming logs view. Multiple pods are supported so a
-// future deployments view can ask for "tail every replica" in one shot.
+// LogsRequestMsg is dispatched (by the root, after the tail prompt closes)
+// to actually open the streaming logs view.
 type LogsRequestMsg struct {
 	Namespace string
 	Pods      []string
 	Tail      int64
+	Container string
+}
+
+// ContainerPromptRequestMsg asks the root model to open the container picker
+// for a multi-container pod (or for a deployment whose pod template has more
+// than one container). Once the user picks one, the root dispatches the
+// next msg according to NextKind:
+//
+//	"logs"  → views.TailPromptRequestMsg{Namespace, Pods, Container}
+//	"exec"  → views.ExecRequestMsg{Namespace, Pod: Pods[0], Container}
+//
+// list views with only one container should bypass this message entirely
+// and emit the next-kind msg directly.
+type ContainerPromptRequestMsg struct {
+	Namespace  string
+	Pods       []string
+	Containers []string
+	NextKind   string // "logs" or "exec"
+}
+
+// ExecRequestMsg drops the user into a kubectl-exec shell against the named
+// pod / container. The root model handles this via tea.ExecProcess so the
+// TUI exits cleanly while the shell runs and resumes when it finishes.
+type ExecRequestMsg struct {
+	Namespace string
+	Pod       string
+	Container string // optional; "" = kubectl picks default
 }

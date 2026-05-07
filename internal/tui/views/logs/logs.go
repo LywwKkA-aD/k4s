@@ -74,6 +74,7 @@ type Model struct {
 	namespace string
 	pods      []string
 	tail      int64
+	container string // "" = kubectl picks default; named container otherwise
 
 	viewport viewport.Model
 	rawLines []logLine
@@ -114,7 +115,7 @@ type streamsClosedMsg struct{}
 // goroutines. They are torn down on Close(). The shared events channel is
 // closed once every pod's goroutine returns, which signals streamsClosedMsg
 // to the bubbletea loop and prevents leaked Cmd reads.
-func New(client *k8s.Client, namespace string, pods []string, tail int64) Model {
+func New(client *k8s.Client, namespace string, pods []string, tail int64, container string) Model {
 	if tail <= 0 {
 		tail = defaultTailLines
 	}
@@ -128,7 +129,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64) Model 
 			wg.Add(1)
 			go func(p string) {
 				defer wg.Done()
-				streamOnePod(ctx, client, namespace, p, tail, events)
+				streamOnePod(ctx, client, namespace, p, tail, container, events)
 			}(pod)
 		}
 		go func() {
@@ -149,6 +150,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64) Model 
 		namespace:   namespace,
 		pods:        pods,
 		tail:        tail,
+		container:   container,
 		viewport:    viewport.New(80, 20),
 		events:      events,
 		cancel:      cancel,
@@ -185,8 +187,8 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64) Model 
 	}
 }
 
-func streamOnePod(ctx context.Context, client *k8s.Client, ns, pod string, tail int64, ch chan<- logEvent) {
-	stream, err := client.StreamPodLogs(ctx, ns, pod, tail)
+func streamOnePod(ctx context.Context, client *k8s.Client, ns, pod string, tail int64, container string, ch chan<- logEvent) {
+	stream, err := client.StreamPodLogs(ctx, ns, pod, tail, container)
 	if err != nil {
 		send(ctx, ch, logEvent{Pod: pod, Err: err, Done: true})
 		return
@@ -543,6 +545,9 @@ func (m Model) Title() string {
 	} else {
 		base += fmt.Sprintf(" · %d pods", len(m.pods))
 	}
+	if m.container != "" {
+		base += " / " + m.container
+	}
 	if m.searchQuery != "" {
 		if len(m.matches) > 0 {
 			base += fmt.Sprintf(" · /%s · %d/%d", m.searchQuery, m.matchIdx+1, len(m.matches))
@@ -558,10 +563,14 @@ func (m Model) Title() string {
 
 // KubectlEquivalent implements views.View.
 func (m Model) KubectlEquivalent() string {
-	if len(m.pods) == 1 {
-		return fmt.Sprintf("kubectl logs -f %s -n %s --tail=%d", m.pods[0], m.namespace, m.tail)
+	containerArg := ""
+	if m.container != "" {
+		containerArg = " -c " + m.container
 	}
-	return fmt.Sprintf("kubectl logs -f --tail=%d -n %s {%s}", m.tail, m.namespace, strings.Join(m.pods, ","))
+	if len(m.pods) == 1 {
+		return fmt.Sprintf("kubectl logs -f%s %s -n %s --tail=%d", containerArg, m.pods[0], m.namespace, m.tail)
+	}
+	return fmt.Sprintf("kubectl logs -f%s --tail=%d -n %s {%s}", containerArg, m.tail, m.namespace, strings.Join(m.pods, ","))
 }
 
 // Help implements views.View. The 't' binding is only advertised when there

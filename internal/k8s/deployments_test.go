@@ -123,6 +123,33 @@ func TestPodsForDeploymentMatchesLabelSelector(t *testing.T) {
 	}
 }
 
+func TestContainersForDeployment(t *testing.T) {
+	t.Parallel()
+
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "demo"},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "app"},
+						{Name: "sidecar"},
+					},
+				},
+			},
+		},
+	}
+	c := &Client{Clientset: fake.NewSimpleClientset(runtime.Object(dep)), Context: "test"}
+
+	got, err := c.ContainersForDeployment(context.Background(), "demo", "web")
+	if err != nil {
+		t.Fatalf("ContainersForDeployment: %v", err)
+	}
+	if len(got) != 2 || got[0] != "app" || got[1] != "sidecar" {
+		t.Errorf("got %v, want [app sidecar]", got)
+	}
+}
+
 func TestPodsForDeploymentMissingDeployment(t *testing.T) {
 	t.Parallel()
 

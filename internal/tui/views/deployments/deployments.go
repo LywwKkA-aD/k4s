@@ -1,7 +1,9 @@
 // Package deployments is the deployments list view: rows show each deployment
 // with kubectl-style READY / UP-TO-DATE / AVAILABLE counters. Enter opens
-// describe; 'l' resolves the deployment's pods via label selector and asks
-// the root model to open the tail prompt — the logs view then streams every
+// describe; 'l' resolves the deployment's pods + containers and asks the
+// root model to open the right prompt — single-container pod templates skip
+// straight to the tail prompt, multi-container ones detour through the
+// container picker first. Either way the logs view ends up streaming every
 // replica through the multi-pod machinery, with a coloured per-pod prefix.
 package deployments
 
@@ -21,9 +23,12 @@ import (
 )
 
 const (
-	fetchTimeout = 5 * time.Second
-	minTableRows = 5
+	fetchTimeout  = 5 * time.Second
+	minTableRows  = 5
+	watchInterval = 5 * time.Second
 )
+
+type tickMsg time.Time
 
 // Model is the deployments list view scoped to a namespace ("" = all).
 type Model struct {
@@ -33,14 +38,26 @@ type Model struct {
 	err       error
 	loaded    bool
 
+	watchEnabled bool
+
 	selectKey  key.Binding
 	logsKey    key.Binding
+	watchKey   key.Binding
 	refreshKey key.Binding
 }
 
 type deploymentsMsg struct {
 	items []k8s.Deployment
 	err   error
+}
+
+// resolvedMsg is the result of "for this deployment, give me its pods and
+// container names" — kicked off from the 'l' handler.
+type resolvedMsg struct {
+	namespace  string
+	pods       []string
+	containers []string
+	err        error
 }
 
 // New constructs a deployments view for the given namespace ("" = all).
@@ -53,9 +70,10 @@ func New(client *k8s.Client, namespace string) Model {
 	t.SetStyles(styles.Table())
 
 	return Model{
-		client:    client,
-		namespace: namespace,
-		table:     t,
+		client:       client,
+		namespace:    namespace,
+		table:        t,
+		watchEnabled: true,
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "describe"),
@@ -63,6 +81,10 @@ func New(client *k8s.Client, namespace string) Model {
 		logsKey: key.NewBinding(
 			key.WithKeys("l"),
 			key.WithHelp("l", "tail all replicas"),
+		),
+		watchKey: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "watch"),
 		),
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
@@ -86,12 +108,16 @@ func tableColumns(showNamespace bool) []table.Column {
 	return cols
 }
 
-// Init kicks off the first deployments fetch.
+// Init kicks off the first deployments fetch and the watch ticker.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return nil
+		return tickCmd()
 	}
-	return fetchCmd(m.client, m.namespace)
+	return tea.Batch(fetchCmd(m.client, m.namespace), tickCmd())
+}
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 func fetchCmd(c *k8s.Client, namespace string) tea.Cmd {
@@ -103,15 +129,42 @@ func fetchCmd(c *k8s.Client, namespace string) tea.Cmd {
 	}
 }
 
+// resolvePodsAndContainersCmd issues two API calls in sequence — one for the
+// matching pods, one for the container template — and ships the combined
+// result back as resolvedMsg.
+func resolvePodsAndContainersCmd(c *k8s.Client, ns, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		pods, err := c.PodsForDeployment(ctx, ns, name)
+		if err != nil {
+			return resolvedMsg{namespace: ns, err: err}
+		}
+		containers, err := c.ContainersForDeployment(ctx, ns, name)
+		if err != nil {
+			return resolvedMsg{namespace: ns, pods: pods, err: err}
+		}
+		return resolvedMsg{namespace: ns, pods: pods, containers: containers}
+	}
+}
+
 // Update routes size/refresh/select/logs and forwards navigation to the table.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.table.SetHeight(max(msg.Height, minTableRows))
+	case tickMsg:
+		cmds := []tea.Cmd{tickCmd()}
+		if m.watchEnabled && m.client != nil {
+			cmds = append(cmds, fetchCmd(m.client, m.namespace))
+		}
+		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
 		if cmd, handled := m.handleKey(msg); handled {
 			return m, cmd
 		}
+	case resolvedMsg:
+		return m, m.dispatchResolved(msg)
 	case deploymentsMsg:
 		m.err = msg.err
 		m.loaded = true
@@ -125,46 +178,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.refreshKey) && m.client != nil:
 		return fetchCmd(m.client, m.namespace), true
-	case key.Matches(msg, m.selectKey) && m.loaded && len(m.table.Rows()) > 0:
-		row := m.table.SelectedRow()
-		if row == nil {
-			return nil, false
-		}
-		ns, name := deploymentCoords(row, m.namespace)
+	case key.Matches(msg, m.watchKey):
+		m.watchEnabled = !m.watchEnabled
+		return nil, true
+	case key.Matches(msg, m.selectKey) && m.canActOnRow():
+		ns, name := deploymentCoords(m.table.SelectedRow(), m.namespace)
 		return func() tea.Msg {
 			return views.DescribeRequestMsg{Kind: "deployment", Namespace: ns, Name: name}
 		}, true
-	case key.Matches(msg, m.logsKey) && m.loaded && len(m.table.Rows()) > 0:
-		row := m.table.SelectedRow()
-		if row == nil {
-			return nil, false
-		}
-		ns, name := deploymentCoords(row, m.namespace)
-		return resolvePodsAndPrompt(m.client, ns, name), true
+	case key.Matches(msg, m.logsKey) && m.canActOnRow():
+		ns, name := deploymentCoords(m.table.SelectedRow(), m.namespace)
+		return resolvePodsAndContainersCmd(m.client, ns, name), true
 	}
 	return nil, false
 }
 
-// resolvePodsAndPrompt resolves the deployment's pods via label selector
-// (synchronously, in the cmd's goroutine) and emits a TailPromptRequestMsg
-// listing every match. The root opens the tail prompt; on submit the logs
-// view streams them all in parallel — colour-coded by pod.
-func resolvePodsAndPrompt(c *k8s.Client, ns, name string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
+func (m Model) canActOnRow() bool {
+	return m.client != nil && m.loaded && len(m.table.Rows()) > 0 && m.table.SelectedRow() != nil
+}
 
-		pods, err := c.PodsForDeployment(ctx, ns, name)
-		if err != nil || len(pods) == 0 {
-			// Silent no-op; the user keeps the deployments view and the
-			// table state is preserved. They can press 'l' again later.
-			return nil
+// dispatchResolved decides between the fast path (single container → tail
+// prompt directly) and the picker detour. Errors and empty results are
+// silent no-ops so the table state survives.
+func (m Model) dispatchResolved(msg resolvedMsg) tea.Cmd {
+	if msg.err != nil || len(msg.pods) == 0 {
+		return nil
+	}
+	if len(msg.containers) <= 1 {
+		container := ""
+		if len(msg.containers) == 1 {
+			container = msg.containers[0]
 		}
-		return views.TailPromptRequestMsg{Namespace: ns, Pods: pods}
+		return func() tea.Msg {
+			return views.TailPromptRequestMsg{Namespace: msg.namespace, Pods: msg.pods, Container: container}
+		}
+	}
+	return func() tea.Msg {
+		return views.ContainerPromptRequestMsg{
+			Namespace:  msg.namespace,
+			Pods:       msg.pods,
+			Containers: msg.containers,
+			NextKind:   "logs",
+		}
 	}
 }
 
@@ -217,20 +276,25 @@ func (m Model) View() string {
 	return m.table.View()
 }
 
-// Title implements views.View.
+// Title implements views.View. Stable routing name; watch state is in
+// KubectlEquivalent's "--watch" suffix.
 func (m Model) Title() string { return "deployments" }
 
 // KubectlEquivalent implements views.View.
 func (m Model) KubectlEquivalent() string {
-	if m.namespace == "" {
-		return "kubectl get deployments -A"
+	suffix := ""
+	if m.watchEnabled {
+		suffix = " --watch"
 	}
-	return "kubectl get deployments -n " + m.namespace
+	if m.namespace == "" {
+		return "kubectl get deployments -A" + suffix
+	}
+	return "kubectl get deployments -n " + m.namespace + suffix
 }
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.logsKey, m.refreshKey}
+	return []key.Binding{m.selectKey, m.logsKey, m.watchKey, m.refreshKey}
 }
 
 // Close implements views.View. No long-lived resources held.

@@ -107,6 +107,43 @@ func TestListPodsRendersStatusReadinessAndRestarts(t *testing.T) {
 	}
 }
 
+func TestContainersForPodReturnsAllContainers(t *testing.T) {
+	t.Parallel()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "multi", Namespace: "demo"},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{
+			{Name: "web"},
+			{Name: "tailer"},
+			{Name: "metrics"},
+		}},
+	}
+	c := &Client{Clientset: fake.NewSimpleClientset(runtime.Object(pod)), Context: "test"}
+
+	got, err := c.ContainersForPod(context.Background(), "demo", "multi")
+	if err != nil {
+		t.Fatalf("ContainersForPod: %v", err)
+	}
+	want := []string{"web", "tailer", "metrics"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestContainersForPodMissing(t *testing.T) {
+	t.Parallel()
+	c := &Client{Clientset: fake.NewSimpleClientset(), Context: "test"}
+	_, err := c.ContainersForPod(context.Background(), "demo", "ghost")
+	if err == nil {
+		t.Error("expected error for missing pod, got nil")
+	}
+}
+
 func TestListPodsAllNamespaces(t *testing.T) {
 	t.Parallel()
 

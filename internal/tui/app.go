@@ -4,6 +4,7 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -44,6 +45,7 @@ const (
 	cmdBarOff cmdBarMode = iota
 	cmdBarCommand
 	cmdBarTailPrompt
+	cmdBarContainerPrompt
 )
 
 // relayoutMsg is an internal signal that says "re-send the current view a
@@ -82,7 +84,20 @@ type Model struct {
 	// Cleared once the user submits or cancels.
 	pendingTailNamespace string
 	pendingTailPods      []string
+	pendingTailContainer string
+
+	// pendingContainer* hold the picker state. NextKind is "logs" or "exec";
+	// the value chosen by the user is then translated into the appropriate
+	// follow-up message.
+	pendingContainerNamespace  string
+	pendingContainerPods       []string
+	pendingContainerContainers []string
+	pendingContainerNextKind   string
 }
+
+// execDoneMsg is delivered by tea.ExecProcess after the kubectl-exec shell
+// returns control to the TUI.
+type execDoneMsg struct{ err error }
 
 // New constructs the root model with the dashboard as the landing screen.
 func New(client *k8s.Client) Model {
@@ -117,8 +132,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onDescribeRequest(msg)
 	case views.TailPromptRequestMsg:
 		return m.onTailPromptRequest(msg)
+	case views.ContainerPromptRequestMsg:
+		return m.onContainerPromptRequest(msg)
 	case views.LogsRequestMsg:
 		return m.onLogsRequest(msg)
+	case views.ExecRequestMsg:
+		return m.onExecRequest(msg)
+	case execDoneMsg:
+		if msg.err != nil {
+			m.cmdError = "exec: " + msg.err.Error()
+		}
+		return m, nil
 	case tea.KeyMsg:
 		return m.onKey(msg)
 	}
@@ -161,14 +185,36 @@ func (m Model) onDescribeRequest(msg views.DescribeRequestMsg) (tea.Model, tea.C
 
 // onTailPromptRequest opens the tail-lines prompt prefilled with 100. When
 // the user submits, handleCmdBar dispatches a LogsRequestMsg with the parsed
-// number; the actual logs view is created in onLogsRequest.
+// number and the resolved container; the actual logs view is created in
+// onLogsRequest.
 func (m Model) onTailPromptRequest(msg views.TailPromptRequestMsg) (tea.Model, tea.Cmd) {
 	m.cmdMode = cmdBarTailPrompt
 	m.pendingTailNamespace = msg.Namespace
 	m.pendingTailPods = msg.Pods
+	m.pendingTailContainer = msg.Container
 	m.cmdBar.Prompt = "tail lines: "
 	m.cmdBar.Placeholder = "100"
 	m.cmdBar.SetValue("100")
+	m.cmdBar.CursorEnd()
+	m.cmdBar.Focus()
+	return m, textinput.Blink
+}
+
+// onContainerPromptRequest opens the container picker prefilled with the
+// first container name. The available names are stored in
+// pendingContainerContainers so handleCmdBar can validate the user's input.
+func (m Model) onContainerPromptRequest(msg views.ContainerPromptRequestMsg) (tea.Model, tea.Cmd) {
+	if len(msg.Containers) == 0 {
+		return m, nil
+	}
+	m.cmdMode = cmdBarContainerPrompt
+	m.pendingContainerNamespace = msg.Namespace
+	m.pendingContainerPods = msg.Pods
+	m.pendingContainerContainers = msg.Containers
+	m.pendingContainerNextKind = msg.NextKind
+	m.cmdBar.Prompt = fmt.Sprintf("container [%s]: ", strings.Join(msg.Containers, "/"))
+	m.cmdBar.Placeholder = msg.Containers[0]
+	m.cmdBar.SetValue(msg.Containers[0])
 	m.cmdBar.CursorEnd()
 	m.cmdBar.Focus()
 	return m, textinput.Blink
@@ -179,8 +225,35 @@ func (m Model) onLogsRequest(msg views.LogsRequestMsg) (tea.Model, tea.Cmd) {
 		view:      m.current.Title(),
 		namespace: m.namespace,
 	})
-	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods, msg.Tail))
+	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods, msg.Tail, msg.Container))
 	return m, m.relayoutCmd()
+}
+
+// onExecRequest runs `kubectl exec -it` against the named pod / container
+// via tea.ExecProcess so the shell takes over the terminal cleanly. When
+// the shell exits we get an execDoneMsg back at the root.
+func (m Model) onExecRequest(msg views.ExecRequestMsg) (tea.Model, tea.Cmd) {
+	cmd := buildExecCommand(msg.Namespace, msg.Pod, msg.Container)
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return execDoneMsg{err: err}
+	})
+}
+
+// buildExecCommand returns the kubectl exec command. Extracted so the args
+// are unit-testable without spawning a subprocess.
+//
+// gosec G204: exec.Command with variable args is normally a red flag, but
+// here every variable comes from a Kubernetes API object (namespace, pod,
+// container names that the user already had RBAC to read). None of it
+// originates from a free-form text field — even the container name is
+// matched back against the API-supplied list before this is called.
+func buildExecCommand(namespace, pod, container string) *exec.Cmd {
+	args := []string{"exec", "-it", "-n", namespace}
+	if container != "" {
+		args = append(args, "-c", container)
+	}
+	args = append(args, pod, "--", "sh")
+	return exec.Command("kubectl", args...) //nolint:gosec
 }
 
 func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -264,15 +337,17 @@ func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEnter:
 		value := m.cmdBar.Value()
 		mode := m.cmdMode
-		// Snapshot the pending-tail context BEFORE closeCmdBar wipes it.
-		ns := m.pendingTailNamespace
-		pods := m.pendingTailPods
+		// Snapshot the pending-* context BEFORE closeCmdBar wipes it.
+		tailNS, tailPods, tailContainer := m.pendingTailNamespace, m.pendingTailPods, m.pendingTailContainer
+		ctNS, ctPods, ctContainers, ctNext := m.pendingContainerNamespace, m.pendingContainerPods, m.pendingContainerContainers, m.pendingContainerNextKind
 		next := m.closeCmdBar()
 		switch mode {
 		case cmdBarCommand:
 			return next.execCmd(value)
 		case cmdBarTailPrompt:
-			return next, dispatchTailCmd(ns, pods, value)
+			return next, dispatchTailCmd(tailNS, tailPods, tailContainer, value)
+		case cmdBarContainerPrompt:
+			return next, dispatchContainerCmd(ctNS, ctPods, ctContainers, ctNext, value)
 		}
 		return next, nil
 	}
@@ -291,20 +366,53 @@ func (m Model) closeCmdBar() Model {
 	m.cmdBar.Placeholder = ""
 	m.pendingTailNamespace = ""
 	m.pendingTailPods = nil
+	m.pendingTailContainer = ""
+	m.pendingContainerNamespace = ""
+	m.pendingContainerPods = nil
+	m.pendingContainerContainers = nil
+	m.pendingContainerNextKind = ""
 	return m
 }
 
 // dispatchTailCmd parses the tail-prompt value and returns a Cmd that emits
 // LogsRequestMsg with the chosen tail. Invalid / non-positive input falls
 // back to 100 — a casual prompt should never surface a hard error.
-func dispatchTailCmd(ns string, pods []string, value string) tea.Cmd {
+func dispatchTailCmd(ns string, pods []string, container, value string) tea.Cmd {
 	n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
 	if err != nil || n <= 0 {
 		n = 100
 	}
 	return func() tea.Msg {
-		return views.LogsRequestMsg{Namespace: ns, Pods: pods, Tail: n}
+		return views.LogsRequestMsg{Namespace: ns, Pods: pods, Tail: n, Container: container}
 	}
+}
+
+// dispatchContainerCmd validates the chosen container against the offered
+// list (case-insensitively) and dispatches the next msg. Invalid input
+// falls back to the first container — picker prompts should be forgiving.
+func dispatchContainerCmd(ns string, pods []string, containers []string, nextKind, value string) tea.Cmd {
+	chosen := strings.TrimSpace(value)
+	matched := containers[0]
+	for _, c := range containers {
+		if strings.EqualFold(c, chosen) {
+			matched = c
+			break
+		}
+	}
+	switch nextKind {
+	case "logs":
+		return func() tea.Msg {
+			return views.TailPromptRequestMsg{Namespace: ns, Pods: pods, Container: matched}
+		}
+	case "exec":
+		if len(pods) == 0 {
+			return nil
+		}
+		return func() tea.Msg {
+			return views.ExecRequestMsg{Namespace: ns, Pod: pods[0], Container: matched}
+		}
+	}
+	return nil
 }
 
 func (m Model) execCmd(input string) (Model, tea.Cmd) {

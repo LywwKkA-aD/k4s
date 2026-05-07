@@ -83,3 +83,18 @@ func totalRestarts(p *corev1.Pod) int32 {
 	}
 	return sum
 }
+
+// ContainersForPod returns the names of every container in the pod's spec.
+// Used by the TUI to decide whether to prompt for a container before opening
+// logs or exec.
+func (c *Client) ContainersForPod(ctx context.Context, namespace, name string) ([]string, error) {
+	pod, err := c.Clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get pod: %w", err)
+	}
+	out := make([]string, 0, len(pod.Spec.Containers))
+	for _, ct := range pod.Spec.Containers {
+		out = append(out, ct.Name)
+	}
+	return out, nil
+}

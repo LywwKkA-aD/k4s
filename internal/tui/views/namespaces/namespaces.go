@@ -16,10 +16,13 @@ import (
 )
 
 const (
-	fetchTimeout = 5 * time.Second
-	minTableRows = 5
-	allRowName   = "<all>"
+	fetchTimeout  = 5 * time.Second
+	minTableRows  = 5
+	watchInterval = 5 * time.Second
+	allRowName    = "<all>"
 )
+
+type tickMsg time.Time
 
 // Model is the namespaces list view.
 type Model struct {
@@ -28,7 +31,10 @@ type Model struct {
 	err    error
 	loaded bool
 
+	watchEnabled bool
+
 	selectKey  key.Binding
+	watchKey   key.Binding
 	refreshKey key.Binding
 }
 
@@ -52,11 +58,16 @@ func New(client *k8s.Client) Model {
 	t.SetStyles(styles.Table())
 
 	return Model{
-		client: client,
-		table:  t,
+		client:       client,
+		table:        t,
+		watchEnabled: true,
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "select"),
+		),
+		watchKey: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "watch"),
 		),
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
@@ -65,12 +76,16 @@ func New(client *k8s.Client) Model {
 	}
 }
 
-// Init kicks off the first fetch.
+func tickCmd() tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+// Init kicks off the first fetch and the watch ticker.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return nil
+		return tickCmd()
 	}
-	return fetchCmd(m.client)
+	return tea.Batch(fetchCmd(m.client), tickCmd())
 }
 
 func fetchCmd(c *k8s.Client) tea.Cmd {
@@ -144,14 +159,22 @@ func (m Model) View() string {
 	return m.table.View()
 }
 
-// Title implements views.View.
+// Title implements views.View. Stable routing name; watch state is in
+// KubectlEquivalent's "--watch" suffix.
 func (m Model) Title() string { return "namespaces" }
 
 // KubectlEquivalent implements views.View.
-func (m Model) KubectlEquivalent() string { return "kubectl get namespaces" }
+func (m Model) KubectlEquivalent() string {
+	if m.watchEnabled {
+		return "kubectl get namespaces --watch"
+	}
+	return "kubectl get namespaces"
+}
 
 // Help implements views.View.
-func (m Model) Help() []key.Binding { return []key.Binding{m.selectKey, m.refreshKey} }
+func (m Model) Help() []key.Binding {
+	return []key.Binding{m.selectKey, m.watchKey, m.refreshKey}
+}
 
 // Close implements views.View. No streaming resources held.
 func (m Model) Close() error { return nil }
