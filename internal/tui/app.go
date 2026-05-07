@@ -481,8 +481,11 @@ func (m Model) popHistory() (Model, bool) {
 	return m.replaceView(last.view), true
 }
 
-// View composes header / body / footer with the body filling all the space
-// between them so the chrome stays at the edges regardless of view content.
+// View composes header / body / footer. The body normally renders the
+// active view, but multi-field prompts (tail lines, container picker) are
+// drawn as centered popups that temporarily cover the view — the single-
+// line ":" command bar stays in the footer because it is one line by
+// design and a popup would feel heavyweight.
 func (m Model) View() string {
 	header := m.renderHeader()
 	footer := m.renderFooter()
@@ -490,13 +493,51 @@ func (m Model) View() string {
 	bodyHeight := m.bodyHeight()
 	bodyWidth := max(m.width, 0)
 
+	content := m.current.View()
+	if m.cmdMode == cmdBarTailPrompt || m.cmdMode == cmdBarContainerPrompt {
+		content = m.renderPromptPopup(bodyWidth, bodyHeight)
+	}
+
 	body := lipgloss.NewStyle().
 		Width(bodyWidth).
 		Height(bodyHeight).
 		MaxHeight(bodyHeight).
-		Render(m.current.View())
+		Render(content)
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+}
+
+// renderPromptPopup renders the active prompt (tail / container) as a
+// centred bordered card. The textinput is the same underlying widget the
+// footer would show; only the chrome around it changes.
+func (m Model) renderPromptPopup(width, height int) string {
+	var title, hint string
+	switch m.cmdMode {
+	case cmdBarTailPrompt:
+		title = "tail lines"
+		hint = "Enter run · Esc cancel · default 100"
+	case cmdBarContainerPrompt:
+		title = "container"
+		hint = fmt.Sprintf(
+			"options: %s · Enter pick · Esc cancel",
+			strings.Join(m.pendingContainerContainers, " / "),
+		)
+	default:
+		// Off / Command — popup not used; bail.
+		return ""
+	}
+
+	inner := lipgloss.JoinVertical(
+		lipgloss.Left,
+		styles.PopupTitle.Render(title),
+		"",
+		m.cmdBar.View(),
+		"",
+		styles.Hint.Render(hint),
+	)
+	box := styles.PopupBox.Render(inner)
+
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m Model) renderHeader() string {
@@ -520,7 +561,10 @@ func (m Model) renderHeader() string {
 func (m Model) renderFooter() string {
 	w := max(m.width-2, 0)
 
-	if m.cmdMode != cmdBarOff {
+	// Only the single-line ":" command renders inline in the footer.
+	// Multi-field prompts (tail / container) live in a centred popup
+	// drawn in the body, so the footer stays informative.
+	if m.cmdMode == cmdBarCommand {
 		return styles.Footer.Width(w).Render(m.cmdBar.View())
 	}
 

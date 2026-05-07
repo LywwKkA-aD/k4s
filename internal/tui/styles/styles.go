@@ -51,6 +51,17 @@ var (
 			Foreground(lipgloss.Color("#000000")).
 			Background(lipgloss.Color("#FFD166")).
 			Bold(true)
+
+	// PopupBox is the bordered card used by interactive prompts (tail
+	// lines, container picker) so they pop over the body instead of
+	// hiding among the footer hints.
+	PopupBox = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorAccent).
+			Padding(1, 3)
+
+	// PopupTitle is the bold accent header inside a popup.
+	PopupTitle = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
 )
 
 // Table returns the table styles used across views.
