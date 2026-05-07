@@ -22,6 +22,13 @@ type View interface {
 	// the global ones.
 	Help() []key.Binding
 
+	// CapturesKeys reports whether the view currently owns the keyboard —
+	// for example because a textinput is focused (filter prompt, search
+	// prompt). When true the root model must forward all keystrokes to the
+	// view instead of running its own global bindings, so that 'q', ':', '?'
+	// reach the input rather than being swallowed as navigation.
+	CapturesKeys() bool
+
 	// Close releases resources held by the view (open log streams, watchers,
 	// goroutines). Called by the root model whenever the view is replaced or
 	// popped from history. Must be safe to call multiple times.

@@ -16,8 +16,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -35,15 +37,19 @@ type Model struct {
 	client    *k8s.Client
 	namespace string
 	table     table.Model
+	raw       []k8s.Deployment
 	err       error
 	loaded    bool
+	bodyH     int
 
 	watchEnabled bool
+	filter       filter.Model
 
 	selectKey  key.Binding
 	logsKey    key.Binding
 	watchKey   key.Binding
 	refreshKey key.Binding
+	filterKey  key.Binding
 }
 
 type deploymentsMsg struct {
@@ -74,6 +80,7 @@ func New(client *k8s.Client, namespace string) Model {
 		namespace:    namespace,
 		table:        t,
 		watchEnabled: true,
+		filter:       filter.New(),
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "describe"),
@@ -89,6 +96,10 @@ func New(client *k8s.Client, namespace string) Model {
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
+		),
+		filterKey: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "filter"),
 		),
 	}
 }
@@ -152,7 +163,9 @@ func resolvePodsAndContainersCmd(c *k8s.Client, ns, name string) tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.table.SetHeight(max(msg.Height, minTableRows))
+		m.bodyH = msg.Height
+		m.filter.SetWidth(msg.Width)
+		m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	case tickMsg:
 		cmds := []tea.Cmd{tickCmd()}
 		if m.watchEnabled && m.client != nil {
@@ -160,6 +173,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
+		if m.filter.IsOpen() {
+			var cmd tea.Cmd
+			var consumed bool
+			m.filter, cmd, consumed = m.filter.Update(msg)
+			if consumed {
+				m.applyFilter()
+				return m, cmd
+			}
+		}
 		if cmd, handled := m.handleKey(msg); handled {
 			return m, cmd
 		}
@@ -169,7 +191,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		m.loaded = true
 		if msg.err == nil {
-			m.table.SetRows(toRows(msg.items, m.namespace == ""))
+			m.raw = msg.items
+			m.applyFilter()
 		}
 		return m, nil
 	}
@@ -178,8 +201,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) tableHeight() int {
+	if m.filter.Active() {
+		return m.bodyH - 1
+	}
+	return m.bodyH
+}
+
+func (m *Model) applyFilter() {
+	items := m.raw
+	if m.filter.Active() {
+		items = make([]k8s.Deployment, 0, len(m.raw))
+		for _, d := range m.raw {
+			if m.filter.Match(d.Name, d.Namespace) {
+				items = append(items, d)
+			}
+		}
+	}
+	m.table.SetRows(toRows(items, m.namespace == ""))
+	m.table.SetHeight(max(m.tableHeight(), minTableRows))
+}
+
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch {
+	case key.Matches(msg, m.filterKey):
+		var cmd tea.Cmd
+		m.filter, cmd = m.filter.Open()
+		m.applyFilter()
+		return cmd, true
 	case key.Matches(msg, m.refreshKey) && m.client != nil:
 		return fetchCmd(m.client, m.namespace), true
 	case key.Matches(msg, m.watchKey):
@@ -270,10 +319,18 @@ func (m Model) View() string {
 	if m.err != nil {
 		return styles.Warn.Render("deployments unavailable: " + m.err.Error())
 	}
+	body := m.table.View()
 	if len(m.table.Rows()) == 0 {
-		return styles.Hint.Render("no deployments")
+		if m.filter.Active() {
+			body = styles.Hint.Render("no deployments match /" + m.filter.Query())
+		} else {
+			body = styles.Hint.Render("no deployments")
+		}
 	}
-	return m.table.View()
+	if !m.filter.Active() {
+		return body
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, m.filter.View(), body)
 }
 
 // Title implements views.View. Stable routing name; watch state is in
@@ -294,8 +351,11 @@ func (m Model) KubectlEquivalent() string {
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.logsKey, m.watchKey, m.refreshKey}
+	return []key.Binding{m.selectKey, m.logsKey, m.filterKey, m.watchKey, m.refreshKey}
 }
+
+// CapturesKeys implements views.View.
+func (m Model) CapturesKeys() bool { return m.filter.IsOpen() }
 
 // Close implements views.View. No long-lived resources held.
 func (m Model) Close() error { return nil }

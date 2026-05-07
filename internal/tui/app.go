@@ -263,6 +263,12 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.cmdMode != cmdBarOff {
 		return m.handleCmdBar(msg)
 	}
+	// Views that own the keyboard (focused textinput, list-popup, etc.) get
+	// every keystroke first. Without this, 'q' inside a filter prompt would
+	// be intercepted as "go home" before it ever reached the view.
+	if m.current != nil && m.current.CapturesKeys() {
+		return m.forwardToView(msg)
+	}
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		if m.current.Title() == viewDashboard {

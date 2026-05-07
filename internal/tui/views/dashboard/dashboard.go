@@ -139,6 +139,10 @@ func (m Model) Help() []key.Binding {
 	return []key.Binding{m.refreshKey, m.watchKey}
 }
 
+// CapturesKeys implements views.View. Dashboard has no input fields, so
+// global navigation always wins.
+func (m Model) CapturesKeys() bool { return false }
+
 // Close implements views.View. Dashboard owns no resources beyond the in-flight
 // stats fetch (bounded by ctx + 5s timeout), so this is a no-op.
 func (m Model) Close() error { return nil }

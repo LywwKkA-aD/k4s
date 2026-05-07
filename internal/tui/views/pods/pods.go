@@ -9,8 +9,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -31,16 +33,20 @@ type Model struct {
 	client    *k8s.Client
 	namespace string
 	table     table.Model
+	raw       []k8s.Pod
 	err       error
 	loaded    bool
+	bodyH     int
 
 	watchEnabled bool
+	filter       filter.Model
 
 	selectKey  key.Binding
 	logsKey    key.Binding
 	execKey    key.Binding
 	watchKey   key.Binding
 	refreshKey key.Binding
+	filterKey  key.Binding
 }
 
 type podsMsg struct {
@@ -75,6 +81,7 @@ func New(client *k8s.Client, namespace string) Model {
 		namespace:    namespace,
 		table:        t,
 		watchEnabled: true,
+		filter:       filter.New(),
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "describe"),
@@ -94,6 +101,10 @@ func New(client *k8s.Client, namespace string) Model {
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
+		),
+		filterKey: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "filter"),
 		),
 	}
 }
@@ -156,7 +167,9 @@ func resolveContainersCmd(c *k8s.Client, ns, pod, kind string) tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.table.SetHeight(max(msg.Height, minTableRows))
+		m.bodyH = msg.Height
+		m.filter.SetWidth(msg.Width)
+		m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	case tickMsg:
 		cmds := []tea.Cmd{tickCmd()}
 		if m.watchEnabled && m.client != nil {
@@ -164,6 +177,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
+		if m.filter.IsOpen() {
+			var cmd tea.Cmd
+			var consumed bool
+			m.filter, cmd, consumed = m.filter.Update(msg)
+			if consumed {
+				m.applyFilter()
+				return m, cmd
+			}
+		}
 		if cmd, handled := m.handleKey(msg); handled {
 			return m, cmd
 		}
@@ -173,7 +195,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		m.loaded = true
 		if msg.err == nil {
-			m.table.SetRows(toRows(msg.pods, m.namespace == ""))
+			m.raw = msg.pods
+			m.applyFilter()
 		}
 		return m, nil
 	}
@@ -182,9 +205,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// tableHeight reserves one body line for the filter bar when active so the
+// table does not overlap the prompt.
+func (m Model) tableHeight() int {
+	if m.filter.Active() {
+		return m.bodyH - 1
+	}
+	return m.bodyH
+}
+
+// applyFilter rebuilds the visible rows from the raw cache using the current
+// filter query. Called on every podsMsg, every keystroke inside the filter,
+// and whenever the filter is opened/closed.
+func (m *Model) applyFilter() {
+	pods := m.raw
+	if m.filter.Active() {
+		pods = make([]k8s.Pod, 0, len(m.raw))
+		for _, p := range m.raw {
+			if m.filter.Match(p.Name, p.Namespace, p.Status) {
+				pods = append(pods, p)
+			}
+		}
+	}
+	m.table.SetRows(toRows(pods, m.namespace == ""))
+	m.table.SetHeight(max(m.tableHeight(), minTableRows))
+}
+
 // handleKey returns (cmd, true) if the key matched a view binding.
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch {
+	case key.Matches(msg, m.filterKey):
+		var cmd tea.Cmd
+		m.filter, cmd = m.filter.Open()
+		m.applyFilter()
+		return cmd, true
 	case key.Matches(msg, m.refreshKey) && m.client != nil:
 		return fetchPodsCmd(m.client, m.namespace), true
 	case key.Matches(msg, m.watchKey):
@@ -283,10 +337,19 @@ func (m Model) View() string {
 	if m.err != nil {
 		return styles.Warn.Render("pods unavailable: " + m.err.Error())
 	}
+
+	body := m.table.View()
 	if len(m.table.Rows()) == 0 {
-		return styles.Hint.Render("no pods")
+		if m.filter.Active() {
+			body = styles.Hint.Render("no pods match /" + m.filter.Query())
+		} else {
+			body = styles.Hint.Render("no pods")
+		}
 	}
-	return m.table.View()
+	if !m.filter.Active() {
+		return body
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, m.filter.View(), body)
 }
 
 // Title implements views.View. Routing depends on Title returning the
@@ -308,8 +371,12 @@ func (m Model) KubectlEquivalent() string {
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.logsKey, m.execKey, m.watchKey, m.refreshKey}
+	return []key.Binding{m.selectKey, m.logsKey, m.execKey, m.filterKey, m.watchKey, m.refreshKey}
 }
+
+// CapturesKeys implements views.View. Returns true while the filter prompt
+// is focused so that 'q' / ':' / '?' / etc. reach the input as text.
+func (m Model) CapturesKeys() bool { return m.filter.IsOpen() }
 
 // Close implements views.View. No long-lived resources held.
 func (m Model) Close() error { return nil }

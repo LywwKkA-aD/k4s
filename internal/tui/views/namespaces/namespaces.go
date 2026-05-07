@@ -9,8 +9,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -28,14 +30,18 @@ type tickMsg time.Time
 type Model struct {
 	client *k8s.Client
 	table  table.Model
+	raw    []k8s.Namespace
 	err    error
 	loaded bool
+	bodyH  int
 
 	watchEnabled bool
+	filter       filter.Model
 
 	selectKey  key.Binding
 	watchKey   key.Binding
 	refreshKey key.Binding
+	filterKey  key.Binding
 }
 
 type namespacesMsg struct {
@@ -61,6 +67,7 @@ func New(client *k8s.Client) Model {
 		client:       client,
 		table:        t,
 		watchEnabled: true,
+		filter:       filter.New(),
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "select"),
@@ -72,6 +79,10 @@ func New(client *k8s.Client) Model {
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
+		),
+		filterKey: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "filter"),
 		),
 	}
 }
@@ -102,34 +113,94 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		// msg.Height is already the body height (root model adjusts it).
-		m.table.SetHeight(max(msg.Height, minTableRows))
-	case tea.KeyMsg:
-		if key.Matches(msg, m.refreshKey) && m.client != nil {
-			return m, fetchCmd(m.client)
+		m.bodyH = msg.Height
+		m.filter.SetWidth(msg.Width)
+		m.table.SetHeight(max(m.tableHeight(), minTableRows))
+	case tickMsg:
+		cmds := []tea.Cmd{tickCmd()}
+		if m.watchEnabled && m.client != nil {
+			cmds = append(cmds, fetchCmd(m.client))
 		}
-		if key.Matches(msg, m.selectKey) && m.loaded && len(m.table.Rows()) > 0 {
-			row := m.table.SelectedRow()
-			if row != nil {
-				name := row[0]
-				if name == allRowName {
-					name = ""
-				}
-				return m, func() tea.Msg {
-					return views.NamespaceSelectedMsg{Namespace: name}
-				}
+		return m, tea.Batch(cmds...)
+	case tea.KeyMsg:
+		if m.filter.IsOpen() {
+			var cmd tea.Cmd
+			var consumed bool
+			m.filter, cmd, consumed = m.filter.Update(msg)
+			if consumed {
+				m.applyFilter()
+				return m, cmd
 			}
+		}
+		if cmd, handled := m.handleKey(msg); handled {
+			return m, cmd
 		}
 	case namespacesMsg:
 		m.err = msg.err
 		m.loaded = true
 		if msg.err == nil {
-			m.table.SetRows(toRows(msg.items))
+			m.raw = msg.items
+			m.applyFilter()
 		}
 		return m, nil
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
+}
+
+// handleKey returns (cmd, true) when the key matched a binding.
+func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+	switch {
+	case key.Matches(msg, m.filterKey):
+		var cmd tea.Cmd
+		m.filter, cmd = m.filter.Open()
+		m.applyFilter()
+		return cmd, true
+	case key.Matches(msg, m.watchKey):
+		m.watchEnabled = !m.watchEnabled
+		return nil, true
+	case key.Matches(msg, m.refreshKey) && m.client != nil:
+		return fetchCmd(m.client), true
+	case key.Matches(msg, m.selectKey) && m.loaded && len(m.table.Rows()) > 0:
+		row := m.table.SelectedRow()
+		if row == nil {
+			return nil, false
+		}
+		name := row[0]
+		if name == allRowName {
+			name = ""
+		}
+		return func() tea.Msg {
+			return views.NamespaceSelectedMsg{Namespace: name}
+		}, true
+	}
+	return nil, false
+}
+
+func (m Model) tableHeight() int {
+	if m.filter.Active() {
+		return m.bodyH - 1
+	}
+	return m.bodyH
+}
+
+// applyFilter rebuilds visible rows. The synthetic "<all>" row is kept
+// regardless of the filter — it is the user's escape hatch to reset the
+// active namespace and is not a "real" namespace they would want to filter
+// out by name.
+func (m *Model) applyFilter() {
+	items := m.raw
+	if m.filter.Active() {
+		items = make([]k8s.Namespace, 0, len(m.raw))
+		for _, n := range m.raw {
+			if m.filter.Match(n.Name) {
+				items = append(items, n)
+			}
+		}
+	}
+	m.table.SetRows(toRows(items))
+	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 }
 
 func toRows(items []k8s.Namespace) []table.Row {
@@ -156,7 +227,11 @@ func (m Model) View() string {
 	if m.err != nil {
 		return styles.Warn.Render("namespaces unavailable: " + m.err.Error())
 	}
-	return m.table.View()
+	body := m.table.View()
+	if !m.filter.Active() {
+		return body
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, m.filter.View(), body)
 }
 
 // Title implements views.View. Stable routing name; watch state is in
@@ -173,8 +248,11 @@ func (m Model) KubectlEquivalent() string {
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.watchKey, m.refreshKey}
+	return []key.Binding{m.selectKey, m.filterKey, m.watchKey, m.refreshKey}
 }
+
+// CapturesKeys implements views.View.
+func (m Model) CapturesKeys() bool { return m.filter.IsOpen() }
 
 // Close implements views.View. No streaming resources held.
 func (m Model) Close() error { return nil }

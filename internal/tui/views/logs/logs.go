@@ -591,6 +591,11 @@ func (m Model) Help() []key.Binding {
 	return bindings
 }
 
+// CapturesKeys implements views.View. Returns true while the search prompt
+// is focused so that 'q' / ':' reach the input as text rather than the
+// global navigation.
+func (m Model) CapturesKeys() bool { return m.searchOpen }
+
 // Close cancels the streaming context, draining the goroutines, which
 // eventually closes the events channel. Idempotent.
 func (m Model) Close() error {
