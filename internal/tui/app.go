@@ -88,11 +88,14 @@ type Model struct {
 
 	// pendingContainer* hold the picker state. NextKind is "logs" or "exec";
 	// the value chosen by the user is then translated into the appropriate
-	// follow-up message.
+	// follow-up message. The picker is a list (not a textinput), so the
+	// "value" is an index into pendingContainerContainers rather than the
+	// cmdBar's typed string.
 	pendingContainerNamespace  string
 	pendingContainerPods       []string
 	pendingContainerContainers []string
 	pendingContainerNextKind   string
+	pendingContainerIdx        int
 }
 
 // execDoneMsg is delivered by tea.ExecProcess after the kubectl-exec shell
@@ -200,9 +203,9 @@ func (m Model) onTailPromptRequest(msg views.TailPromptRequestMsg) (tea.Model, t
 	return m, textinput.Blink
 }
 
-// onContainerPromptRequest opens the container picker prefilled with the
-// first container name. The available names are stored in
-// pendingContainerContainers so handleCmdBar can validate the user's input.
+// onContainerPromptRequest opens the container picker as a list popup.
+// Unlike the tail prompt this is not a textinput — the user navigates with
+// arrows / j-k and confirms with Enter (or jumps to a slot with 1..9).
 func (m Model) onContainerPromptRequest(msg views.ContainerPromptRequestMsg) (tea.Model, tea.Cmd) {
 	if len(msg.Containers) == 0 {
 		return m, nil
@@ -212,12 +215,8 @@ func (m Model) onContainerPromptRequest(msg views.ContainerPromptRequestMsg) (te
 	m.pendingContainerPods = msg.Pods
 	m.pendingContainerContainers = msg.Containers
 	m.pendingContainerNextKind = msg.NextKind
-	m.cmdBar.Prompt = fmt.Sprintf("container [%s]: ", strings.Join(msg.Containers, "/"))
-	m.cmdBar.Placeholder = msg.Containers[0]
-	m.cmdBar.SetValue(msg.Containers[0])
-	m.cmdBar.CursorEnd()
-	m.cmdBar.Focus()
-	return m, textinput.Blink
+	m.pendingContainerIdx = 0
+	return m, nil
 }
 
 func (m Model) onLogsRequest(msg views.LogsRequestMsg) (tea.Model, tea.Cmd) {
@@ -327,10 +326,13 @@ func (m Model) bodyHeight() int {
 	return h
 }
 
-// handleCmdBar routes input while the prompt bar is active. Esc cancels,
-// Enter dispatches based on the current cmdMode, anything else is forwarded
-// to the textinput.
+// handleCmdBar dispatches based on the prompt mode. Container picker is a
+// list and has its own keymap; everything else (command, tail) shares the
+// textinput-driven path.
 func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.cmdMode == cmdBarContainerPrompt {
+		return m.handleContainerPickerKey(msg)
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
 		return m.closeCmdBar(), nil
@@ -339,21 +341,70 @@ func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		mode := m.cmdMode
 		// Snapshot the pending-* context BEFORE closeCmdBar wipes it.
 		tailNS, tailPods, tailContainer := m.pendingTailNamespace, m.pendingTailPods, m.pendingTailContainer
-		ctNS, ctPods, ctContainers, ctNext := m.pendingContainerNamespace, m.pendingContainerPods, m.pendingContainerContainers, m.pendingContainerNextKind
 		next := m.closeCmdBar()
 		switch mode {
 		case cmdBarCommand:
 			return next.execCmd(value)
 		case cmdBarTailPrompt:
 			return next, dispatchTailCmd(tailNS, tailPods, tailContainer, value)
-		case cmdBarContainerPrompt:
-			return next, dispatchContainerCmd(ctNS, ctPods, ctContainers, ctNext, value)
 		}
 		return next, nil
 	}
 	var cmd tea.Cmd
 	m.cmdBar, cmd = m.cmdBar.Update(msg)
 	return m, cmd
+}
+
+// handleContainerPickerKey is the keymap for the container-picker popup —
+// arrows / j-k navigate, Enter / 1..9 confirm, Esc cancels.
+func (m Model) handleContainerPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	n := len(m.pendingContainerContainers)
+	if n == 0 {
+		return m.closeCmdBar(), nil
+	}
+
+	switch msg.Type {
+	case tea.KeyEsc:
+		return m.closeCmdBar(), nil
+	case tea.KeyEnter:
+		return m.commitContainerPick(m.pendingContainerIdx)
+	case tea.KeyUp:
+		m.pendingContainerIdx = (m.pendingContainerIdx - 1 + n) % n
+		return m, nil
+	case tea.KeyDown:
+		m.pendingContainerIdx = (m.pendingContainerIdx + 1) % n
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "k":
+		m.pendingContainerIdx = (m.pendingContainerIdx - 1 + n) % n
+		return m, nil
+	case "j":
+		m.pendingContainerIdx = (m.pendingContainerIdx + 1) % n
+		return m, nil
+	}
+
+	// Quick-pick: digit 1..9 confirms the slot at that index, ignored if
+	// out of range. Only single-digit keys are considered.
+	if s := msg.String(); len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+		idx := int(s[0] - '1')
+		if idx < n {
+			return m.commitContainerPick(idx)
+		}
+	}
+	return m, nil
+}
+
+// commitContainerPick fires the dispatching cmd for the chosen container
+// and tears down the picker state.
+func (m Model) commitContainerPick(idx int) (tea.Model, tea.Cmd) {
+	chosen := m.pendingContainerContainers[idx]
+	ns := m.pendingContainerNamespace
+	pods := m.pendingContainerPods
+	nextKind := m.pendingContainerNextKind
+	next := m.closeCmdBar()
+	return next, dispatchContainerCmd(ns, pods, chosen, nextKind)
 }
 
 // closeCmdBar resets the prompt bar and clears any prompt-specific state.
@@ -371,6 +422,7 @@ func (m Model) closeCmdBar() Model {
 	m.pendingContainerPods = nil
 	m.pendingContainerContainers = nil
 	m.pendingContainerNextKind = ""
+	m.pendingContainerIdx = 0
 	return m
 }
 
@@ -387,29 +439,20 @@ func dispatchTailCmd(ns string, pods []string, container, value string) tea.Cmd 
 	}
 }
 
-// dispatchContainerCmd validates the chosen container against the offered
-// list (case-insensitively) and dispatches the next msg. Invalid input
-// falls back to the first container — picker prompts should be forgiving.
-func dispatchContainerCmd(ns string, pods []string, containers []string, nextKind, value string) tea.Cmd {
-	chosen := strings.TrimSpace(value)
-	matched := containers[0]
-	for _, c := range containers {
-		if strings.EqualFold(c, chosen) {
-			matched = c
-			break
-		}
-	}
+// dispatchContainerCmd routes the user's container choice to the right
+// follow-up message based on what the picker was opened for.
+func dispatchContainerCmd(ns string, pods []string, container, nextKind string) tea.Cmd {
 	switch nextKind {
 	case "logs":
 		return func() tea.Msg {
-			return views.TailPromptRequestMsg{Namespace: ns, Pods: pods, Container: matched}
+			return views.TailPromptRequestMsg{Namespace: ns, Pods: pods, Container: container}
 		}
 	case "exec":
 		if len(pods) == 0 {
 			return nil
 		}
 		return func() tea.Msg {
-			return views.ExecRequestMsg{Namespace: ns, Pod: pods[0], Container: matched}
+			return views.ExecRequestMsg{Namespace: ns, Pod: pods[0], Container: container}
 		}
 	}
 	return nil
@@ -507,37 +550,47 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 }
 
-// renderPromptPopup renders the active prompt (tail / container) as a
-// centred bordered card. The textinput is the same underlying widget the
-// footer would show; only the chrome around it changes.
+// renderPromptPopup renders the active prompt as a centred bordered card.
+// Tail prompt is a textinput; container prompt is a navigable list.
 func (m Model) renderPromptPopup(width, height int) string {
-	var title, hint string
+	var inner string
 	switch m.cmdMode {
 	case cmdBarTailPrompt:
-		title = "tail lines"
-		hint = "Enter run · Esc cancel · default 100"
-	case cmdBarContainerPrompt:
-		title = "container"
-		hint = fmt.Sprintf(
-			"options: %s · Enter pick · Esc cancel",
-			strings.Join(m.pendingContainerContainers, " / "),
+		inner = lipgloss.JoinVertical(
+			lipgloss.Left,
+			styles.PopupTitle.Render("tail lines"),
+			"",
+			m.cmdBar.View(),
+			"",
+			styles.Hint.Render("Enter run · Esc cancel · default 100"),
 		)
+	case cmdBarContainerPrompt:
+		inner = m.renderContainerPickerInner()
 	default:
-		// Off / Command — popup not used; bail.
 		return ""
 	}
-
-	inner := lipgloss.JoinVertical(
-		lipgloss.Left,
-		styles.PopupTitle.Render(title),
-		"",
-		m.cmdBar.View(),
-		"",
-		styles.Hint.Render(hint),
-	)
 	box := styles.PopupBox.Render(inner)
-
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// renderContainerPickerInner builds the body of the container-picker popup:
+// a numbered list with the current selection highlighted in the accent
+// colour, plus a hint line.
+func (m Model) renderContainerPickerInner() string {
+	containers := m.pendingContainerContainers
+	rows := make([]string, 0, len(containers)+4)
+	rows = append(rows, styles.PopupTitle.Render("container"), "")
+	for i, name := range containers {
+		marker := "  "
+		label := fmt.Sprintf("%d. %s", i+1, name)
+		if i == m.pendingContainerIdx {
+			marker = styles.OK.Render("▶ ")
+			label = styles.OK.Render(label)
+		}
+		rows = append(rows, marker+label)
+	}
+	rows = append(rows, "", styles.Hint.Render("↑↓/jk navigate · 1-9 quick · Enter pick · Esc cancel"))
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
 func (m Model) renderHeader() string {
