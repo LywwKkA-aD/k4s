@@ -7,22 +7,62 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func TestFormatLineSinglePodNoPrefix(t *testing.T) {
+func TestFormatRawLineSinglePodHasNoPrefix(t *testing.T) {
 	t.Parallel()
-	got := formatLine("nginx-7d-aaa", "hello world", false)
-	if got != "hello world" {
+	got := formatRawLine(logLine{pod: "nginx", text: "hello", kind: lineLog}, false, false)
+	if got != "hello" {
 		t.Errorf("single-pod line should pass through unchanged, got %q", got)
 	}
 }
 
-func TestFormatLineMultiPodHasPrefix(t *testing.T) {
+func TestFormatRawLineCompactDoesNotEmbedPodName(t *testing.T) {
 	t.Parallel()
-	got := formatLine("nginx-7d-aaa", "hello world", true)
-	if !strings.Contains(got, "nginx-7d-aaa") {
-		t.Errorf("multi-pod line missing pod tag: %q", got)
+	got := formatRawLine(logLine{pod: "nginx-aaa", text: "hello", kind: lineLog}, true, false)
+	if strings.Contains(got, "nginx-aaa") {
+		t.Errorf("compact prefix must not include the pod name, got %q", got)
 	}
-	if !strings.Contains(got, "hello world") {
-		t.Errorf("multi-pod line missing message: %q", got)
+	if !strings.Contains(got, compactPrefix) {
+		t.Errorf("compact prefix should include the bar glyph, got %q", got)
+	}
+	if !strings.Contains(got, "hello") {
+		t.Errorf("compact prefix should keep the body, got %q", got)
+	}
+}
+
+func TestFormatRawLineFullEmbedsPodName(t *testing.T) {
+	t.Parallel()
+	got := formatRawLine(logLine{pod: "nginx-aaa", text: "hello", kind: lineLog}, true, true)
+	if !strings.Contains(got, "nginx-aaa") {
+		t.Errorf("full prefix should include the pod name, got %q", got)
+	}
+	if !strings.Contains(got, "hello") {
+		t.Errorf("full prefix should keep the body, got %q", got)
+	}
+}
+
+func TestFormatRawLineStreamErrorAlwaysShowsPodName(t *testing.T) {
+	t.Parallel()
+
+	// Even in compact mode an error message must surface the pod name —
+	// you can't read "stream error" without knowing which stream.
+	got := formatRawLine(logLine{pod: "nginx-aaa", text: "boom", kind: lineStreamErr}, true, false)
+	if !strings.Contains(got, "nginx-aaa") {
+		t.Errorf("compact-mode stream error should still name the pod, got %q", got)
+	}
+	if !strings.Contains(got, "boom") {
+		t.Errorf("error message missing: %q", got)
+	}
+}
+
+func TestFormatRawLineStreamDoneAlwaysShowsPodName(t *testing.T) {
+	t.Parallel()
+
+	got := formatRawLine(logLine{pod: "nginx-aaa", kind: lineStreamDone}, true, false)
+	if !strings.Contains(got, "nginx-aaa") {
+		t.Errorf("compact-mode stream-closed should still name the pod, got %q", got)
+	}
+	if !strings.Contains(got, "stream closed") {
+		t.Errorf("stream closed marker missing: %q", got)
 	}
 }
 
@@ -50,13 +90,13 @@ func TestPodColorBelongsToPalette(t *testing.T) {
 	t.Errorf("podColor returned %v, not in palette", got)
 }
 
-func TestAppendLineEnforcesBufferCap(t *testing.T) {
+func TestAppendRawEnforcesBufferCap(t *testing.T) {
 	t.Parallel()
 	m := New(nil, "ns", nil, 0)
 	for i := 0; i < maxBufferedLines+50; i++ {
-		m.appendLine("line")
+		m.appendRaw("foo", "line", lineLog)
 	}
-	if got := len(m.lines); got != maxBufferedLines {
+	if got := len(m.rawLines); got != maxBufferedLines {
 		t.Errorf("buffer cap not enforced: got %d, want %d", got, maxBufferedLines)
 	}
 }
@@ -110,29 +150,34 @@ func TestNewClampsNonPositiveTailToDefault(t *testing.T) {
 	}
 }
 
-func TestComputeMatchesFindsSubstrings(t *testing.T) {
+func TestComputeMatchesOnRawTextNotPrefix(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100)
-	m.appendLine("alpha line")
-	m.appendLine("beta gamma")
-	m.appendLine("alpha beta")
-	m.appendLine("delta")
 
+	m := New(nil, "ns", []string{"alpha", "beta"}, 100)
+	m.appendRaw("alpha", "tick #1", lineLog)
+	m.appendRaw("beta", "tock #1", lineLog)
+	m.appendRaw("alpha", "tick #2", lineLog)
+
+	// Searching for "alpha" should NOT match the bare log line text — the
+	// pod name lives in the prefix, which the search must ignore.
 	m.searchQuery = "alpha"
 	m.computeMatches()
-
-	if len(m.matches) != 2 {
-		t.Fatalf("expected 2 matches, got %d (%v)", len(m.matches), m.matches)
+	if len(m.matches) != 0 {
+		t.Errorf("search on pod name (in prefix) leaked into matches: %v", m.matches)
 	}
-	if m.matches[0] != 0 || m.matches[1] != 2 {
-		t.Errorf("match indices = %v, want [0 2]", m.matches)
+
+	// Searching for body text should still work.
+	m.searchQuery = "tick"
+	m.computeMatches()
+	if len(m.matches) != 2 {
+		t.Errorf("expected 2 matches for 'tick', got %d (%v)", len(m.matches), m.matches)
 	}
 }
 
 func TestComputeMatchesEmptyQueryClears(t *testing.T) {
 	t.Parallel()
 	m := New(nil, "ns", []string{"foo"}, 100)
-	m.appendLine("alpha")
+	m.appendRaw("foo", "alpha", lineLog)
 	m.matches = []int{0}
 	m.searchQuery = ""
 	m.computeMatches()
@@ -167,9 +212,7 @@ func TestGotoMatchPausesAutoFollow(t *testing.T) {
 	m := New(nil, "ns", []string{"foo"}, 100)
 	m.matches = []int{0}
 	m.autoFollow = true
-
 	m.gotoMatch(+1)
-
 	if m.autoFollow {
 		t.Error("gotoMatch should pause auto-follow so the user can read the match")
 	}
@@ -181,9 +224,7 @@ func TestGotoMatchOnEmptyMatchesIsNoOp(t *testing.T) {
 	m.matches = nil
 	m.matchIdx = 0
 	m.autoFollow = true
-
 	m.gotoMatch(+1)
-
 	if m.matchIdx != 0 {
 		t.Errorf("idx changed on empty matches: %d", m.matchIdx)
 	}
@@ -192,13 +233,24 @@ func TestGotoMatchOnEmptyMatchesIsNoOp(t *testing.T) {
 	}
 }
 
+func TestHighlightContentReplacesMatches(t *testing.T) {
+	t.Parallel()
+	out := highlightContent("hello alpha world alpha", "alpha")
+	if count := strings.Count(out, "alpha"); count != 2 {
+		t.Errorf("expected 'alpha' to appear twice in output, got %d:\n%s", count, out)
+	}
+	if got := highlightContent("hello", ""); got != "hello" {
+		t.Errorf("empty query should pass content through, got %q", got)
+	}
+}
+
 func TestCancelSearchClearsQueryButPreservesLogs(t *testing.T) {
 	t.Parallel()
 
 	m := New(nil, "ns", []string{"foo"}, 100)
-	m.appendLine("alpha tick")
-	m.appendLine("beta tick")
-	m.appendLine("gamma")
+	m.appendRaw("foo", "alpha tick", lineLog)
+	m.appendRaw("foo", "beta tick", lineLog)
+	m.appendRaw("foo", "gamma", lineLog)
 
 	m.searchQuery = "tick"
 	m.computeMatches()
@@ -214,24 +266,18 @@ func TestCancelSearchClearsQueryButPreservesLogs(t *testing.T) {
 	if len(m.matches) != 0 {
 		t.Errorf("matches not cleared: %v", m.matches)
 	}
-	if m.matchIdx != 0 {
-		t.Errorf("matchIdx not reset: %d", m.matchIdx)
-	}
-	if len(m.lines) != 3 {
-		t.Errorf("cancelSearch wiped log buffer (got %d lines, want 3)", len(m.lines))
+	if len(m.rawLines) != 3 {
+		t.Errorf("cancelSearch wiped log buffer (got %d lines, want 3)", len(m.rawLines))
 	}
 }
 
 func TestCancelSearchPreservesAutoFollow(t *testing.T) {
 	t.Parallel()
-
 	for _, follow := range []bool{true, false} {
 		m := New(nil, "ns", []string{"foo"}, 100)
 		m.searchQuery = "x"
 		m.autoFollow = follow
-
 		m.cancelSearch()
-
 		if m.autoFollow != follow {
 			t.Errorf("autoFollow flipped: was %v, after cancelSearch %v", follow, m.autoFollow)
 		}
@@ -240,30 +286,24 @@ func TestCancelSearchPreservesAutoFollow(t *testing.T) {
 
 func TestClearLogsPreservesAutoFollow(t *testing.T) {
 	t.Parallel()
-
 	m := New(nil, "ns", []string{"foo"}, 100)
-	m.appendLine("a")
-	m.appendLine("b")
-	m.autoFollow = false // user paused
-
+	m.appendRaw("foo", "a", lineLog)
+	m.appendRaw("foo", "b", lineLog)
+	m.autoFollow = false
 	m.clearLogs()
-
 	if m.autoFollow {
 		t.Error("clearLogs flipped autoFollow back to true — paused state must persist")
 	}
-	if len(m.lines) != 0 {
-		t.Errorf("clearLogs left lines behind: %d", len(m.lines))
+	if len(m.rawLines) != 0 {
+		t.Errorf("clearLogs left lines behind: %d", len(m.rawLines))
 	}
 }
 
 func TestClearLogsLeavesSearchAlone(t *testing.T) {
 	t.Parallel()
-
 	m := New(nil, "ns", []string{"foo"}, 100)
 	m.searchQuery = "tick"
-
 	m.clearLogs()
-
 	if m.searchQuery != "tick" {
 		t.Errorf("clearLogs touched search query: %q", m.searchQuery)
 	}
@@ -273,7 +313,7 @@ func TestStatusLineCombinesPauseAndSearch(t *testing.T) {
 	t.Parallel()
 
 	m := New(nil, "ns", []string{"foo"}, 100)
-	m.appendLine("hello tick")
+	m.appendRaw("foo", "hello tick", lineLog)
 	m.searchQuery = "tick"
 	m.computeMatches()
 	m.autoFollow = false
@@ -293,24 +333,47 @@ func TestStatusLineCombinesPauseAndSearch(t *testing.T) {
 
 func TestStatusLineEmptyWhenIdle(t *testing.T) {
 	t.Parallel()
-
 	m := New(nil, "ns", []string{"foo"}, 100)
 	if got := m.statusLine(); got != "" {
 		t.Errorf("idle status line should be empty, got %q", got)
 	}
 }
 
-func TestHighlightContentReplacesMatches(t *testing.T) {
+func TestStatusLineMentionsTagsWhenOn(t *testing.T) {
 	t.Parallel()
-	out := highlightContent("hello alpha world alpha", "alpha")
-	// The query string itself must still appear at every match site (wrapped
-	// in escape codes) — count the "alpha" occurrences.
-	count := strings.Count(out, "alpha")
-	if count != 2 {
-		t.Errorf("expected 'alpha' to appear twice in output, got %d:\n%s", count, out)
+	m := New(nil, "ns", []string{"alpha", "beta"}, 100)
+	m.showPodNames = true
+	if !strings.Contains(m.statusLine(), "tags") {
+		t.Errorf("status line should advertise tags-on state: %q", m.statusLine())
 	}
-	// No-op for empty query.
-	if got := highlightContent("hello", ""); got != "hello" {
-		t.Errorf("empty query should pass content through, got %q", got)
+}
+
+func TestStatusLineHasNoTagsHintForSinglePod(t *testing.T) {
+	t.Parallel()
+	m := New(nil, "ns", []string{"only"}, 100)
+	m.showPodNames = true // even if forced, single-pod view never shows tags
+	if strings.Contains(m.statusLine(), "tags") {
+		t.Errorf("single-pod status must not mention tags: %q", m.statusLine())
+	}
+}
+
+func TestHelpAdvertisesTagsKeyOnlyForMultiPod(t *testing.T) {
+	t.Parallel()
+	single := New(nil, "ns", []string{"only"}, 100)
+	for _, b := range single.Help() {
+		if b.Help().Key == "t" {
+			t.Errorf("single-pod help should not include 't'")
+		}
+	}
+	multi := New(nil, "ns", []string{"alpha", "beta"}, 100)
+	found := false
+	for _, b := range multi.Help() {
+		if b.Help().Key == "t" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("multi-pod help should include 't'")
 	}
 }

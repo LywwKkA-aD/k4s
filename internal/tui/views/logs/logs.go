@@ -1,14 +1,19 @@
 // Package logs is the streaming logs view: per-pod goroutines feed lines into
-// a shared channel; the view appends them to a viewport with a coloured
-// per-pod prefix so multiple replicas are visually distinguishable.
+// a shared channel; the view appends them to a viewport with an opt-in
+// per-pod tag so multiple replicas are visually distinguishable.
 //
-// Beyond plain tailing it offers three quality-of-life features:
+// Beyond plain tailing it offers four quality-of-life features:
 //
-//   - smart auto-follow: stays glued to the bottom while new lines arrive,
+//   - Smart auto-follow: stays glued to the bottom while new lines arrive,
 //     pauses automatically when the user scrolls up so they can read.
 //   - 'f' manual toggle for the same auto-follow.
-//   - '/'-search with 'n' / 'N' to jump between matches and yellow
-//     highlighting on every match.
+//   - '/'-search with 'n' / 'N' to jump between matches and a yellow
+//     highlight on every match.
+//   - 't' toggles per-pod tags. Default is a tiny coloured bar (▌) so log
+//     lines stay readable; pressing 't' switches to "[pod-name]" prefixes
+//     when the user actually needs to know which pod a line came from.
+//     For single-pod views the prefix is omitted entirely (the name is in
+//     the header) and 't' is a no-op.
 package logs
 
 import (
@@ -36,12 +41,32 @@ const (
 	scannerBufferSize = 1024 * 1024
 	eventBufferSize   = 256
 	searchInputPrompt = "/"
-	// The view always renders one row of status above the viewport
-	// (paused banner / search summary / blank). When the search prompt
-	// is open it grows to two rows (input + spacer).
-	statusRowsClosed = 1
-	statusRowsOpen   = 2
+	statusRowsClosed  = 1
+	statusRowsOpen    = 2
+	// compactPrefix is the tiny coloured bar shown in front of each line
+	// when "tags" mode is off (default). The colour is per-pod so users can
+	// still tell replicas apart without losing the line to a long name.
+	compactPrefix = "▌"
 )
+
+// lineKind disambiguates the three sources we render: a real log line, a
+// per-pod stream error, or a per-pod "stream closed" notice.
+type lineKind int
+
+const (
+	lineLog lineKind = iota
+	lineStreamErr
+	lineStreamDone
+)
+
+// logLine is one entry in the in-memory backlog. We keep raw text so that
+// toggling the prefix mode or running search re-formats the same source
+// rather than the previously-decorated string.
+type logLine struct {
+	pod  string
+	text string // for lineLog: the bare log line; for lineStreamErr: the error message; ignored for lineStreamDone
+	kind lineKind
+}
 
 // Model is the streaming logs view.
 type Model struct {
@@ -51,23 +76,24 @@ type Model struct {
 	tail      int64
 
 	viewport viewport.Model
-	lines    []string
+	rawLines []logLine
 	width    int
 	bodyH    int
 
 	events chan logEvent
 	cancel context.CancelFunc
 
-	autoFollow bool
+	autoFollow   bool
+	showPodNames bool // false → compact bar; true → "[pod-name]" prefix
 
-	// Search state.
 	searchInput textinput.Model
 	searchOpen  bool
 	searchQuery string
-	matches     []int // indices into m.lines
+	matches     []int // indices into rawLines
 	matchIdx    int
 
 	followKey     key.Binding
+	tagsKey       key.Binding
 	searchOpenKey key.Binding
 	nextMatchKey  key.Binding
 	prevMatchKey  key.Binding
@@ -88,9 +114,6 @@ type streamsClosedMsg struct{}
 // goroutines. They are torn down on Close(). The shared events channel is
 // closed once every pod's goroutine returns, which signals streamsClosedMsg
 // to the bubbletea loop and prevents leaked Cmd reads.
-//
-// tail seeds each stream with the last N lines (kubectl --tail=N -f). Use 0
-// or a negative value to pick up the package default.
 func New(client *k8s.Client, namespace string, pods []string, tail int64) Model {
 	if tail <= 0 {
 		tail = defaultTailLines
@@ -135,6 +158,10 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64) Model 
 			key.WithKeys("f"),
 			key.WithHelp("f", "follow"),
 		),
+		tagsKey: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t", "tag pods"),
+		),
 		searchOpenKey: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "search"),
@@ -158,8 +185,6 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64) Model 
 	}
 }
 
-// streamOnePod follows one pod's logs and pushes events into ch. Stops when
-// ctx is cancelled or the stream ends.
 func streamOnePod(ctx context.Context, client *k8s.Client, ns, pod string, tail int64, ch chan<- logEvent) {
 	stream, err := client.StreamPodLogs(ctx, ns, pod, tail)
 	if err != nil {
@@ -192,7 +217,6 @@ func send(ctx context.Context, ch chan<- logEvent, ev logEvent) bool {
 	}
 }
 
-// Init returns the first pump cmd; goroutines were started in New.
 func (m Model) Init() tea.Cmd {
 	return waitForEventCmd(m.events)
 }
@@ -207,8 +231,6 @@ func waitForEventCmd(ch <-chan logEvent) tea.Cmd {
 	}
 }
 
-// Update is the message router; per-message work lives in helpers so each
-// stays small (gocyclo-friendly) and unit-testable.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -233,8 +255,6 @@ func (m Model) onWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// layoutViewport re-sizes the inner viewport, always reserving a row for the
-// status banner so it never gets clipped by the root model's MaxHeight.
 func (m *Model) layoutViewport() {
 	chrome := statusRowsClosed
 	if m.searchOpen {
@@ -248,11 +268,11 @@ func (m *Model) layoutViewport() {
 func (m Model) onLogEvent(msg logEvent) (tea.Model, tea.Cmd) {
 	switch {
 	case msg.Err != nil:
-		m.appendLine(styles.Warn.Render(fmt.Sprintf("[%s] stream error: %v", msg.Pod, msg.Err)))
+		m.appendRaw(msg.Pod, msg.Err.Error(), lineStreamErr)
 	case msg.Done:
-		m.appendLine(styles.Hint.Render(fmt.Sprintf("[%s] stream closed", msg.Pod)))
+		m.appendRaw(msg.Pod, "", lineStreamDone)
 	default:
-		m.appendLine(formatLine(msg.Pod, msg.Line, len(m.pods) > 1))
+		m.appendRaw(msg.Pod, msg.Line, lineLog)
 	}
 	if m.searchQuery != "" {
 		m.computeMatches()
@@ -268,9 +288,6 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if next, cmd, handled := m.handleViewKey(msg); handled {
 		return next, cmd
 	}
-	// Default: forward to viewport, then sync auto-follow with the cursor's
-	// new position. We only do this on key messages so log-event-driven
-	// GotoBottom() does not flip autoFollow.
 	prevBottom := m.viewport.AtBottom()
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -281,14 +298,20 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// handleViewKey deals with the view's own bindings; returns handled=true if
-// the key matched one of them so onKey skips the viewport-forwarding fallthrough.
 func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.followKey):
 		m.autoFollow = !m.autoFollow
 		if m.autoFollow {
 			m.viewport.GotoBottom()
+		}
+		return m, nil, true
+	case key.Matches(msg, m.tagsKey):
+		// No-op for single-pod views — the prefix is suppressed there
+		// regardless of this flag, so flipping it is just visual noise.
+		if len(m.pods) > 1 {
+			m.showPodNames = !m.showPodNames
+			m.refreshContent()
 		}
 		return m, nil, true
 	case key.Matches(msg, m.searchOpenKey):
@@ -320,9 +343,6 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-// cancelSearch wipes search state but leaves the log buffer alone. Used by
-// the 'c' key when search is active and (defensively) anywhere else we need
-// to leave search mode without clearing logs.
 func (m *Model) cancelSearch() {
 	m.searchQuery = ""
 	m.matches = nil
@@ -335,10 +355,8 @@ func (m *Model) cancelSearch() {
 	}
 }
 
-// clearLogs wipes only the log buffer. autoFollow is intentionally untouched
-// so a paused viewer stays paused even after a clear.
 func (m *Model) clearLogs() {
-	m.lines = nil
+	m.rawLines = nil
 	m.viewport.SetContent("")
 }
 
@@ -368,19 +386,24 @@ func (m Model) onSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Model) appendLine(line string) {
-	m.lines = append(m.lines, line)
-	if len(m.lines) > maxBufferedLines {
-		m.lines = m.lines[len(m.lines)-maxBufferedLines:]
-		// Indices in m.matches refer to old positions; if we trimmed, drop them.
-		// Cheap to recompute on the next event.
+func (m *Model) appendRaw(pod, text string, kind lineKind) {
+	m.rawLines = append(m.rawLines, logLine{pod: pod, text: text, kind: kind})
+	if len(m.rawLines) > maxBufferedLines {
+		m.rawLines = m.rawLines[len(m.rawLines)-maxBufferedLines:]
+		// Indices in m.matches refer to old positions; if we trimmed, drop
+		// them. Cheap to recompute on the next event.
 		m.matches = nil
 		m.matchIdx = 0
 	}
 }
 
 func (m *Model) refreshContent() {
-	content := strings.Join(m.lines, "\n")
+	multi := len(m.pods) > 1
+	rendered := make([]string, 0, len(m.rawLines))
+	for _, ln := range m.rawLines {
+		rendered = append(rendered, formatRawLine(ln, multi, m.showPodNames))
+	}
+	content := strings.Join(rendered, "\n")
 	if m.searchQuery != "" {
 		content = highlightContent(content, m.searchQuery)
 	}
@@ -390,13 +413,15 @@ func (m *Model) refreshContent() {
 	}
 }
 
+// computeMatches runs the substring search against the *raw* line text so
+// matches are independent of the current prefix mode.
 func (m *Model) computeMatches() {
 	m.matches = nil
 	if m.searchQuery == "" {
 		return
 	}
-	for i, line := range m.lines {
-		if strings.Contains(line, m.searchQuery) {
+	for i, ln := range m.rawLines {
+		if strings.Contains(ln.text, m.searchQuery) {
 			m.matches = append(m.matches, i)
 		}
 	}
@@ -422,17 +447,32 @@ func (m *Model) scrollToLine(line int) {
 	m.viewport.SetYOffset(target)
 }
 
-// formatLine prepends a stable, coloured "[pod-name]" tag when there is more
-// than one pod; for a single pod the name is already in the header.
-func formatLine(pod, line string, showPrefix bool) string {
-	if !showPrefix {
-		return line
+// formatRawLine turns a raw entry into the string the viewport renders.
+//
+// Modes:
+//   - !multi: no prefix (single-pod view; pod name is in the title).
+//   - multi && !full: a coloured "▌" bar — minimal but tells replicas apart.
+//   - multi && full: the canonical "[pod-name] line" prefix.
+//
+// Stream-error and stream-closed notices keep the pod name inline so they
+// remain readable regardless of the prefix mode.
+func formatRawLine(ln logLine, multi, full bool) string {
+	switch ln.kind {
+	case lineStreamErr:
+		return styles.Warn.Render(fmt.Sprintf("[%s] stream error: %s", ln.pod, ln.text))
+	case lineStreamDone:
+		return styles.Hint.Render(fmt.Sprintf("[%s] stream closed", ln.pod))
 	}
-	prefix := lipgloss.NewStyle().
-		Foreground(podColor(pod)).
-		Bold(true).
-		Render("[" + pod + "]")
-	return prefix + " " + line
+
+	if !multi {
+		return ln.text
+	}
+
+	colour := lipgloss.NewStyle().Foreground(podColor(ln.pod))
+	if full {
+		return colour.Bold(true).Render("["+ln.pod+"]") + " " + ln.text
+	}
+	return colour.Render(compactPrefix) + " " + ln.text
 }
 
 // podColor maps a pod name to a colour from a curated palette via FNV-1a so
@@ -454,15 +494,13 @@ func highlightContent(content, query string) string {
 	return strings.ReplaceAll(content, query, styles.Highlight.Render(query))
 }
 
-// View renders the status row(s) above the viewport. Layout always reserves
-// space for the status row so the banner is never clipped by the root model.
 func (m Model) View() string {
 	if m.client == nil {
 		return styles.Warn.Render("no kubeconfig")
 	}
 
 	body := m.viewport.View()
-	if len(m.lines) == 0 {
+	if len(m.rawLines) == 0 {
 		body = styles.Hint.Render(fmt.Sprintf("waiting for logs… (tail %d)", m.tail))
 	}
 
@@ -476,12 +514,15 @@ func (m Model) View() string {
 }
 
 // statusLine renders the one-line status above the viewport: any combination
-// of "[paused]" and "/query · M/N". Empty string when neither applies — the
-// row stays present so the layout does not jiggle when state changes.
+// of "[paused]", "[tags on]" and "/query · M/N". Empty when nothing applies
+// — the row stays present so the layout does not jiggle.
 func (m Model) statusLine() string {
-	bits := make([]string, 0, 2)
+	bits := make([]string, 0, 3)
 	if !m.autoFollow {
 		bits = append(bits, styles.Warn.Render("[paused — press f to follow]"))
+	}
+	if len(m.pods) > 1 && m.showPodNames {
+		bits = append(bits, styles.Hint.Render("[tags on — press t to compact]"))
 	}
 	switch {
 	case m.searchQuery != "" && len(m.matches) > 0:
@@ -523,12 +564,22 @@ func (m Model) KubectlEquivalent() string {
 	return fmt.Sprintf("kubectl logs -f --tail=%d -n %s {%s}", m.tail, m.namespace, strings.Join(m.pods, ","))
 }
 
-// Help implements views.View.
+// Help implements views.View. The 't' binding is only advertised when there
+// is more than one pod — otherwise it is a no-op and only clutters the
+// footer.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{
+	bindings := []key.Binding{
 		m.scrollKey, m.followKey, m.searchOpenKey,
 		m.nextMatchKey, m.prevMatchKey, m.clearKey,
 	}
+	if len(m.pods) > 1 {
+		// Slot 't' right after 'f' so related toggles stay together.
+		bindings = []key.Binding{
+			m.scrollKey, m.followKey, m.tagsKey, m.searchOpenKey,
+			m.nextMatchKey, m.prevMatchKey, m.clearKey,
+		}
+	}
+	return bindings
 }
 
 // Close cancels the streaming context, draining the goroutines, which
