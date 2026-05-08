@@ -25,3 +25,11 @@ Thumbs.db
 # k4s local state (k3s data dir + generated kubeconfig)
 .k3s/
 .kube/
+
+# Claude
+.claude/
+CLAUDE.md
+.mcp.json
+
+# Web
+web/

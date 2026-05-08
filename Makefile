@@ -7,7 +7,7 @@ KUBECONFIG_PATH := $(CURDIR)/.kube/config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build run test tidy fmt lint vuln ci clean k3s-up k3s-down k3s-clean kubeconfig seed seed-down demo
+.PHONY: help build run test tidy fmt lint vuln ci clean k3s-up k3s-down k3s-clean kubeconfig seed seed-down demo gif
 
 help: ## show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -78,3 +78,8 @@ seed-down: ## remove demo workloads
 
 demo: k3s-up seed ## bring up k3s and apply demo workloads
 	@echo "demo cluster ready — export KUBECONFIG=$(KUBECONFIG_PATH)"
+
+gif: build ## record docs/demo.gif via VHS (requires: brew install vhs ttyd ffmpeg)
+	@command -v vhs >/dev/null || { echo "vhs not on PATH — brew install vhs ttyd ffmpeg"; exit 1; }
+	KUBECONFIG=$(KUBECONFIG_PATH) vhs docs/demo.tape
+	@echo "wrote docs/demo.gif"
