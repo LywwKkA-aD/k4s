@@ -47,6 +47,7 @@ type Model struct {
 
 	selectKey  key.Binding
 	logsKey    key.Binding
+	forwardKey key.Binding
 	watchKey   key.Binding
 	refreshKey key.Binding
 	filterKey  key.Binding
@@ -100,6 +101,10 @@ func New(client *k8s.Client, namespace string) Model {
 		filterKey: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "filter"),
+		),
+		forwardKey: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "port-forward"),
 		),
 	}
 }
@@ -242,6 +247,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.logsKey) && m.canActOnRow():
 		ns, name := deploymentCoords(m.table.SelectedRow(), m.namespace)
 		return resolvePodsAndContainersCmd(m.client, ns, name), true
+	case key.Matches(msg, m.forwardKey) && m.canActOnRow():
+		ns, name := deploymentCoords(m.table.SelectedRow(), m.namespace)
+		return func() tea.Msg {
+			return views.ForwardRequestMsg{Kind: "deployment", Namespace: ns, Name: name}
+		}, true
 	}
 	return nil, false
 }
@@ -351,7 +361,7 @@ func (m Model) KubectlEquivalent() string {
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.logsKey, m.filterKey, m.watchKey, m.refreshKey}
+	return []key.Binding{m.selectKey, m.logsKey, m.forwardKey, m.filterKey, m.watchKey, m.refreshKey}
 }
 
 // CapturesKeys implements views.View.

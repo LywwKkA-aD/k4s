@@ -58,6 +58,7 @@ var commands = []entry{
 	{canonical: "services", aliases: []string{"services", "svc", "service"}},
 	{canonical: "contexts", aliases: []string{"contexts", "ctx", "context"}},
 	{canonical: "top", aliases: []string{"top", "metrics"}},
+	{canonical: "forwards", aliases: []string{"forwards", "pf", "forward", "portforward", "port-forward"}},
 }
 
 // aliasIndex is built from commands at package init time.

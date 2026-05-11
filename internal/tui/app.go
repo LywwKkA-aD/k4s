@@ -3,16 +3,19 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/command"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
@@ -22,6 +25,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/deployments"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
+	forwardsview "github.com/LywwKkA-aD/k4s/internal/tui/views/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/logs"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/namespaces"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/pods"
@@ -38,6 +42,7 @@ const (
 	viewServices    = "services"
 	viewContexts    = "contexts"
 	viewTop         = "top"
+	viewForwards    = "forwards"
 )
 
 // cmdBarMode tracks what the bottom input bar is currently being used for.
@@ -50,6 +55,7 @@ const (
 	cmdBarCommand
 	cmdBarTailPrompt
 	cmdBarContainerPrompt
+	cmdBarForwardPrompt
 	cmdBarHelp
 )
 
@@ -72,10 +78,11 @@ type historyEntry struct {
 
 // Model is the root Bubble Tea model.
 type Model struct {
-	client *k8s.Client
-	keys   keys.Map
-	width  int
-	height int
+	client     *k8s.Client
+	forwardMgr *forwards.Manager
+	keys       keys.Map
+	width      int
+	height     int
 
 	namespace string // "" = all
 	current   views.View
@@ -101,6 +108,14 @@ type Model struct {
 	pendingContainerContainers []string
 	pendingContainerNextKind   string
 	pendingContainerIdx        int
+
+	// pendingForward* hold the in-flight port-prompt context. Filled
+	// when a list view emits ForwardRequestMsg and consumed when the
+	// user confirms the local:remote pair.
+	pendingForwardKind       string
+	pendingForwardNamespace  string
+	pendingForwardName       string
+	pendingForwardRemotePort uint16
 }
 
 // execDoneMsg is delivered by tea.ExecProcess after the kubectl-exec shell
@@ -108,16 +123,26 @@ type Model struct {
 type execDoneMsg struct{ err error }
 
 // New constructs the root model with the dashboard as the landing screen.
+//
+// The port-forward Manager is best-effort: if state loading fails (bad
+// JSON, permission error) we keep the manager nil so the rest of k4s
+// stays usable, and the forwards view will show an "unavailable" hint.
 func New(client *k8s.Client) Model {
 	ti := textinput.New()
 	ti.CharLimit = 64
 	ti.Width = 40
 
+	var mgr *forwards.Manager
+	if m, err := forwards.NewManager(client); err == nil {
+		mgr = m
+	}
+
 	return Model{
-		client:  client,
-		keys:    keys.Default(),
-		cmdBar:  ti,
-		current: dashboard.New(client),
+		client:     client,
+		forwardMgr: mgr,
+		keys:       keys.Default(),
+		cmdBar:     ti,
+		current:    dashboard.New(client),
 	}
 }
 
@@ -148,6 +173,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onLogsRequest(msg)
 	case views.ExecRequestMsg:
 		return m.onExecRequest(msg)
+	case views.ForwardRequestMsg:
+		return m.onForwardRequest(msg)
 	case execDoneMsg:
 		if msg.err != nil {
 			m.cmdError = "exec: " + msg.err.Error()
@@ -193,6 +220,12 @@ func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.C
 	m.namespace = ""
 	m.history = nil
 	m.cmdError = ""
+	// Re-init the port-forward manager against the new cluster. Any
+	// running forwards on the old client are abandoned — they were
+	// pinned to a cluster the user no longer wants to look at.
+	if mgr, err := forwards.NewManager(client); err == nil {
+		m.forwardMgr = mgr
+	}
 	m.current = dashboard.New(m.client)
 	return m, m.relayoutCmd()
 }
@@ -256,6 +289,34 @@ func (m Model) onLogsRequest(msg views.LogsRequestMsg) (tea.Model, tea.Cmd) {
 	})
 	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods, msg.Tail, msg.Container))
 	return m, m.relayoutCmd()
+}
+
+// onForwardRequest opens the port prompt prefilled with "remote:remote"
+// when we know the remote port, or "8080:" when we don't — so the user
+// usually only has to press Enter. The actual port-forward fires from
+// the submission path via dispatchForwardCmd.
+func (m Model) onForwardRequest(msg views.ForwardRequestMsg) (tea.Model, tea.Cmd) {
+	if m.forwardMgr == nil {
+		m.cmdError = "port-forward: state subsystem unavailable"
+		return m, nil
+	}
+	m.cmdMode = cmdBarForwardPrompt
+	m.pendingForwardKind = msg.Kind
+	m.pendingForwardNamespace = msg.Namespace
+	m.pendingForwardName = msg.Name
+	m.pendingForwardRemotePort = msg.RemotePort
+	m.cmdBar.Prompt = fmt.Sprintf("port-forward %s/%s — local:remote: ", msg.Kind, msg.Name)
+	placeholder := "8080:80"
+	prefill := ""
+	if msg.RemotePort > 0 {
+		placeholder = fmt.Sprintf("%d:%d", msg.RemotePort, msg.RemotePort)
+		prefill = placeholder
+	}
+	m.cmdBar.Placeholder = placeholder
+	m.cmdBar.SetValue(prefill)
+	m.cmdBar.CursorEnd()
+	m.cmdBar.Focus()
+	return m, textinput.Blink
 }
 
 // onExecRequest runs `kubectl exec -it` against the named pod / container
@@ -383,12 +444,23 @@ func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		mode := m.cmdMode
 		// Snapshot the pending-* context BEFORE closeCmdBar wipes it.
 		tailNS, tailPods, tailContainer := m.pendingTailNamespace, m.pendingTailPods, m.pendingTailContainer
+		fwdKind, fwdNS, fwdName, fwdRemote := m.pendingForwardKind, m.pendingForwardNamespace, m.pendingForwardName, m.pendingForwardRemotePort
+		mgr := m.forwardMgr
 		next := m.closeCmdBar()
 		switch mode {
 		case cmdBarCommand:
 			return next.execCmd(value)
 		case cmdBarTailPrompt:
 			return next, dispatchTailCmd(tailNS, tailPods, tailContainer, value)
+		case cmdBarForwardPrompt:
+			updated, err := dispatchForward(next, mgr, fwdKind, fwdNS, fwdName, fwdRemote, value)
+			if err != nil {
+				updated.cmdError = "port-forward: " + err.Error()
+				return updated, nil
+			}
+			// Hop to the forwards view so the user sees the entry land.
+			next2 := updated.switchTo(viewForwards)
+			return next2, next2.relayoutCmd()
 		}
 		return next, nil
 	}
@@ -465,7 +537,105 @@ func (m Model) closeCmdBar() Model {
 	m.pendingContainerContainers = nil
 	m.pendingContainerNextKind = ""
 	m.pendingContainerIdx = 0
+	m.pendingForwardKind = ""
+	m.pendingForwardNamespace = ""
+	m.pendingForwardName = ""
+	m.pendingForwardRemotePort = 0
 	return m
+}
+
+// dispatchForward parses "local:remote" (or "local" with a known remote)
+// and registers the forward with the Manager, then kicks off Start in a
+// background goroutine — the Manager updates the UI via its change
+// channel. We do **not** make this a tea.Cmd because Start may block
+// briefly while resolving the target pod, which is fine off the loop.
+func dispatchForward(m Model, mgr *forwards.Manager, kind, ns, name string, remoteHint uint16, raw string) (Model, error) {
+	if mgr == nil {
+		return m, fmt.Errorf("subsystem unavailable")
+	}
+	local, remote, err := parsePortPair(strings.TrimSpace(raw), remoteHint)
+	if err != nil {
+		return m, err
+	}
+	fwd := forwards.Forward{
+		ID:         forwards.NewID(),
+		Context:    currentContextName(m.client),
+		Namespace:  ns,
+		Kind:       kind,
+		Name:       name,
+		LocalPort:  local,
+		RemotePort: remote,
+	}
+	if err := mgr.Register(fwd); err != nil {
+		return m, err
+	}
+	go func(id string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = mgr.Start(ctx, id)
+	}(fwd.ID)
+	return m, nil
+}
+
+// parsePortPair accepts "local:remote", "local" (uses remoteHint), or
+// ":remote" (local := remote). Returns a clear error for anything else
+// so the user sees a useful message instead of a port-forward that
+// silently fails.
+func parsePortPair(raw string, remoteHint uint16) (local, remote uint16, err error) {
+	if raw == "" {
+		if remoteHint == 0 {
+			return 0, 0, fmt.Errorf("port required (try 8080:80)")
+		}
+		return remoteHint, remoteHint, nil
+	}
+	parts := strings.SplitN(raw, ":", 2)
+	switch len(parts) {
+	case 1:
+		l, perr := parsePort(parts[0])
+		if perr != nil {
+			return 0, 0, perr
+		}
+		if remoteHint == 0 {
+			return l, l, nil
+		}
+		return l, remoteHint, nil
+	case 2:
+		var l, r uint16
+		var perr error
+		if parts[0] != "" {
+			l, perr = parsePort(parts[0])
+			if perr != nil {
+				return 0, 0, fmt.Errorf("local port: %w", perr)
+			}
+		}
+		if parts[1] != "" {
+			r, perr = parsePort(parts[1])
+			if perr != nil {
+				return 0, 0, fmt.Errorf("remote port: %w", perr)
+			}
+		}
+		switch {
+		case l == 0 && r == 0:
+			return 0, 0, fmt.Errorf("both ports empty")
+		case l == 0:
+			return r, r, nil
+		case r == 0:
+			return l, l, nil
+		}
+		return l, r, nil
+	}
+	return 0, 0, fmt.Errorf("invalid format: %q", raw)
+}
+
+func parsePort(s string) (uint16, error) {
+	n, err := strconv.ParseUint(s, 10, 16)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a port number", s)
+	}
+	if n == 0 {
+		return 0, fmt.Errorf("port must be > 0")
+	}
+	return uint16(n), nil
 }
 
 // dispatchTailCmd parses the tail-prompt value and returns a Cmd that emits
@@ -539,6 +709,8 @@ func (m Model) replaceView(name string) Model {
 		return m.swap(contexts.New(currentContextName(m.client)))
 	case viewTop:
 		return m.swap(top.New(m.client, m.namespace))
+	case viewForwards:
+		return m.swap(forwardsview.New(m.forwardMgr))
 	}
 	return m
 }

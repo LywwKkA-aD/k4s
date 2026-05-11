@@ -53,6 +53,7 @@ func TestAllReturnsEveryCanonical(t *testing.T) {
 		"services":    true,
 		"contexts":    true,
 		"top":         true,
+		"forwards":    true,
 	}
 	if len(all) != len(want) {
 		t.Fatalf("All() = %v; want %d commands", all, len(want))

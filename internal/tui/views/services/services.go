@@ -43,6 +43,7 @@ type Model struct {
 	watchKey   key.Binding
 	refreshKey key.Binding
 	filterKey  key.Binding
+	forwardKey key.Binding
 }
 
 type servicesMsg struct {
@@ -80,6 +81,10 @@ func New(client *k8s.Client, namespace string) Model {
 		filterKey: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "filter"),
+		),
+		forwardKey: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "port-forward"),
 		),
 	}
 }
@@ -204,8 +209,50 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return func() tea.Msg {
 			return views.DescribeRequestMsg{Kind: "service", Namespace: ns, Name: name}
 		}, true
+	case key.Matches(msg, m.forwardKey) && m.loaded && len(m.table.Rows()) > 0:
+		row := m.table.SelectedRow()
+		if row == nil {
+			return nil, false
+		}
+		ns, name := serviceCoords(row, m.namespace)
+		// Lift the suggested remote port out of the matching raw record
+		// so the prompt can offer a sensible default.
+		remote := uint16(0)
+		for _, s := range m.raw {
+			if s.Namespace == ns && s.Name == name {
+				remote = firstServicePort(s)
+				break
+			}
+		}
+		return func() tea.Msg {
+			return views.ForwardRequestMsg{Kind: "service", Namespace: ns, Name: name, RemotePort: remote}
+		}, true
 	}
 	return nil, false
+}
+
+// firstServicePort extracts the first declared port from "80/TCP, 443/TCP".
+// Returns 0 when nothing parses — the prompt then asks the user.
+func firstServicePort(s k8s.Service) uint16 {
+	ports := s.Ports
+	for i, c := range ports {
+		if c == '/' {
+			ports = ports[:i]
+			break
+		}
+		if c == ',' {
+			ports = ports[:i]
+			break
+		}
+	}
+	var p uint16
+	for _, c := range ports {
+		if c < '0' || c > '9' {
+			break
+		}
+		p = p*10 + uint16(c-'0')
+	}
+	return p
 }
 
 func serviceCoords(row table.Row, scopedNamespace string) (string, string) {
@@ -282,7 +329,7 @@ func (m Model) KubectlEquivalent() string {
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.filterKey, m.watchKey, m.refreshKey}
+	return []key.Binding{m.selectKey, m.forwardKey, m.filterKey, m.watchKey, m.refreshKey}
 }
 
 // CapturesKeys implements views.View.

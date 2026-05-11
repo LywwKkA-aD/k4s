@@ -6,15 +6,22 @@ import (
 	"fmt"
 
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 // Client wraps a Kubernetes clientset together with the kubeconfig context it
 // was built from. Clientset is typed as the kubernetes.Interface so tests can
 // substitute fake.NewSimpleClientset.
+//
+// RestConfig is retained so callers that need a raw *rest.Config — currently
+// the port-forward path, which builds an SPDY dialer — do not have to
+// re-parse the kubeconfig. It is nil only when the Client was constructed
+// without a kubeconfig (e.g. fake clients in tests).
 type Client struct {
-	Clientset kubernetes.Interface
-	Context   string
+	Clientset  kubernetes.Interface
+	Context    string
+	RestConfig *rest.Config
 }
 
 // LoadFromKubeconfig builds a Client from a kubeconfig file.
@@ -47,5 +54,5 @@ func LoadFromKubeconfig(explicitPath string) (*Client, error) {
 		return nil, fmt.Errorf("new clientset: %w", err)
 	}
 
-	return &Client{Clientset: cs, Context: raw.CurrentContext}, nil
+	return &Client{Clientset: cs, Context: raw.CurrentContext, RestConfig: cfg}, nil
 }

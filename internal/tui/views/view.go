@@ -105,3 +105,15 @@ type ExecRequestMsg struct {
 	Pod       string
 	Container string // optional; "" = kubectl picks default
 }
+
+// ForwardRequestMsg is emitted by services/pods/deployments views when the
+// user presses 'f' on a row. The root model opens a port-prompt and, on
+// confirm, calls forwards.Manager.Register + Start. RemotePort is the
+// suggested default — for services it comes from the service's first
+// declared port, for pods/deployments the user supplies it.
+type ForwardRequestMsg struct {
+	Kind       string // "service" | "pod" | "deployment"
+	Namespace  string
+	Name       string
+	RemotePort uint16 // 0 → no hint, user picks both
+}
