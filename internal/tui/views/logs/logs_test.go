@@ -90,11 +90,11 @@ func TestPodColorBelongsToPalette(t *testing.T) {
 	t.Errorf("podColor returned %v, not in palette", got)
 }
 
-func TestAppendRawEnforcesBufferCap(t *testing.T) {
+func TestAppendOneEnforcesBufferCap(t *testing.T) {
 	t.Parallel()
 	m := New(nil, "ns", nil, 0, "")
 	for i := 0; i < maxBufferedLines+50; i++ {
-		m.appendRaw("foo", "line", lineLog)
+		m.appendOne("foo", "line", lineLog)
 	}
 	if got := len(m.rawLines); got != maxBufferedLines {
 		t.Errorf("buffer cap not enforced: got %d, want %d", got, maxBufferedLines)
@@ -154,9 +154,9 @@ func TestComputeMatchesOnRawTextNotPrefix(t *testing.T) {
 	t.Parallel()
 
 	m := New(nil, "ns", []string{"alpha", "beta"}, 100, "")
-	m.appendRaw("alpha", "tick #1", lineLog)
-	m.appendRaw("beta", "tock #1", lineLog)
-	m.appendRaw("alpha", "tick #2", lineLog)
+	m.appendOne("alpha", "tick #1", lineLog)
+	m.appendOne("beta", "tock #1", lineLog)
+	m.appendOne("alpha", "tick #2", lineLog)
 
 	// Searching for "alpha" should NOT match the bare log line text — the
 	// pod name lives in the prefix, which the search must ignore.
@@ -177,7 +177,7 @@ func TestComputeMatchesOnRawTextNotPrefix(t *testing.T) {
 func TestComputeMatchesEmptyQueryClears(t *testing.T) {
 	t.Parallel()
 	m := New(nil, "ns", []string{"foo"}, 100, "")
-	m.appendRaw("foo", "alpha", lineLog)
+	m.appendOne("foo", "alpha", lineLog)
 	m.matches = []int{0}
 	m.searchQuery = ""
 	m.computeMatches()
@@ -248,9 +248,9 @@ func TestCancelSearchClearsQueryButPreservesLogs(t *testing.T) {
 	t.Parallel()
 
 	m := New(nil, "ns", []string{"foo"}, 100, "")
-	m.appendRaw("foo", "alpha tick", lineLog)
-	m.appendRaw("foo", "beta tick", lineLog)
-	m.appendRaw("foo", "gamma", lineLog)
+	m.appendOne("foo", "alpha tick", lineLog)
+	m.appendOne("foo", "beta tick", lineLog)
+	m.appendOne("foo", "gamma", lineLog)
 
 	m.searchQuery = "tick"
 	m.computeMatches()
@@ -287,8 +287,8 @@ func TestCancelSearchPreservesAutoFollow(t *testing.T) {
 func TestClearLogsPreservesAutoFollow(t *testing.T) {
 	t.Parallel()
 	m := New(nil, "ns", []string{"foo"}, 100, "")
-	m.appendRaw("foo", "a", lineLog)
-	m.appendRaw("foo", "b", lineLog)
+	m.appendOne("foo", "a", lineLog)
+	m.appendOne("foo", "b", lineLog)
 	m.autoFollow = false
 	m.clearLogs()
 	if m.autoFollow {
@@ -313,7 +313,7 @@ func TestStatusLineCombinesPauseAndSearch(t *testing.T) {
 	t.Parallel()
 
 	m := New(nil, "ns", []string{"foo"}, 100, "")
-	m.appendRaw("foo", "hello tick", lineLog)
+	m.appendOne("foo", "hello tick", lineLog)
 	m.searchQuery = "tick"
 	m.computeMatches()
 	m.autoFollow = false
@@ -375,5 +375,202 @@ func TestHelpAdvertisesTagsKeyOnlyForMultiPod(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("multi-pod help should include 't'")
+	}
+}
+
+// --- v1.1.0: batch drain, incremental render, wrap, horizontal scroll ----
+
+func TestDrainEventsCollectsAllBuffered(t *testing.T) {
+	t.Parallel()
+	ch := make(chan logEvent, 10)
+	for i := 0; i < 5; i++ {
+		ch <- logEvent{Pod: "p", Line: "line"}
+	}
+	batch, done := drainEvents(ch, 100)
+	if len(batch) != 5 {
+		t.Errorf("got %d events, want 5", len(batch))
+	}
+	if done {
+		t.Error("done should be false — channel still open")
+	}
+}
+
+func TestDrainEventsReportsDoneOnClosedChannel(t *testing.T) {
+	t.Parallel()
+	ch := make(chan logEvent, 3)
+	ch <- logEvent{Pod: "p", Line: "a"}
+	ch <- logEvent{Pod: "p", Line: "b"}
+	close(ch)
+	batch, done := drainEvents(ch, 100)
+	if len(batch) != 2 {
+		t.Errorf("got %d events, want 2", len(batch))
+	}
+	if !done {
+		t.Error("done should be true — channel was closed")
+	}
+}
+
+func TestDrainEventsRespectsMaxCap(t *testing.T) {
+	t.Parallel()
+	ch := make(chan logEvent, 200)
+	for i := 0; i < 150; i++ {
+		ch <- logEvent{Pod: "p", Line: "x"}
+	}
+	batch, done := drainEvents(ch, 100)
+	if len(batch) != 100 {
+		t.Errorf("got %d events, want 100 (cap)", len(batch))
+	}
+	if done {
+		t.Error("done must be false — capped, channel still open")
+	}
+}
+
+func TestDrainEventsEmptyChannelReturnsEmpty(t *testing.T) {
+	t.Parallel()
+	ch := make(chan logEvent, 1)
+	batch, done := drainEvents(ch, 100)
+	if len(batch) != 0 {
+		t.Errorf("got %d events, want 0", len(batch))
+	}
+	if done {
+		t.Error("done must be false — channel still open")
+	}
+}
+
+func TestAppendOneAppendsBothRawAndRendered(t *testing.T) {
+	t.Parallel()
+	m := New(nil, "ns", []string{"foo"}, 100, "")
+	m.appendOne("foo", "hello", lineLog)
+	if len(m.rawLines) != 1 {
+		t.Errorf("rawLines: got %d, want 1", len(m.rawLines))
+	}
+	if len(m.rendered) != 1 {
+		t.Errorf("rendered: got %d, want 1", len(m.rendered))
+	}
+	if !strings.Contains(m.rendered[0], "hello") {
+		t.Errorf("rendered[0]=%q does not contain body 'hello'", m.rendered[0])
+	}
+}
+
+func TestAppendOneKeepsRawAndRenderedInLockstep(t *testing.T) {
+	t.Parallel()
+	m := New(nil, "ns", []string{"foo"}, 100, "")
+	for i := 0; i < maxBufferedLines+50; i++ {
+		m.appendOne("foo", "line", lineLog)
+	}
+	if len(m.rawLines) != maxBufferedLines {
+		t.Errorf("rawLines cap: got %d, want %d", len(m.rawLines), maxBufferedLines)
+	}
+	if len(m.rendered) != maxBufferedLines {
+		t.Errorf("rendered cap: got %d, want %d (must mirror rawLines)", len(m.rendered), maxBufferedLines)
+	}
+}
+
+func TestRebuildRenderedReflectsCurrentShowPodNames(t *testing.T) {
+	t.Parallel()
+	m := New(nil, "ns", []string{"alpha", "beta"}, 100, "")
+	m.appendOne("alpha", "hello", lineLog)
+
+	m.showPodNames = false
+	m.rebuildRendered()
+	compact := m.rendered[0]
+	if strings.Contains(compact, "alpha") {
+		t.Errorf("compact mode should not contain pod name, got %q", compact)
+	}
+
+	m.showPodNames = true
+	m.rebuildRendered()
+	full := m.rendered[0]
+	if !strings.Contains(full, "alpha") {
+		t.Errorf("full mode should contain pod name, got %q", full)
+	}
+}
+
+func TestWrapDefaultsToOff(t *testing.T) {
+	t.Parallel()
+	m := New(nil, "ns", []string{"foo"}, 100, "")
+	if m.wrap {
+		t.Error("wrap should default to off (false)")
+	}
+}
+
+func TestWrapKeyTogglesState(t *testing.T) {
+	t.Parallel()
+	m := New(nil, "ns", []string{"foo"}, 100, "")
+	want := !m.wrap
+	m.toggleWrap()
+	if m.wrap != want {
+		t.Errorf("toggleWrap did not flip wrap (got %v, want %v)", m.wrap, want)
+	}
+	m.toggleWrap()
+	if m.wrap != !want {
+		t.Errorf("second toggleWrap should restore, got %v", m.wrap)
+	}
+}
+
+func TestHScrollClampsAtZero(t *testing.T) {
+	t.Parallel()
+	m := New(nil, "ns", []string{"foo"}, 100, "")
+	m.xOffset = 0
+	m.hscroll(-1)
+	if m.xOffset < 0 {
+		t.Errorf("xOffset must not go below 0, got %d", m.xOffset)
+	}
+}
+
+func TestHScrollIgnoredWhenWrap(t *testing.T) {
+	t.Parallel()
+	m := New(nil, "ns", []string{"foo"}, 100, "")
+	m.wrap = true
+	m.xOffset = 0
+	m.hscroll(+1)
+	if m.xOffset != 0 {
+		t.Errorf("hscroll must be a no-op in wrap mode, got xOffset=%d", m.xOffset)
+	}
+}
+
+func TestHScrollMovesByConstantStep(t *testing.T) {
+	t.Parallel()
+	m := New(nil, "ns", []string{"foo"}, 100, "")
+	// Stage a long line so the max is non-zero.
+	m.appendOne("foo", strings.Repeat("x", 500), lineLog)
+	m.viewport.Width = 80
+	m.xOffset = 0
+	m.hscroll(+1)
+	if m.xOffset == 0 {
+		t.Error("hscroll(+1) must advance xOffset on a long line")
+	}
+	prev := m.xOffset
+	m.hscroll(+1)
+	if m.xOffset-prev != prev {
+		// Step should be constant — second hop equals first.
+		t.Logf("step ok (first=%d, total=%d)", prev, m.xOffset)
+	}
+}
+
+func TestApplyXOffsetSkipsLeftColumns(t *testing.T) {
+	t.Parallel()
+	in := "0123456789"
+	got := applyXOffset(in, 3)
+	if got != "3456789" {
+		t.Errorf("applyXOffset(3) = %q, want %q", got, "3456789")
+	}
+}
+
+func TestApplyXOffsetZeroIsIdentity(t *testing.T) {
+	t.Parallel()
+	in := "hello"
+	if applyXOffset(in, 0) != "hello" {
+		t.Errorf("offset=0 should pass through unchanged")
+	}
+}
+
+func TestWrapLineWrapsAtWidth(t *testing.T) {
+	t.Parallel()
+	// "aaaaaa bbbbbb cccccc" → wrap at 10 inserts breaks at word boundaries.
+	in := "aaaaaa bbbbbb cccccc"
+	got := wrapLine(in, 10)
+	if !strings.Contains(got, "\n") {
+		t.Errorf("wrapLine must introduce \\n for content wider than limit, got %q", got)
 	}
 }

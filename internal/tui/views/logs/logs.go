@@ -29,6 +29,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -43,6 +44,12 @@ const (
 	searchInputPrompt = "/"
 	statusRowsClosed  = 1
 	statusRowsOpen    = 2
+	// drainBatchCap bounds one Update tick so a flood of incoming lines
+	// never starves the UI loop; whatever doesn't fit gets the next tick.
+	drainBatchCap = 1000
+	// hScrollStep is how many columns ←/→ shift the viewport when wrap is
+	// off. Tuned to "feels responsive" without skipping past short fields.
+	hScrollStep = 10
 	// compactPrefix is the tiny coloured bar shown in front of each line
 	// when "tags" mode is off (default). The colour is per-pod so users can
 	// still tell replicas apart without losing the line to a long name.
@@ -78,6 +85,11 @@ type Model struct {
 
 	viewport viewport.Model
 	rawLines []logLine
+	// rendered mirrors rawLines 1-to-1 with the formatted display string
+	// (prefix + body) so refresh paths can join cached values instead of
+	// re-running formatRawLine N times per event. Rebuilt only when the
+	// display mode changes (showPodNames toggle, buffer trim).
+	rendered []string
 	width    int
 	bodyH    int
 
@@ -86,6 +98,13 @@ type Model struct {
 
 	autoFollow   bool
 	showPodNames bool // false → compact bar; true → "[pod-name]" prefix
+	// wrap chooses between soft-wrap (true: long lines run onto the next
+	// row) and truncate-with-hscroll (false: long lines are clipped, but
+	// ←/→ pan horizontally). Default is off — terminal-native behaviour.
+	wrap bool
+	// xOffset is the leftmost visible column when wrap is off. Always 0
+	// in wrap mode (clamped on toggle).
+	xOffset int
 
 	searchInput textinput.Model
 	searchOpen  bool
@@ -93,13 +112,16 @@ type Model struct {
 	matches     []int // indices into rawLines
 	matchIdx    int
 
-	followKey     key.Binding
-	tagsKey       key.Binding
-	searchOpenKey key.Binding
-	nextMatchKey  key.Binding
-	prevMatchKey  key.Binding
-	clearKey      key.Binding
-	scrollKey     key.Binding
+	followKey       key.Binding
+	tagsKey         key.Binding
+	wrapKey         key.Binding
+	hscrollLeftKey  key.Binding
+	hscrollRightKey key.Binding
+	searchOpenKey   key.Binding
+	nextMatchKey    key.Binding
+	prevMatchKey    key.Binding
+	clearKey        key.Binding
+	scrollKey       key.Binding
 }
 
 type logEvent struct {
@@ -107,6 +129,14 @@ type logEvent struct {
 	Line string
 	Err  error
 	Done bool
+}
+
+// logEventsBatch is the result of one drain tick: every event the channel
+// had ready (up to drainBatchCap) plus a flag set when the channel closed
+// during the drain, so the loop knows to stop scheduling more reads.
+type logEventsBatch struct {
+	events []logEvent
+	done   bool
 }
 
 type streamsClosedMsg struct{}
@@ -164,6 +194,18 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 			key.WithKeys("t"),
 			key.WithHelp("t", "tag pods"),
 		),
+		wrapKey: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "wrap"),
+		),
+		hscrollLeftKey: key.NewBinding(
+			key.WithKeys("left"),
+			key.WithHelp("←", "scroll left"),
+		),
+		hscrollRightKey: key.NewBinding(
+			key.WithKeys("right"),
+			key.WithHelp("→", "scroll right"),
+		),
 		searchOpenKey: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "search"),
@@ -220,16 +262,49 @@ func send(ctx context.Context, ch chan<- logEvent, ev logEvent) bool {
 }
 
 func (m Model) Init() tea.Cmd {
-	return waitForEventCmd(m.events)
+	return waitOrDrainCmd(m.events)
 }
 
-func waitForEventCmd(ch <-chan logEvent) tea.Cmd {
+// drainEvents pulls every event the channel currently has ready (no
+// blocking past the first read), up to max. The returned done flag is
+// true iff the channel was observed closed during the drain.
+//
+// Pulled out as a free function so it is testable without spinning up a
+// tea.Program.
+func drainEvents(ch <-chan logEvent, max int) ([]logEvent, bool) {
+	if max <= 0 {
+		return nil, false
+	}
+	batch := make([]logEvent, 0, 8)
+	for len(batch) < max {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return batch, true
+			}
+			batch = append(batch, ev)
+		default:
+			return batch, false
+		}
+	}
+	return batch, false
+}
+
+// waitOrDrainCmd blocks on the first event (so the bubbletea loop stays
+// quiet while no logs flow) then drains everything else the channel has
+// queued in one go. One Update tick rebuilds the viewport once instead
+// of 5000 times when --tail=5000 arrives in a flood.
+func waitOrDrainCmd(ch <-chan logEvent) tea.Cmd {
 	return func() tea.Msg {
-		ev, ok := <-ch
+		first, ok := <-ch
 		if !ok {
 			return streamsClosedMsg{}
 		}
-		return ev
+		rest, done := drainEvents(ch, drainBatchCap-1)
+		batch := make([]logEvent, 0, 1+len(rest))
+		batch = append(batch, first)
+		batch = append(batch, rest...)
+		return logEventsBatch{events: batch, done: done}
 	}
 }
 
@@ -237,8 +312,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return m.onWindowSize(msg)
-	case logEvent:
-		return m.onLogEvent(msg)
+	case logEventsBatch:
+		return m.onLogEventsBatch(msg)
 	case streamsClosedMsg:
 		return m, nil
 	case tea.KeyMsg:
@@ -253,7 +328,7 @@ func (m Model) onWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.bodyH = msg.Height
 	m.layoutViewport()
-	m.refreshContent()
+	m.syncViewport()
 	return m, nil
 }
 
@@ -267,20 +342,30 @@ func (m *Model) layoutViewport() {
 	m.viewport.Height = max(h, minViewportHeight)
 }
 
-func (m Model) onLogEvent(msg logEvent) (tea.Model, tea.Cmd) {
-	switch {
-	case msg.Err != nil:
-		m.appendRaw(msg.Pod, msg.Err.Error(), lineStreamErr)
-	case msg.Done:
-		m.appendRaw(msg.Pod, "", lineStreamDone)
-	default:
-		m.appendRaw(msg.Pod, msg.Line, lineLog)
+// onLogEventsBatch applies every event in the batch with a single render
+// at the end. This is the heart of the slow-tail fix: instead of N²
+// formatRawLine calls and N viewport.SetContent invocations, we do one of
+// each per drain tick.
+func (m Model) onLogEventsBatch(msg logEventsBatch) (tea.Model, tea.Cmd) {
+	for _, ev := range msg.events {
+		switch {
+		case ev.Err != nil:
+			m.appendOne(ev.Pod, ev.Err.Error(), lineStreamErr)
+		case ev.Done:
+			m.appendOne(ev.Pod, "", lineStreamDone)
+		default:
+			m.appendOne(ev.Pod, ev.Line, lineLog)
+		}
 	}
 	if m.searchQuery != "" {
 		m.computeMatches()
 	}
-	m.refreshContent()
-	return m, waitForEventCmd(m.events)
+	m.syncViewport()
+	if msg.done {
+		// Channel was observed closed mid-drain. No further reads needed.
+		return m, nil
+	}
+	return m, waitOrDrainCmd(m.events)
 }
 
 func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -313,8 +398,21 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		// regardless of this flag, so flipping it is just visual noise.
 		if len(m.pods) > 1 {
 			m.showPodNames = !m.showPodNames
-			m.refreshContent()
+			m.rebuildRendered()
+			m.syncViewport()
 		}
+		return m, nil, true
+	case key.Matches(msg, m.wrapKey):
+		m.toggleWrap()
+		m.syncViewport()
+		return m, nil, true
+	case key.Matches(msg, m.hscrollLeftKey):
+		m.hscroll(-1)
+		m.syncViewport()
+		return m, nil, true
+	case key.Matches(msg, m.hscrollRightKey):
+		m.hscroll(+1)
+		m.syncViewport()
 		return m, nil, true
 	case key.Matches(msg, m.searchOpenKey):
 		m.searchOpen = true
@@ -336,13 +434,65 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		// touch autoFollow — the user's paused state stays paused.
 		if m.searchOpen || m.searchQuery != "" {
 			m.cancelSearch()
-			m.refreshContent()
+			m.syncViewport()
 			return m, nil, true
 		}
 		m.clearLogs()
 		return m, nil, true
 	}
 	return m, nil, false
+}
+
+// toggleWrap flips wrap mode and resets the horizontal pan because the two
+// are mutually exclusive: in wrap mode there is no "off to the right" to
+// scroll to. The next syncViewport sees a clean xOffset=0.
+func (m *Model) toggleWrap() {
+	m.wrap = !m.wrap
+	if m.wrap {
+		m.xOffset = 0
+	}
+}
+
+// hscroll moves the visible window by direction × hScrollStep columns.
+// Clamped at 0 on the left; the right is loosely bounded by the widest
+// rendered line so the user can scroll the entire content into view
+// without overshooting too far into empty space.
+func (m *Model) hscroll(direction int) {
+	if m.wrap {
+		return
+	}
+	step := direction * hScrollStep
+	m.xOffset += step
+	if m.xOffset < 0 {
+		m.xOffset = 0
+	}
+	if maxOff := m.maxXOffset(); m.xOffset > maxOff {
+		m.xOffset = maxOff
+	}
+}
+
+// maxXOffset is the rightmost xOffset that still keeps something on screen.
+// We use the widest rendered line minus a fudge so the user always sees a
+// few columns of context. Viewport width is treated as a soft floor.
+func (m Model) maxXOffset() int {
+	if m.wrap {
+		return 0
+	}
+	widest := 0
+	for _, line := range m.rendered {
+		if w := ansi.StringWidth(line); w > widest {
+			widest = w
+		}
+	}
+	visible := m.viewport.Width
+	if visible <= 0 {
+		visible = 1
+	}
+	max := widest - visible/2
+	if max < 0 {
+		return 0
+	}
+	return max
 }
 
 func (m *Model) cancelSearch() {
@@ -359,6 +509,7 @@ func (m *Model) cancelSearch() {
 
 func (m *Model) clearLogs() {
 	m.rawLines = nil
+	m.rendered = nil
 	m.viewport.SetContent("")
 }
 
@@ -380,7 +531,7 @@ func (m Model) onSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.scrollToLine(m.matches[0])
 			m.autoFollow = false
 		}
-		m.refreshContent()
+		m.syncViewport()
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -388,24 +539,67 @@ func (m Model) onSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Model) appendRaw(pod, text string, kind lineKind) {
-	m.rawLines = append(m.rawLines, logLine{pod: pod, text: text, kind: kind})
+// appendOne adds a single event to both rawLines (the truth) and rendered
+// (the display cache). Format runs once at append time; later refreshes
+// just join the cache. The cap is enforced on both slices in lockstep so
+// they never disagree about indices.
+//
+// Replaces the old appendRaw which only mutated rawLines and forced a
+// full re-format on every tick.
+func (m *Model) appendOne(pod, text string, kind lineKind) {
+	multi := len(m.pods) > 1
+	ln := logLine{pod: pod, text: text, kind: kind}
+	m.rawLines = append(m.rawLines, ln)
+	m.rendered = append(m.rendered, formatRawLine(ln, multi, m.showPodNames))
 	if len(m.rawLines) > maxBufferedLines {
-		m.rawLines = m.rawLines[len(m.rawLines)-maxBufferedLines:]
-		// Indices in m.matches refer to old positions; if we trimmed, drop
-		// them. Cheap to recompute on the next event.
+		drop := len(m.rawLines) - maxBufferedLines
+		m.rawLines = m.rawLines[drop:]
+		m.rendered = m.rendered[drop:]
+		// Match indices refer to the old positions; cheaper to recompute
+		// on the next event than to shift them.
 		m.matches = nil
 		m.matchIdx = 0
 	}
 }
 
-func (m *Model) refreshContent() {
+// rebuildRendered re-formats every rawLine according to the current
+// display flags. Called only when a mode toggle (showPodNames) changes
+// the way *every* line should look — never on the hot append path.
+func (m *Model) rebuildRendered() {
 	multi := len(m.pods) > 1
-	rendered := make([]string, 0, len(m.rawLines))
-	for _, ln := range m.rawLines {
-		rendered = append(rendered, formatRawLine(ln, multi, m.showPodNames))
+	if cap(m.rendered) < len(m.rawLines) {
+		m.rendered = make([]string, len(m.rawLines))
+	} else {
+		m.rendered = m.rendered[:len(m.rawLines)]
 	}
-	content := strings.Join(rendered, "\n")
+	for i, ln := range m.rawLines {
+		m.rendered[i] = formatRawLine(ln, multi, m.showPodNames)
+	}
+}
+
+// syncViewport pushes the cached rendered lines into the viewport,
+// applying display transforms (wrap or hscroll, then optional search
+// highlight). Replaces the old refreshContent and is cheap because it
+// reuses the pre-formatted cache instead of re-running formatRawLine
+// per line per event.
+func (m *Model) syncViewport() {
+	var content string
+	switch {
+	case m.wrap && m.viewport.Width > 0:
+		wrapped := make([]string, len(m.rendered))
+		for i, line := range m.rendered {
+			wrapped[i] = wrapLine(line, m.viewport.Width)
+		}
+		content = strings.Join(wrapped, "\n")
+	case m.xOffset > 0:
+		shifted := make([]string, len(m.rendered))
+		for i, line := range m.rendered {
+			shifted[i] = applyXOffset(line, m.xOffset)
+		}
+		content = strings.Join(shifted, "\n")
+	default:
+		content = strings.Join(m.rendered, "\n")
+	}
 	if m.searchQuery != "" {
 		content = highlightContent(content, m.searchQuery)
 	}
@@ -413,6 +607,26 @@ func (m *Model) refreshContent() {
 	if m.autoFollow {
 		m.viewport.GotoBottom()
 	}
+}
+
+// applyXOffset drops the first n display columns of an ANSI-aware string.
+// ansi.TruncateLeft preserves SGR continuity so colour codes survive the
+// crop. n=0 is the identity.
+func applyXOffset(s string, n int) string {
+	if n <= 0 {
+		return s
+	}
+	return ansi.TruncateLeft(s, n, "")
+}
+
+// wrapLine soft-wraps an ANSI-coloured string to width. Reuses the same
+// charmbracelet/x/ansi helper as the describe view — consistent behaviour
+// across the app.
+func wrapLine(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	return ansi.Wrap(s, width, "")
 }
 
 // computeMatches runs the substring search against the *raw* line text so
@@ -516,12 +730,18 @@ func (m Model) View() string {
 }
 
 // statusLine renders the one-line status above the viewport: any combination
-// of "[paused]", "[tags on]" and "/query · M/N". Empty when nothing applies
-// — the row stays present so the layout does not jiggle.
+// of "[paused]", "[tags on]", "[wrap on]", "[→ N]" and "/query · M/N".
+// Empty when nothing applies — the row stays present so the layout does
+// not jiggle.
 func (m Model) statusLine() string {
-	bits := make([]string, 0, 3)
+	bits := make([]string, 0, 4)
 	if !m.autoFollow {
 		bits = append(bits, styles.Warn.Render("[paused — press f to follow]"))
+	}
+	if m.wrap {
+		bits = append(bits, styles.Hint.Render("[wrap on — press w to disable]"))
+	} else if m.xOffset > 0 {
+		bits = append(bits, styles.Hint.Render(fmt.Sprintf("[→ %d cols]", m.xOffset)))
 	}
 	if len(m.pods) > 1 && m.showPodNames {
 		bits = append(bits, styles.Hint.Render("[tags on — press t to compact]"))
@@ -575,19 +795,18 @@ func (m Model) KubectlEquivalent() string {
 
 // Help implements views.View. The 't' binding is only advertised when there
 // is more than one pod — otherwise it is a no-op and only clutters the
-// footer.
+// footer. The horizontal-scroll keys only appear when wrap is off, since
+// they are a no-op in wrap mode.
 func (m Model) Help() []key.Binding {
-	bindings := []key.Binding{
-		m.scrollKey, m.followKey, m.searchOpenKey,
-		m.nextMatchKey, m.prevMatchKey, m.clearKey,
+	bindings := []key.Binding{m.scrollKey, m.followKey, m.wrapKey}
+	if !m.wrap {
+		bindings = append(bindings, m.hscrollLeftKey, m.hscrollRightKey)
 	}
 	if len(m.pods) > 1 {
-		// Slot 't' right after 'f' so related toggles stay together.
-		bindings = []key.Binding{
-			m.scrollKey, m.followKey, m.tagsKey, m.searchOpenKey,
-			m.nextMatchKey, m.prevMatchKey, m.clearKey,
-		}
+		bindings = append(bindings, m.tagsKey)
 	}
+	bindings = append(bindings,
+		m.searchOpenKey, m.nextMatchKey, m.prevMatchKey, m.clearKey)
 	return bindings
 }
 
