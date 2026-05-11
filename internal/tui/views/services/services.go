@@ -40,10 +40,23 @@ type Model struct {
 	filter       filter.Model
 
 	selectKey  key.Binding
+	logsKey    key.Binding
 	watchKey   key.Binding
 	refreshKey key.Binding
 	filterKey  key.Binding
 	forwardKey key.Binding
+}
+
+// resolvedMsg mirrors the deployments view's same-named local type: the
+// result of "for this service, give me its backing pods and the
+// container set the picker should offer". Routed back through the root
+// model via TailPromptRequestMsg or ContainerPromptRequestMsg depending
+// on container count.
+type resolvedMsg struct {
+	namespace  string
+	pods       []string
+	containers []string
+	err        error
 }
 
 type servicesMsg struct {
@@ -81,6 +94,10 @@ func New(client *k8s.Client, namespace string) Model {
 		filterKey: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "filter"),
+		),
+		logsKey: key.NewBinding(
+			key.WithKeys("l"),
+			key.WithHelp("l", "tail all pods"),
 		),
 		forwardKey: key.NewBinding(
 			key.WithKeys("f"),
@@ -164,10 +181,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applyFilter()
 		}
 		return m, nil
+	case resolvedMsg:
+		return m, m.dispatchResolved(msg)
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
+}
+
+// dispatchResolved is the second half of the 'l' flow: it has the pod
+// list and the container set for the highlighted service, and turns
+// them into either the tail prompt (1 container) or the container
+// picker (>= 2). Mirrors the deployments view so the UX is identical
+// whether the user thinks in deployments or services.
+func (m Model) dispatchResolved(msg resolvedMsg) tea.Cmd {
+	if msg.err != nil || len(msg.pods) == 0 {
+		return nil
+	}
+	if len(msg.containers) <= 1 {
+		container := ""
+		if len(msg.containers) == 1 {
+			container = msg.containers[0]
+		}
+		return func() tea.Msg {
+			return views.TailPromptRequestMsg{Namespace: msg.namespace, Pods: msg.pods, Container: container}
+		}
+	}
+	return func() tea.Msg {
+		return views.ContainerPromptRequestMsg{
+			Namespace:  msg.namespace,
+			Pods:       msg.pods,
+			Containers: msg.containers,
+			NextKind:   "logs",
+		}
+	}
+}
+
+// resolveServicePodsCmd does the API call in a goroutine and ships the
+// result back as resolvedMsg. The hot path stays on the bubbletea loop.
+func resolveServicePodsCmd(c *k8s.Client, ns, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		pods, containers, err := c.PodsAndContainersForService(ctx, ns, name)
+		if err != nil {
+			return resolvedMsg{namespace: ns, err: err}
+		}
+		return resolvedMsg{namespace: ns, pods: pods, containers: containers}
+	}
 }
 
 func (m Model) tableHeight() int {
@@ -194,41 +255,62 @@ func (m *Model) applyFilter() {
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.filterKey):
-		var cmd tea.Cmd
-		m.filter, cmd = m.filter.Open()
-		m.applyFilter()
-		return cmd, true
+		return m.openFilter(), true
 	case key.Matches(msg, m.refreshKey) && m.client != nil:
 		return fetchCmd(m.client, m.namespace), true
-	case key.Matches(msg, m.selectKey) && m.loaded && len(m.table.Rows()) > 0:
-		row := m.table.SelectedRow()
-		if row == nil {
-			return nil, false
-		}
-		ns, name := serviceCoords(row, m.namespace)
-		return func() tea.Msg {
-			return views.DescribeRequestMsg{Kind: "service", Namespace: ns, Name: name}
-		}, true
-	case key.Matches(msg, m.forwardKey) && m.loaded && len(m.table.Rows()) > 0:
-		row := m.table.SelectedRow()
-		if row == nil {
-			return nil, false
-		}
-		ns, name := serviceCoords(row, m.namespace)
-		// Lift the suggested remote port out of the matching raw record
-		// so the prompt can offer a sensible default.
-		remote := uint16(0)
-		for _, s := range m.raw {
-			if s.Namespace == ns && s.Name == name {
-				remote = firstServicePort(s)
-				break
-			}
-		}
-		return func() tea.Msg {
-			return views.ForwardRequestMsg{Kind: "service", Namespace: ns, Name: name, RemotePort: remote}
-		}, true
+	case key.Matches(msg, m.selectKey) && m.canActOnRow():
+		return m.describeAction(), true
+	case key.Matches(msg, m.logsKey) && m.canActOnRow() && m.client != nil:
+		return m.logsAction(), true
+	case key.Matches(msg, m.forwardKey) && m.canActOnRow():
+		return m.forwardAction(), true
 	}
 	return nil, false
+}
+
+// canActOnRow centralises the "has a usable cursor right now" guard
+// every row-action needs. Pulled out so handleKey stays under
+// golangci-lint's gocyclo threshold.
+func (m Model) canActOnRow() bool {
+	return m.loaded && m.table.SelectedRow() != nil && len(m.table.Rows()) > 0
+}
+
+func (m *Model) openFilter() tea.Cmd {
+	var cmd tea.Cmd
+	m.filter, cmd = m.filter.Open()
+	m.applyFilter()
+	return cmd
+}
+
+func (m Model) describeAction() tea.Cmd {
+	ns, name := serviceCoords(m.table.SelectedRow(), m.namespace)
+	return func() tea.Msg {
+		return views.DescribeRequestMsg{Kind: "service", Namespace: ns, Name: name}
+	}
+}
+
+// logsAction mirrors the deployments-view ergonomics so a user who is
+// not sure whether to navigate by Service or by Deployment ends up in
+// the same place: a logs view tailing every replica.
+func (m Model) logsAction() tea.Cmd {
+	ns, name := serviceCoords(m.table.SelectedRow(), m.namespace)
+	return resolveServicePodsCmd(m.client, ns, name)
+}
+
+func (m Model) forwardAction() tea.Cmd {
+	ns, name := serviceCoords(m.table.SelectedRow(), m.namespace)
+	// Lift the suggested remote port out of the matching raw record
+	// so the prompt can offer a sensible default.
+	remote := uint16(0)
+	for _, s := range m.raw {
+		if s.Namespace == ns && s.Name == name {
+			remote = firstServicePort(s)
+			break
+		}
+	}
+	return func() tea.Msg {
+		return views.ForwardRequestMsg{Kind: "service", Namespace: ns, Name: name, RemotePort: remote}
+	}
 }
 
 // firstServicePort extracts the first declared port from "80/TCP, 443/TCP".
@@ -329,7 +411,7 @@ func (m Model) KubectlEquivalent() string {
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.forwardKey, m.filterKey, m.watchKey, m.refreshKey}
+	return []key.Binding{m.selectKey, m.logsKey, m.forwardKey, m.filterKey, m.watchKey, m.refreshKey}
 }
 
 // CapturesKeys implements views.View.

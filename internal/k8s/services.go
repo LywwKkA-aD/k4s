@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 // Service is a presentation-friendly snapshot of a core/v1 Service.
@@ -87,6 +88,46 @@ func serviceExternalIP(s *corev1.Service) string {
 	default:
 		return "<none>"
 	}
+}
+
+// PodsAndContainersForService returns the pod names that back the given
+// service plus the container set defined on the first matching pod. The
+// containers come from a real running pod (not a template) because a
+// Service has no pod template of its own — it just selects pods by
+// label. When multiple pods back the service we assume they share a
+// template (the standard ReplicaSet/Deployment pattern) and read the
+// containers off the first one.
+//
+// Returns (nil, nil, nil) — not an error — for selector-less services
+// (headless / ExternalName / manually-managed Endpoints). Callers
+// should treat that as "no logs available, do nothing".
+func (c *Client) PodsAndContainersForService(ctx context.Context, namespace, name string) ([]string, []string, error) {
+	svc, err := c.Clientset.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("get service: %w", err)
+	}
+	if len(svc.Spec.Selector) == 0 {
+		return nil, nil, nil
+	}
+	selector := labels.SelectorFromSet(svc.Spec.Selector).String()
+	list, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("list pods: %w", err)
+	}
+	if len(list.Items) == 0 {
+		return nil, nil, nil
+	}
+	podNames := make([]string, 0, len(list.Items))
+	for _, p := range list.Items {
+		podNames = append(podNames, p.Name)
+	}
+	containers := make([]string, 0, len(list.Items[0].Spec.Containers))
+	for _, ct := range list.Items[0].Spec.Containers {
+		containers = append(containers, ct.Name)
+	}
+	return podNames, containers, nil
 }
 
 // servicePorts mirrors `kubectl get svc`'s PORT(S) column. NodePorts are

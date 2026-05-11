@@ -151,3 +151,83 @@ func TestListServicesEmptyPortsRendersAsNone(t *testing.T) {
 		t.Errorf("ports = %q, want <none>", got[0].Ports)
 	}
 }
+
+func TestPodsAndContainersForServiceHappyPath(t *testing.T) {
+	t.Parallel()
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "nginx", Namespace: "demo"},
+		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "nginx"}},
+	}
+	pods := []runtime.Object{
+		svc,
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "nginx-a", Namespace: "demo", Labels: map[string]string{"app": "nginx"}},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{
+				{Name: "web"},
+				{Name: "sidecar"},
+			}},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "nginx-b", Namespace: "demo", Labels: map[string]string{"app": "nginx"}},
+			Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "web"}, {Name: "sidecar"}}},
+		},
+		// Should not match — different label.
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "demo", Labels: map[string]string{"app": "other"}},
+			Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "x"}}},
+		},
+	}
+	c := &Client{Clientset: fake.NewSimpleClientset(pods...)}
+
+	gotPods, gotContainers, err := c.PodsAndContainersForService(context.Background(), "demo", "nginx")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gotPods) != 2 {
+		t.Errorf("expected 2 pods, got %d: %v", len(gotPods), gotPods)
+	}
+	if len(gotContainers) != 2 {
+		t.Errorf("expected 2 containers, got %d: %v", len(gotContainers), gotContainers)
+	}
+}
+
+func TestPodsAndContainersForServiceSelectorlessReturnsNil(t *testing.T) {
+	t.Parallel()
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "headless", Namespace: "demo"},
+		Spec:       corev1.ServiceSpec{}, // no selector
+	}
+	c := &Client{Clientset: fake.NewSimpleClientset(svc)}
+	pods, containers, err := c.PodsAndContainersForService(context.Background(), "demo", "headless")
+	if err != nil {
+		t.Fatalf("selector-less service should not error, got %v", err)
+	}
+	if pods != nil || containers != nil {
+		t.Errorf("expected (nil, nil), got pods=%v containers=%v", pods, containers)
+	}
+}
+
+func TestPodsAndContainersForServiceNoMatchingPods(t *testing.T) {
+	t.Parallel()
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "lonely", Namespace: "demo"},
+		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "ghost"}},
+	}
+	c := &Client{Clientset: fake.NewSimpleClientset(svc)}
+	pods, containers, err := c.PodsAndContainersForService(context.Background(), "demo", "lonely")
+	if err != nil {
+		t.Fatalf("no-match case should not error, got %v", err)
+	}
+	if pods != nil || containers != nil {
+		t.Errorf("expected (nil, nil), got pods=%v containers=%v", pods, containers)
+	}
+}
+
+func TestPodsAndContainersForServiceMissingServiceErrors(t *testing.T) {
+	t.Parallel()
+	c := &Client{Clientset: fake.NewSimpleClientset()}
+	_, _, err := c.PodsAndContainersForService(context.Background(), "demo", "absent")
+	if err == nil {
+		t.Errorf("expected error for missing service")
+	}
+}
