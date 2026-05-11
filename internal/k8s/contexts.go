@@ -75,5 +75,5 @@ func LoadFromKubeconfigContext(explicitPath, contextName string) (*Client, error
 	if err != nil {
 		return nil, fmt.Errorf("new clientset: %w", err)
 	}
-	return &Client{Clientset: cs, Context: target}, nil
+	return &Client{Clientset: cs, Context: target, RestConfig: cfg}, nil
 }

@@ -3,10 +3,11 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,6 +15,37 @@ import (
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
+
+// tryListen abstracts the listener creation so port-availability checks
+// can be exercised in tests without poking at real OS ports.
+var tryListen = func(port uint16) (net.Listener, error) {
+	return net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+}
+
+// captureWriter is the io.Writer we hand to portforward.PortForwarder
+// instead of os.Stdout/Stderr. The bubbletea TUI owns the real
+// terminal; if the forwarder wrote there directly it would smear its
+// "Unable to listen on port X" banner across the rendered table. Here
+// we buffer the bytes and let the supervisor surface them via
+// PortForwardSession.Output once the session ends.
+type captureWriter struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+// Write implements io.Writer.
+func (w *captureWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+// String returns the captured output so far.
+func (w *captureWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
 
 // PortForwardSession is the live handle for one in-process forward.
 //
@@ -34,6 +66,16 @@ type PortForwardSession struct {
 	// when the caller asked for a service/deployment and we want to
 	// surface which replica actually serves the connection.
 	Pod string
+	// Stderr returns whatever the forwarder wrote to its stderr stream.
+	// kubectl prints actual failures here ("bind: permission denied",
+	// "lost connection to pod", …). The supervisor uses this to
+	// surface a useful detail when a session dies.
+	Stderr func() string
+	// Stdout returns the stream the forwarder uses for informational
+	// chatter ("Forwarding from 127.0.0.1:8080 -> 80"). Almost never
+	// useful for error reporting — kept around for completeness and
+	// future "show me the boring details" affordances.
+	Stdout func() string
 }
 
 // Close stops the forward if it hasn't already. Idempotent — safe to call
@@ -54,7 +96,14 @@ func (s *PortForwardSession) Close() {
 //
 // The forward dies when StopCh is closed *or* when the k4s process exits.
 // State persistence lives a layer above (forwards.Manager).
+//
+// ctx is accepted for symmetry with the rest of the k8s package but is
+// **not** wired to the session lifetime. Manager.Start uses ctx for the
+// startup phase only — once Ready fires, the SPDY tunnel is governed by
+// StopCh alone. (Earlier versions did bind ctx to stopCh; that killed
+// forwards as soon as the caller's short-lived startup context expired.)
 func (c *Client) StartPodPortForward(ctx context.Context, namespace, podName string, localPort, remotePort uint16) (*PortForwardSession, error) {
+	_ = ctx
 	if c.RestConfig == nil {
 		return nil, fmt.Errorf("client built without rest config; port-forward is unavailable")
 	}
@@ -82,10 +131,15 @@ func (c *Client) StartPodPortForward(ctx context.Context, namespace, podName str
 	doneCh := make(chan struct{})
 
 	ports := []string{fmt.Sprintf("%d:%d", localPort, remotePort)}
-	// stderr goes to os.Stderr instead of being silently swallowed —
-	// kubectl messages like "lost connection to pod" help users debug
-	// when a forward goes unhealthy.
-	fw, err := portforward.New(dialer, ports, stopCh, readyCh, os.Stdout, os.Stderr)
+	// Capture forwarder output instead of routing it to the real
+	// stdout/stderr — the TUI owns those, and a stray "Unable to
+	// listen on port 80" banner from kubectl would shred the render.
+	// Two separate buffers so the supervisor can tell info chatter
+	// ("Forwarding from …" on stdout) apart from real failures
+	// ("bind: permission denied" on stderr).
+	stdout := &captureWriter{}
+	stderr := &captureWriter{}
+	fw, err := portforward.New(dialer, ports, stopCh, readyCh, stdout, stderr)
 	if err != nil {
 		return nil, fmt.Errorf("build forwarder: %w", err)
 	}
@@ -104,20 +158,14 @@ func (c *Client) StartPodPortForward(ctx context.Context, namespace, podName str
 		}
 	}()
 
-	// Respect caller context: if it cancels before Ready fires, tear
-	// the forward down. Runs in its own goroutine so StartPodPortForward
-	// returns immediately.
-	go func() {
-		select {
-		case <-ctx.Done():
-			select {
-			case <-stopCh:
-			default:
-				close(stopCh)
-			}
-		case <-doneCh:
-		}
-	}()
+	// NOTE: we used to spawn a watcher that closed stopCh on
+	// ctx.Done(). That tied the session's lifetime to the caller's
+	// context — and callers typically pass a short-lived "startup"
+	// context that gets cancelled the moment Manager.Start returns
+	// (after Ready fires). The result was a forward that came up
+	// healthy and was killed milliseconds later. Now the session
+	// outlives ctx: Manager.Stop owns stopCh; ctx is only relevant
+	// up to Ready/Err in Manager.Start's own select.
 
 	return &PortForwardSession{
 		StopCh: stopCh,
@@ -125,7 +173,26 @@ func (c *Client) StartPodPortForward(ctx context.Context, namespace, podName str
 		Err:    errCh,
 		Done:   doneCh,
 		Pod:    podName,
+		Stdout: stdout.String,
+		Stderr: stderr.String,
 	}, nil
+}
+
+// CheckLocalPortAvailable tries to bind 127.0.0.1:port and immediately
+// closes the listener. Returns nil if we can claim the port, or the OS
+// error otherwise — typically "bind: address already in use" or "bind:
+// permission denied" for ports < 1024.
+//
+// Pure best-effort: the port might get grabbed between this check and
+// the actual forward starting (TOCTOU). The point is to give the user
+// a fast, clear error in the common case instead of a wall of stderr
+// from kubectl.
+func CheckLocalPortAvailable(port uint16) error {
+	ln, err := tryListen(port)
+	if err != nil {
+		return err
+	}
+	return ln.Close()
 }
 
 // ResolveServiceToPod walks Service → label selector → first ready Pod and

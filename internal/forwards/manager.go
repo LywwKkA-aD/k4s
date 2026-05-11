@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -178,6 +179,11 @@ func (m *Manager) Register(f Forward) error {
 // Start opens the SPDY tunnel for the given ID. Resolves Service or
 // Deployment to a backing Pod when needed. The forward runs in a
 // goroutine; Start returns once Ready fires or an error surfaces.
+//
+// A local-port pre-check runs *before* we open the SPDY tunnel so the
+// user gets a clear, immediate error message — "permission denied for
+// port 80", "address already in use" — instead of a wall of kubectl
+// stderr leaking through the TUI.
 func (m *Manager) Start(ctx context.Context, id string) error {
 	m.mu.Lock()
 	a, ok := m.active[id]
@@ -194,6 +200,12 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 	fwd := a.Forward
 	m.notify()
 	m.mu.Unlock()
+
+	if err := k8s.CheckLocalPortAvailable(fwd.LocalPort); err != nil {
+		friendly := friendlyBindError(err, fwd.LocalPort)
+		m.markError(id, friendly)
+		return friendly
+	}
 
 	pod, err := m.resolveTarget(ctx, fwd)
 	if err != nil {
@@ -238,18 +250,44 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 }
 
 func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
+	// First leg: wait for either Done or an explicit error. fw.ForwardPorts
+	// signals failure by both writing to Err *and* closing Done, so Go's
+	// random select tie-breaking can drop us into either case — that's why
+	// the rest of this function handles both paths.
 	select {
 	case <-sess.Done:
 	case err, ok := <-sess.Err:
-		// Drain any pending error so it surfaces in the UI.
 		if ok && err != nil {
-			m.markError(id, err)
+			m.markError(id, decorateError(err, sess.Stderr))
 			return
 		}
 	}
-	// Done without an explicit error → user-initiated stop, or k8s
-	// closed the channel cleanly. Mark stopped only if the entry hasn't
-	// already been moved into another status by Stop/Restart.
+
+	// Done landed first. Drain a pending Err if it's already queued so
+	// we don't lose the real reason ("lost connection to pod", ...).
+	select {
+	case err, ok := <-sess.Err:
+		if ok && err != nil {
+			m.markError(id, decorateError(err, sess.Stderr))
+			return
+		}
+	default:
+	}
+
+	// No explicit Err, but the forwarder may still have written useful
+	// diagnostics to its stderr capture before the session collapsed.
+	// We deliberately only check stderr here — stdout carries
+	// informational chatter ("Forwarding from 127.0.0.1:8080 -> 80")
+	// which is *not* an error and shouldn't flip the status to red.
+	if sess.Stderr != nil {
+		if condensed := condense(strings.TrimSpace(sess.Stderr())); condensed != "" {
+			m.markError(id, errors.New(condensed))
+			return
+		}
+	}
+
+	// Clean stop — user closed the session via Stop(), or k8s closed
+	// the SPDY connection without complaint.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if cur, ok := m.active[id]; ok && cur.Status == StatusRunning {
@@ -257,6 +295,53 @@ func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
 		cur.session = nil
 		m.notify()
 	}
+}
+
+// decorateError appends the captured stderr from the portforwarder to
+// the raw error when it carries useful detail. The unwrapped error
+// from ForwardPorts is often just "lost connection to pod" — the real
+// reason ("bind: permission denied") lives in the captured output.
+func decorateError(err error, output func() string) error {
+	if output == nil {
+		return err
+	}
+	extra := strings.TrimSpace(output())
+	if extra == "" {
+		return err
+	}
+	return fmt.Errorf("%w: %s", err, condense(extra))
+}
+
+// condense trims long stderr blobs to one line that is actually useful
+// in a status column. Looks for well-known bind errors first; falls
+// back to the first non-empty line.
+func condense(s string) string {
+	for _, sub := range []string{"bind: permission denied", "bind: address already in use"} {
+		if strings.Contains(s, sub) {
+			return sub
+		}
+	}
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return s
+}
+
+// friendlyBindError translates a raw net.Listen error into a one-liner
+// the user can act on. Falls through with a generic message when the
+// OS does not surface a recognised string.
+func friendlyBindError(err error, port uint16) error {
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "permission denied"):
+		return fmt.Errorf("permission denied binding local port %d (ports < 1024 need root)", port)
+	case strings.Contains(s, "address already in use"):
+		return fmt.Errorf("local port %d already in use", port)
+	}
+	return fmt.Errorf("cannot bind local port %d: %w", port, err)
 }
 
 func (m *Manager) markError(id string, err error) {

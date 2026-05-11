@@ -56,6 +56,7 @@ const (
 	cmdBarTailPrompt
 	cmdBarContainerPrompt
 	cmdBarForwardPrompt
+	cmdBarRestorePrompt
 	cmdBarHelp
 )
 
@@ -116,6 +117,12 @@ type Model struct {
 	pendingForwardNamespace  string
 	pendingForwardName       string
 	pendingForwardRemotePort uint16
+
+	// pendingRestoreCount is non-zero when the persisted state file
+	// had entries at startup and we are still waiting for the user to
+	// decide whether to revive them. Counted, not booled, so the popup
+	// can render "Revive 3 forwards?" without re-walking the state.
+	pendingRestoreCount int
 }
 
 // execDoneMsg is delivered by tea.ExecProcess after the kubectl-exec shell
@@ -133,17 +140,27 @@ func New(client *k8s.Client) Model {
 	ti.Width = 40
 
 	var mgr *forwards.Manager
+	restore := 0
 	if m, err := forwards.NewManager(client); err == nil {
 		mgr = m
+		restore = len(mgr.State().Forwards)
 	}
 
-	return Model{
-		client:     client,
-		forwardMgr: mgr,
-		keys:       keys.Default(),
-		cmdBar:     ti,
-		current:    dashboard.New(client),
+	model := Model{
+		client:              client,
+		forwardMgr:          mgr,
+		keys:                keys.Default(),
+		cmdBar:              ti,
+		current:             dashboard.New(client),
+		pendingRestoreCount: restore,
 	}
+	// Open the restore popup automatically when the state file had
+	// entries. The user can dismiss with n/Esc or revive everything
+	// with y/Enter.
+	if restore > 0 {
+		model.cmdMode = cmdBarRestorePrompt
+	}
+	return model
 }
 
 // Init starts the active view.
@@ -300,16 +317,23 @@ func (m Model) onForwardRequest(msg views.ForwardRequestMsg) (tea.Model, tea.Cmd
 		m.cmdError = "port-forward: state subsystem unavailable"
 		return m, nil
 	}
+	// Wipe any stale "port already in use" / "permission denied" line
+	// from a previous attempt — re-opening the prompt should feel
+	// clean, not haunted.
+	m.cmdError = ""
 	m.cmdMode = cmdBarForwardPrompt
 	m.pendingForwardKind = msg.Kind
 	m.pendingForwardNamespace = msg.Namespace
 	m.pendingForwardName = msg.Name
 	m.pendingForwardRemotePort = msg.RemotePort
-	m.cmdBar.Prompt = fmt.Sprintf("port-forward %s/%s — local:remote: ", msg.Kind, msg.Name)
+	// The popup carries the target name in its subtitle, so the input
+	// prompt itself stays terse — just the arrow.
+	m.cmdBar.Prompt = "❯ "
 	placeholder := "8080:80"
 	prefill := ""
 	if msg.RemotePort > 0 {
-		placeholder = fmt.Sprintf("%d:%d", msg.RemotePort, msg.RemotePort)
+		local := defaultLocalPort(msg.RemotePort)
+		placeholder = fmt.Sprintf("%d:%d", local, msg.RemotePort)
 		prefill = placeholder
 	}
 	m.cmdBar.Placeholder = placeholder
@@ -317,6 +341,18 @@ func (m Model) onForwardRequest(msg views.ForwardRequestMsg) (tea.Model, tea.Cmd
 	m.cmdBar.CursorEnd()
 	m.cmdBar.Focus()
 	return m, textinput.Blink
+}
+
+// defaultLocalPort picks a non-privileged local port for a given remote.
+// The rule is deliberately simple: anything < 1024 gets bumped by 8000
+// (80 → 8080, 443 → 8443, 22 → 8022) so non-root users can bind it
+// without "permission denied". Anything already non-privileged passes
+// through unchanged.
+func defaultLocalPort(remote uint16) uint16 {
+	if remote < 1024 {
+		return remote + 8000
+	}
+	return remote
 }
 
 // onExecRequest runs `kubectl exec -it` against the named pod / container
@@ -436,6 +472,9 @@ func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.cmdMode == cmdBarContainerPrompt {
 		return m.handleContainerPickerKey(msg)
 	}
+	if m.cmdMode == cmdBarRestorePrompt {
+		return m.handleRestorePromptKey(msg)
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
 		return m.closeCmdBar(), nil
@@ -510,6 +549,57 @@ func (m Model) handleContainerPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleRestorePromptKey is the keymap for the startup restore popup —
+// y / Y / Enter revives every persisted forward in the state file;
+// anything else (n, Esc, Ctrl+C) dismisses without starting them.
+//
+// "Revive" is best-effort: each Start call goes through the usual
+// port-availability pre-check, so entries whose local port is now
+// occupied (or privileged) end up in Error status and the user can
+// retry from the forwards view.
+func (m Model) handleRestorePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		return m.reviveAll(), nil
+	case tea.KeyEsc:
+		return m.dismissRestore(), nil
+	}
+	switch msg.String() {
+	case "y", "Y":
+		return m.reviveAll(), nil
+	case "n", "N", "q":
+		return m.dismissRestore(), nil
+	}
+	return m, nil
+}
+
+// reviveAll kicks off Start for every forward in state. Each Start
+// blocks briefly on its own goroutine; we don't wait. The Manager's
+// change channel will refresh the forwards view automatically.
+func (m Model) reviveAll() Model {
+	if m.forwardMgr != nil {
+		state := m.forwardMgr.State()
+		mgr := m.forwardMgr
+		for _, fwd := range state.Forwards {
+			id := fwd.ID
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				_ = mgr.Start(ctx, id)
+			}()
+		}
+	}
+	m.pendingRestoreCount = 0
+	m.cmdMode = cmdBarOff
+	return m
+}
+
+func (m Model) dismissRestore() Model {
+	m.pendingRestoreCount = 0
+	m.cmdMode = cmdBarOff
+	return m
+}
+
 // commitContainerPick fires the dispatching cmd for the chosen container
 // and tears down the picker state.
 func (m Model) commitContainerPick(idx int) (tea.Model, tea.Cmd) {
@@ -557,6 +647,13 @@ func dispatchForward(m Model, mgr *forwards.Manager, kind, ns, name string, remo
 	if err != nil {
 		return m, err
 	}
+	// Probe the local port before we persist anything to state. If
+	// it's privileged or busy, surfacing the error here lets the user
+	// retype with another port and avoids cluttering the forwards
+	// list with born-dead entries.
+	if err := k8s.CheckLocalPortAvailable(local); err != nil {
+		return m, friendlyLocalBindError(err, local)
+	}
 	fwd := forwards.Forward{
 		ID:         forwards.NewID(),
 		Context:    currentContextName(m.client),
@@ -575,6 +672,20 @@ func dispatchForward(m Model, mgr *forwards.Manager, kind, ns, name string, remo
 		_ = mgr.Start(ctx, id)
 	}(fwd.ID)
 	return m, nil
+}
+
+// friendlyLocalBindError mirrors the one in the forwards package — kept
+// here so the prompt path doesn't have to reach across packages just
+// to format an OS error. Stays in sync via the test suite.
+func friendlyLocalBindError(err error, port uint16) error {
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "permission denied"):
+		return fmt.Errorf("permission denied binding local port %d (ports < 1024 need root — try %d)", port, port+8000)
+	case strings.Contains(s, "address already in use"):
+		return fmt.Errorf("local port %d already in use — pick another", port)
+	}
+	return fmt.Errorf("cannot bind local port %d: %w", port, err)
 }
 
 // parsePortPair accepts "local:remote", "local" (uses remoteHint), or
@@ -765,7 +876,9 @@ func (m Model) View() string {
 	bodyWidth := max(m.width, 0)
 
 	content := m.current.View()
-	if m.cmdMode == cmdBarTailPrompt || m.cmdMode == cmdBarContainerPrompt || m.cmdMode == cmdBarHelp {
+	if m.cmdMode == cmdBarTailPrompt || m.cmdMode == cmdBarContainerPrompt ||
+		m.cmdMode == cmdBarForwardPrompt || m.cmdMode == cmdBarHelp ||
+		m.cmdMode == cmdBarRestorePrompt {
 		content = m.renderPromptPopup(bodyWidth, bodyHeight)
 	}
 
@@ -792,15 +905,50 @@ func (m Model) renderPromptPopup(width, height int) string {
 			"",
 			styles.Hint.Render("Enter run · Esc cancel · default 100"),
 		)
+	case cmdBarForwardPrompt:
+		inner = m.renderForwardPromptInner()
 	case cmdBarContainerPrompt:
 		inner = m.renderContainerPickerInner()
 	case cmdBarHelp:
 		inner = m.renderHelpPopupInner()
+	case cmdBarRestorePrompt:
+		inner = m.renderRestorePromptInner()
 	default:
 		return ""
 	}
 	box := styles.PopupBox.Render(inner)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// renderForwardPromptInner builds the body of the port-forward popup:
+// title + target + textinput for "local:remote" + hint with examples and
+// the friendly-default heuristic (so the user knows where 8080 came
+// from). The cmdBar's own prompt text gets cleared here so the popup
+// can show a tidier label.
+func (m Model) renderForwardPromptInner() string {
+	target := fmt.Sprintf("%s/%s", m.pendingForwardKind, m.pendingForwardName)
+	if m.pendingForwardNamespace != "" {
+		target = fmt.Sprintf("%s · %s", target, m.pendingForwardNamespace)
+	}
+	title := styles.PopupTitle.Render("port-forward")
+	subtitle := styles.Hint.Render(target)
+	hint := styles.Hint.Render("Enter start · Esc cancel · format local:remote (e.g. 8080:80)")
+	return lipgloss.JoinVertical(lipgloss.Left, title, subtitle, "", m.cmdBar.View(), "", hint)
+}
+
+// renderRestorePromptInner builds the body of the startup restore popup.
+// Shown when k4s loaded persisted port-forwards and needs the user to
+// decide whether to bring them back. y / Enter revives all, n / Esc
+// dismisses. Stays minimal — one keystroke either way.
+func (m Model) renderRestorePromptInner() string {
+	plural := "forwards"
+	if m.pendingRestoreCount == 1 {
+		plural = "forward"
+	}
+	title := styles.PopupTitle.Render("restore port-forwards")
+	question := fmt.Sprintf("Found %d saved %s from a previous session.", m.pendingRestoreCount, plural)
+	hint := styles.Hint.Render("y / Enter revive all · n / Esc skip · :pf to manage later")
+	return lipgloss.JoinVertical(lipgloss.Left, title, "", question, "", hint)
 }
 
 // renderContainerPickerInner builds the body of the container-picker popup:

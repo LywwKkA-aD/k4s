@@ -1,11 +1,30 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// TestMain isolates every test in this package from the user's real
+// $HOME by pointing XDG_STATE_HOME at a throwaway directory. Without
+// this, New() loads ~/.local/state/k4s/portforwards.json from the
+// developer's machine and may open the restore popup unbidden — which
+// would break tests that assume a clean cmdBarOff start.
+func TestMain(m *testing.M) {
+	tmp, err := os.MkdirTemp("", "k4s-tui-test-*")
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	if err := os.Setenv("XDG_STATE_HOME", filepath.Join(tmp, "state")); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
 
 // TestViewFillsTerminal asserts the chrome (header + footer) sits at the
 // terminal edges and the body fills everything in between, regardless of
