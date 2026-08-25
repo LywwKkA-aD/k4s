@@ -20,7 +20,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"hash/fnv"
 	"strings"
 	"sync"
 
@@ -95,6 +94,10 @@ type Model struct {
 
 	events chan logEvent
 	cancel context.CancelFunc
+	// podColors maps each streamed pod to its palette colour. Assigned by
+	// position in pods (not hashed) so neighbouring replicas always land on
+	// maximally distinct hues.
+	podColors map[string]lipgloss.Color
 
 	autoFollow   bool
 	showPodNames bool // false → compact bar; true → "[pod-name]" prefix
@@ -189,6 +192,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 		viewport:    viewport.New(80, 20),
 		events:      events,
 		cancel:      cancel,
+		podColors:   assignPodColors(pods),
 		autoFollow:  true,
 		searchInput: si,
 		followKey: key.NewBinding(
@@ -555,7 +559,7 @@ func (m *Model) appendOne(pod, text string, kind lineKind) {
 	multi := len(m.pods) > 1
 	ln := logLine{pod: pod, text: text, kind: kind}
 	m.rawLines = append(m.rawLines, ln)
-	m.rendered = append(m.rendered, formatRawLine(ln, multi, m.showPodNames))
+	m.rendered = append(m.rendered, formatRawLine(ln, multi, m.showPodNames, m.podColors[ln.pod]))
 	if len(m.rawLines) > maxBufferedLines {
 		drop := len(m.rawLines) - maxBufferedLines
 		m.rawLines = m.rawLines[drop:]
@@ -578,7 +582,7 @@ func (m *Model) rebuildRendered() {
 		m.rendered = m.rendered[:len(m.rawLines)]
 	}
 	for i, ln := range m.rawLines {
-		m.rendered[i] = formatRawLine(ln, multi, m.showPodNames)
+		m.rendered[i] = formatRawLine(ln, multi, m.showPodNames, m.podColors[ln.pod])
 	}
 }
 
@@ -677,7 +681,7 @@ func (m *Model) scrollToLine(line int) {
 //
 // Stream-error and stream-closed notices keep the pod name inline so they
 // remain readable regardless of the prefix mode.
-func formatRawLine(ln logLine, multi, full bool) string {
+func formatRawLine(ln logLine, multi, full bool, colour lipgloss.Color) string {
 	switch ln.kind {
 	case lineStreamErr:
 		return styles.Warn.Render(fmt.Sprintf("[%s] stream error: %s", ln.pod, ln.text))
@@ -689,23 +693,37 @@ func formatRawLine(ln logLine, multi, full bool) string {
 		return ln.text
 	}
 
-	colour := lipgloss.NewStyle().Foreground(podColor(ln.pod))
+	style := lipgloss.NewStyle().Foreground(colour)
 	if full {
-		return colour.Bold(true).Render("["+ln.pod+"]") + " " + ln.text
+		return style.Bold(true).Render("["+ln.pod+"]") + " " + ln.text
 	}
-	return colour.Render(compactPrefix) + " " + ln.text
+	return style.Render(compactPrefix) + " " + ln.text
 }
 
-// podColor maps a pod name to a colour from a curated palette via FNV-1a so
-// the same pod always gets the same colour across runs.
-func podColor(name string) lipgloss.Color {
-	palette := []lipgloss.Color{
-		"#7D56F4", "#04B575", "#F2A65A", "#FF6B9D", "#56B4D4",
-		"#E5C07B", "#98C379", "#C678DD", "#56B6C2", "#E06C75",
+// podPalette is ordered so neighbouring entries sit as far apart on the
+// colour wheel as possible. Pods are coloured by position in the session's
+// pod list, so the pods you actually compare side by side never share a hue
+// family (the old FNV hash could hand out e.g. yellow and orange together).
+var podPalette = []lipgloss.Color{
+	"#7D56F4", // purple
+	"#04B575", // green
+	"#F2A65A", // orange
+	"#56B4D4", // blue
+	"#FF6B9D", // pink
+	"#A3BE8C", // lime
+	"#E5C07B", // yellow
+	"#E06C75", // red
+	"#3FC1C9", // cyan
+	"#C678DD", // magenta
+}
+
+// assignPodColors deals palette colours to pods round-robin by list position.
+func assignPodColors(pods []string) map[string]lipgloss.Color {
+	out := make(map[string]lipgloss.Color, len(pods))
+	for i, p := range pods {
+		out[p] = podPalette[i%len(podPalette)]
 	}
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(name))
-	return palette[int(h.Sum32())%len(palette)]
+	return out
 }
 
 func highlightContent(content, query string) string {

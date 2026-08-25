@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -12,6 +13,61 @@ type fakeStreamer map[string]string
 
 func (f fakeStreamer) StreamPodLogsWithTimestamps(ctx context.Context, namespace, podName string, tailLines int64, container string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(f[podName])), nil
+}
+
+func (f fakeStreamer) ContainersForPod(ctx context.Context, namespace, name string) ([]string, error) {
+	return nil, nil
+}
+
+// recordingStreamer remembers which container each pod was streamed with, so
+// tests can assert the per-pod fallback behaviour.
+type recordingStreamer struct {
+	logs       map[string]string
+	containers map[string][]string
+	mu         sync.Mutex
+	used       map[string]string
+}
+
+func (r *recordingStreamer) StreamPodLogsWithTimestamps(ctx context.Context, namespace, podName string, tailLines int64, container string) (io.ReadCloser, error) {
+	r.mu.Lock()
+	r.used[podName] = container
+	r.mu.Unlock()
+	return io.NopCloser(strings.NewReader(r.logs[podName])), nil
+}
+
+func (r *recordingStreamer) ContainersForPod(ctx context.Context, namespace, name string) ([]string, error) {
+	return r.containers[name], nil
+}
+
+func TestRunMergedStreamsFallsBackToPodContainer(t *testing.T) {
+	t.Parallel()
+
+	client := &recordingStreamer{
+		logs: map[string]string{
+			"pod-a": "2020-01-01T00:00:01.000000000Z a-1\n",
+			"pod-b": "2020-01-01T00:00:02.000000000Z b-1\n",
+		},
+		containers: map[string][]string{
+			"pod-a": {"app"},
+			"pod-b": {"worker"}, // no "app" container on this pod
+		},
+		used: map[string]string{},
+	}
+
+	events := make(chan logEvent, 64)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runMergedStreams(ctx, client, "ns", []string{"pod-a", "pod-b"}, 100, "app", events)
+	for range events {
+	}
+
+	if client.used["pod-a"] != "app" {
+		t.Errorf("pod-a container = %q, want %q", client.used["pod-a"], "app")
+	}
+	if client.used["pod-b"] != "worker" {
+		t.Errorf("pod-b should fall back to its own container, got %q", client.used["pod-b"])
+	}
 }
 
 func TestParseLogTimestamp(t *testing.T) {

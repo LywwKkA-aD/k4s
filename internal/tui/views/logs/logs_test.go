@@ -1,15 +1,14 @@
 package logs
 
 import (
+	"fmt"
 	"strings"
 	"testing"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 func TestFormatRawLineSinglePodHasNoPrefix(t *testing.T) {
 	t.Parallel()
-	got := formatRawLine(logLine{pod: "nginx", text: "hello", kind: lineLog}, false, false)
+	got := formatRawLine(logLine{pod: "nginx", text: "hello", kind: lineLog}, false, false, "#7D56F4")
 	if got != "hello" {
 		t.Errorf("single-pod line should pass through unchanged, got %q", got)
 	}
@@ -17,7 +16,7 @@ func TestFormatRawLineSinglePodHasNoPrefix(t *testing.T) {
 
 func TestFormatRawLineCompactDoesNotEmbedPodName(t *testing.T) {
 	t.Parallel()
-	got := formatRawLine(logLine{pod: "nginx-aaa", text: "hello", kind: lineLog}, true, false)
+	got := formatRawLine(logLine{pod: "nginx-aaa", text: "hello", kind: lineLog}, true, false, "#7D56F4")
 	if strings.Contains(got, "nginx-aaa") {
 		t.Errorf("compact prefix must not include the pod name, got %q", got)
 	}
@@ -31,7 +30,7 @@ func TestFormatRawLineCompactDoesNotEmbedPodName(t *testing.T) {
 
 func TestFormatRawLineFullEmbedsPodName(t *testing.T) {
 	t.Parallel()
-	got := formatRawLine(logLine{pod: "nginx-aaa", text: "hello", kind: lineLog}, true, true)
+	got := formatRawLine(logLine{pod: "nginx-aaa", text: "hello", kind: lineLog}, true, true, "#7D56F4")
 	if !strings.Contains(got, "nginx-aaa") {
 		t.Errorf("full prefix should include the pod name, got %q", got)
 	}
@@ -45,7 +44,7 @@ func TestFormatRawLineStreamErrorAlwaysShowsPodName(t *testing.T) {
 
 	// Even in compact mode an error message must surface the pod name —
 	// you can't read "stream error" without knowing which stream.
-	got := formatRawLine(logLine{pod: "nginx-aaa", text: "boom", kind: lineStreamErr}, true, false)
+	got := formatRawLine(logLine{pod: "nginx-aaa", text: "boom", kind: lineStreamErr}, true, false, "#7D56F4")
 	if !strings.Contains(got, "nginx-aaa") {
 		t.Errorf("compact-mode stream error should still name the pod, got %q", got)
 	}
@@ -57,7 +56,7 @@ func TestFormatRawLineStreamErrorAlwaysShowsPodName(t *testing.T) {
 func TestFormatRawLineStreamDoneAlwaysShowsPodName(t *testing.T) {
 	t.Parallel()
 
-	got := formatRawLine(logLine{pod: "nginx-aaa", kind: lineStreamDone}, true, false)
+	got := formatRawLine(logLine{pod: "nginx-aaa", kind: lineStreamDone}, true, false, "#7D56F4")
 	if !strings.Contains(got, "nginx-aaa") {
 		t.Errorf("compact-mode stream-closed should still name the pod, got %q", got)
 	}
@@ -66,28 +65,42 @@ func TestFormatRawLineStreamDoneAlwaysShowsPodName(t *testing.T) {
 	}
 }
 
-func TestPodColorIsDeterministic(t *testing.T) {
+func TestAssignPodColorsGivesNeighboursDistinctHues(t *testing.T) {
 	t.Parallel()
-	a1 := podColor("nginx-aaa")
-	a2 := podColor("nginx-aaa")
-	if a1 != a2 {
-		t.Errorf("podColor not deterministic: %v vs %v", a1, a2)
+
+	pods := []string{"pod-a", "pod-b", "pod-c", "pod-d"}
+	colors := assignPodColors(pods)
+	for i := 1; i < len(pods); i++ {
+		if colors[pods[i]] == colors[pods[i-1]] {
+			t.Errorf("neighbouring pods %q and %q share colour %v", pods[i-1], pods[i], colors[pods[i]])
+		}
 	}
 }
 
-func TestPodColorBelongsToPalette(t *testing.T) {
+func TestAssignPodColorsStaysInPalette(t *testing.T) {
 	t.Parallel()
-	got := podColor("anything")
-	palette := []lipgloss.Color{
-		"#7D56F4", "#04B575", "#F2A65A", "#FF6B9D", "#56B4D4",
-		"#E5C07B", "#98C379", "#C678DD", "#56B6C2", "#E06C75",
+
+	pods := make([]string, 0, len(podPalette)+3)
+	for i := 0; i < len(podPalette)+3; i++ {
+		pods = append(pods, fmt.Sprintf("pod-%d", i))
 	}
-	for _, c := range palette {
-		if got == c {
-			return
+	colors := assignPodColors(pods)
+	for _, p := range pods {
+		found := false
+		for _, c := range podPalette {
+			if colors[p] == c {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("pod %q got %v, not in palette", p, colors[p])
 		}
 	}
-	t.Errorf("podColor returned %v, not in palette", got)
+	// Round-robin wraps: pod 0 and pod len(palette) share a colour.
+	if colors["pod-0"] != colors[fmt.Sprintf("pod-%d", len(podPalette))] {
+		t.Error("round-robin should wrap the palette")
+	}
 }
 
 func TestAppendOneEnforcesBufferCap(t *testing.T) {

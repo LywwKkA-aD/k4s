@@ -37,6 +37,7 @@ const (
 // keeps tests free of a real Kubernetes clientset.
 type streamer interface {
 	StreamPodLogsWithTimestamps(ctx context.Context, namespace, podName string, tailLines int64, container string) (io.ReadCloser, error)
+	ContainersForPod(ctx context.Context, namespace, name string) ([]string, error)
 }
 
 // parsedEvent is one item produced by a per-pod reader. It mirrors logEvent but
@@ -219,6 +220,7 @@ func sendLogEvent(ctx context.Context, events chan<- logEvent, ev logEvent) bool
 }
 
 func streamOnePodMerged(ctx context.Context, client streamer, ns, pod string, tail int64, container string, out chan<- parsedEvent) {
+	container = resolveStreamContainer(ctx, client, ns, pod, container)
 	openTime := time.Now()
 	stream, err := client.StreamPodLogsWithTimestamps(ctx, ns, pod, tail, container)
 	if err != nil {
@@ -248,6 +250,28 @@ func streamOnePodMerged(ctx context.Context, client streamer, ns, pod string, ta
 		return
 	}
 	sendParsed(ctx, out, parsedEvent{pod: pod, kind: lineStreamDone})
+}
+
+// resolveStreamContainer guards the multi-pod flows (service / deployment
+// wide): the container is picked from the first pod's spec, but a service
+// selector can match pods from other workloads that don't have it. Instead
+// of dying with the API's "container X is not valid for pod Y", fall back to
+// the pod's own first container. On any lookup problem the preferred name is
+// kept and the stream surfaces the real error as before.
+func resolveStreamContainer(ctx context.Context, client streamer, ns, pod, container string) string {
+	if container == "" {
+		return ""
+	}
+	names, err := client.ContainersForPod(ctx, ns, pod)
+	if err != nil || len(names) == 0 {
+		return container
+	}
+	for _, n := range names {
+		if n == container {
+			return container
+		}
+	}
+	return names[0]
 }
 
 func sendParsed(ctx context.Context, ch chan<- parsedEvent, ev parsedEvent) bool {
