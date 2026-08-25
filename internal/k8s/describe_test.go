@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -382,5 +383,27 @@ func TestDescribeServiceRendersTypeIPsPortsSelectorEvents(t *testing.T) {
 		if !strings.Contains(out, frag) {
 			t.Errorf("service describe output missing %q\n---\n%s\n---", frag, out)
 		}
+	}
+}
+
+func TestTruncateStringMultibyteSafe(t *testing.T) {
+	t.Parallel()
+	// Multi-byte runes used to be sliced mid-sequence by the byte-based
+	// truncation, producing invalid UTF-8 in the describe view.
+	for _, s := range []string{"привет мир, это длинная строка", "🚀🚀🚀🚀🚀 emoji 🚀🚀🚀🚀🚀"} {
+		got := truncateString(s, 10)
+		if !utf8.ValidString(got) {
+			t.Errorf("truncateString(%q, 10) produced invalid UTF-8: %q", s, got)
+		}
+		if n := utf8.RuneCountInString(got); n > 10 {
+			t.Errorf("truncateString(%q, 10) = %q with %d runes, want <= 10", s, got, n)
+		}
+	}
+}
+
+func TestTruncateStringShortStringUnchanged(t *testing.T) {
+	t.Parallel()
+	if got := truncateString("short", 10); got != "short" {
+		t.Errorf("truncateString = %q, want %q", got, "short")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -30,7 +31,14 @@ const (
 	watchInterval = 5 * time.Second
 )
 
-type tickMsg time.Time
+var viewGen atomic.Int64
+
+func nextGen() int64 { return viewGen.Add(1) }
+
+type tickMsg struct {
+	gen int64
+	t   time.Time
+}
 
 // Model is the deployments list view scoped to a namespace ("" = all).
 type Model struct {
@@ -40,7 +48,11 @@ type Model struct {
 	raw       []k8s.Deployment
 	err       error
 	loaded    bool
-	bodyH     int
+	// busy suppresses overlapping fetches: fetchTimeout == watchInterval,
+	// so without the guard requests stack up every tick against a dead API.
+	busy  bool
+	bodyH int
+	gen   int64
 
 	watchEnabled bool
 	filter       filter.Model
@@ -54,8 +66,10 @@ type Model struct {
 }
 
 type deploymentsMsg struct {
-	items []k8s.Deployment
-	err   error
+	gen       int64
+	namespace string
+	items     []k8s.Deployment
+	err       error
 }
 
 // resolvedMsg is the result of "for this deployment, give me its pods and
@@ -82,6 +96,7 @@ func New(client *k8s.Client, namespace string) Model {
 		table:        t,
 		watchEnabled: true,
 		filter:       filter.New(),
+		gen:          nextGen(),
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "describe"),
@@ -127,21 +142,21 @@ func tableColumns(showNamespace bool) []table.Column {
 // Init kicks off the first deployments fetch and the watch ticker.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return tickCmd()
+		return tickCmd(m.gen)
 	}
-	return tea.Batch(fetchCmd(m.client, m.namespace), tickCmd())
+	return tea.Batch(fetchCmd(m.gen, m.client, m.namespace), tickCmd(m.gen))
 }
 
-func tickCmd() tea.Cmd {
-	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+func tickCmd(gen int64) tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg{gen: gen, t: t} })
 }
 
-func fetchCmd(c *k8s.Client, namespace string) tea.Cmd {
+func fetchCmd(gen int64, c *k8s.Client, namespace string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
 		items, err := c.ListDeployments(ctx, namespace)
-		return deploymentsMsg{items: items, err: err}
+		return deploymentsMsg{gen: gen, namespace: namespace, items: items, err: err}
 	}
 }
 
@@ -172,9 +187,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filter.SetWidth(msg.Width)
 		m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	case tickMsg:
-		cmds := []tea.Cmd{tickCmd()}
-		if m.watchEnabled && m.client != nil {
-			cmds = append(cmds, fetchCmd(m.client, m.namespace))
+		if msg.gen != m.gen {
+			return m, nil
+		}
+		cmds := []tea.Cmd{tickCmd(m.gen)}
+		if m.watchEnabled && m.client != nil && !m.busy {
+			m.busy = true
+			cmds = append(cmds, fetchCmd(m.gen, m.client, m.namespace))
 		}
 		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
@@ -193,17 +212,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case resolvedMsg:
 		return m, m.dispatchResolved(msg)
 	case deploymentsMsg:
-		m.err = msg.err
-		m.loaded = true
-		if msg.err == nil {
-			m.raw = msg.items
-			m.applyFilter()
+		if msg.gen != m.gen {
+			return m, nil
 		}
+		m.applyDeployments(msg)
 		return m, nil
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
+}
+
+// applyDeployments releases the busy flag and folds the fetch result into
+// the table. Answers that raced a namespace switch within one generation
+// are dropped (busy is still released so the next tick can fetch again).
+func (m *Model) applyDeployments(msg deploymentsMsg) {
+	m.busy = false
+	if msg.namespace != m.namespace {
+		return
+	}
+	m.err = msg.err
+	m.loaded = true
+	if msg.err == nil {
+		m.raw = msg.items
+		m.applyFilter()
+	}
 }
 
 func (m Model) tableHeight() int {
@@ -234,8 +267,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		m.filter, cmd = m.filter.Open()
 		m.applyFilter()
 		return cmd, true
-	case key.Matches(msg, m.refreshKey) && m.client != nil:
-		return fetchCmd(m.client, m.namespace), true
+	case key.Matches(msg, m.refreshKey) && m.client != nil && !m.busy:
+		m.busy = true
+		return fetchCmd(m.gen, m.client, m.namespace), true
 	case key.Matches(msg, m.watchKey):
 		m.watchEnabled = !m.watchEnabled
 		return nil, true

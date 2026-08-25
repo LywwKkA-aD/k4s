@@ -4,6 +4,8 @@ package dashboard
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -18,7 +20,14 @@ const (
 	watchInterval = 5 * time.Second
 )
 
-type tickMsg time.Time
+var viewGen atomic.Int64
+
+func nextGen() int64 { return viewGen.Add(1) }
+
+type tickMsg struct {
+	gen int64
+	t   time.Time
+}
 
 // Model is the dashboard view.
 type Model struct {
@@ -27,6 +36,7 @@ type Model struct {
 	err    error
 	loaded bool
 	busy   bool
+	gen    int64
 
 	watchEnabled bool
 
@@ -35,6 +45,7 @@ type Model struct {
 }
 
 type statsMsg struct {
+	gen   int64
 	stats k8s.Stats
 	err   error
 }
@@ -44,6 +55,7 @@ func New(client *k8s.Client) Model {
 	return Model{
 		client:       client,
 		watchEnabled: true,
+		gen:          nextGen(),
 		refreshKey: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
@@ -55,24 +67,24 @@ func New(client *k8s.Client) Model {
 	}
 }
 
-func tickCmd() tea.Cmd {
-	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+func tickCmd(gen int64) tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg{gen: gen, t: t} })
 }
 
 // Init kicks off the first stats fetch and the watch ticker.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return tickCmd()
+		return tickCmd(m.gen)
 	}
-	return tea.Batch(fetchStatsCmd(m.client), tickCmd())
+	return tea.Batch(fetchStatsCmd(m), tickCmd(m.gen))
 }
 
-func fetchStatsCmd(c *k8s.Client) tea.Cmd {
+func fetchStatsCmd(m Model) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
-		s, err := c.Stats(ctx)
-		return statsMsg{stats: s, err: err}
+		s, err := m.client.Stats(ctx)
+		return statsMsg{gen: m.gen, stats: s, err: err}
 	}
 }
 
@@ -80,10 +92,13 @@ func fetchStatsCmd(c *k8s.Client) tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
-		cmds := []tea.Cmd{tickCmd()}
+		if msg.gen != m.gen {
+			return m, nil
+		}
+		cmds := []tea.Cmd{tickCmd(m.gen)}
 		if m.watchEnabled && m.client != nil && !m.busy {
 			m.busy = true
-			cmds = append(cmds, fetchStatsCmd(m.client))
+			cmds = append(cmds, fetchStatsCmd(m))
 		}
 		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
@@ -93,9 +108,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if key.Matches(msg, m.refreshKey) && m.client != nil && !m.busy {
 			m.busy = true
-			return m, fetchStatsCmd(m.client)
+			return m, fetchStatsCmd(m)
 		}
 	case statsMsg:
+		if msg.gen != m.gen {
+			return m, nil
+		}
 		m.stats = msg.stats
 		m.err = msg.err
 		m.loaded = true
@@ -119,7 +137,13 @@ func (m Model) View() string {
 		"namespaces %d  ·  pods %d  ·  deployments %d  ·  services %d",
 		m.stats.Namespaces, m.stats.Pods, m.stats.Deployments, m.stats.Services,
 	)
-	return styles.Stat.Render(line)
+	out := styles.Stat.Render(line)
+	// Partial failure (RBAC denial on one resource, …): the counters render
+	// anyway, with a dim note about which ones could not be fetched.
+	if len(m.stats.Failed) > 0 {
+		out += "\n" + styles.Hint.Render("unavailable: "+strings.Join(m.stats.Failed, ", "))
+	}
+	return out
 }
 
 // Title implements views.View. Stable routing name; watch state is in

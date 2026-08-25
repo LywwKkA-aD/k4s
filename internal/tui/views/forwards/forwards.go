@@ -31,11 +31,16 @@ const (
 // underlying Manager mutates. The Model re-reads List() and re-renders.
 type changedMsg struct{}
 
+// refreshMsg is the synchronous half of Init: it rebuilds rows once
+// without starting a new watcher subscription.
+type refreshMsg struct{}
+
 // Model is the forwards view.
 type Model struct {
 	manager *forwards.Manager
 	table   table.Model
 	bodyH   int
+	done    chan struct{}
 
 	selectKey  key.Binding
 	stopKey    key.Binding
@@ -56,6 +61,7 @@ func New(mgr *forwards.Manager) Model {
 	return Model{
 		manager: mgr,
 		table:   t,
+		done:    make(chan struct{}),
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "start"),
@@ -91,21 +97,27 @@ func (m Model) Init() tea.Cmd {
 	if m.manager == nil {
 		return nil
 	}
-	return tea.Batch(refreshCmd(), watchChangesCmd(m.manager))
+	return tea.Batch(refreshCmd(), watchChangesCmd(m.manager, m.done))
 }
 
 // watchChangesCmd blocks on the manager's one-shot change channel. When
 // it fires, we emit changedMsg and schedule the next wait. This keeps
-// the UI in sync with the supervisor goroutines.
-func watchChangesCmd(mgr *forwards.Manager) tea.Cmd {
+// the UI in sync with the supervisor goroutines. The done channel lets
+// the command return early when the view is closed, preventing leaked
+// watcher goroutines.
+func watchChangesCmd(mgr *forwards.Manager, done <-chan struct{}) tea.Cmd {
 	return func() tea.Msg {
-		<-mgr.Changes()
-		return changedMsg{}
+		select {
+		case <-done:
+			return nil
+		case <-mgr.Changes():
+			return changedMsg{}
+		}
 	}
 }
 
 func refreshCmd() tea.Cmd {
-	return func() tea.Msg { return changedMsg{} }
+	return func() tea.Msg { return refreshMsg{} }
 }
 
 // Update handles size, key events and Manager change notifications.
@@ -115,10 +127,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.bodyH = msg.Height
 		m.table.SetHeight(max(m.tableHeight(), minTableRows))
 		m.rebuildRows()
+	case refreshMsg:
+		m.rebuildRows()
 	case changedMsg:
 		m.rebuildRows()
 		if m.manager != nil {
-			return m, watchChangesCmd(m.manager)
+			return m, watchChangesCmd(m.manager, m.done)
 		}
 	case tea.KeyMsg:
 		if cmd, handled := m.handleKey(msg); handled {
@@ -269,6 +283,13 @@ func (m Model) Help() []key.Binding {
 // CapturesKeys implements views.View.
 func (m Model) CapturesKeys() bool { return false }
 
-// Close implements views.View. Nothing to release at the view level —
-// the Manager outlives the view.
-func (m Model) Close() error { return nil }
+// Close implements views.View. Signals any in-flight watcher goroutine
+// to return so the view can be garbage-collected.
+func (m Model) Close() error {
+	select {
+	case <-m.done:
+	default:
+		close(m.done)
+	}
+	return nil
+}

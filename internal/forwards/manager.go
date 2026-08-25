@@ -64,10 +64,11 @@ type Active struct {
 // struct is value-copied) so the UI never holds a pointer into the
 // internal map. Writes happen under Manager.mu.
 type Manager struct {
-	mu     sync.Mutex
-	client *k8s.Client
-	state  State
-	active map[string]*Active
+	mu            sync.Mutex
+	client        *k8s.Client
+	contextFilter string
+	state         State
+	active        map[string]*Active
 	// changeCh is closed and re-created on every mutation so a single
 	// UI goroutine can `select` on it and refresh. Channels feel more
 	// idiomatic here than condvars or callbacks.
@@ -82,11 +83,16 @@ func NewManager(client *k8s.Client) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load state: %w", err)
 	}
+	ctxName := ""
+	if client != nil {
+		ctxName = client.Context
+	}
 	m := &Manager{
-		client:   client,
-		state:    state,
-		active:   make(map[string]*Active),
-		changeCh: make(chan struct{}),
+		client:        client,
+		contextFilter: ctxName,
+		state:         state,
+		active:        make(map[string]*Active),
+		changeCh:      make(chan struct{}),
 	}
 	for _, f := range state.Forwards {
 		m.active[f.ID] = &Active{Forward: f, Status: StatusStopped}
@@ -108,15 +114,18 @@ func (m *Manager) notify() {
 	m.changeCh = make(chan struct{})
 }
 
-// List returns a snapshot copy of every known forward, sorted by
-// (Namespace, Kind, Name, LocalPort) for a stable display order — the
-// UI's selection cursor would otherwise jump on every render since
-// map iteration is undefined.
+// List returns a snapshot copy of every known forward for the active
+// context, sorted by (Namespace, Kind, Name, LocalPort) for a stable
+// display order — the UI's selection cursor would otherwise jump on every
+// render since map iteration is undefined.
 func (m *Manager) List() []Active {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]Active, 0, len(m.active))
 	for _, a := range m.active {
+		if !m.matchesContext(a.Forward.Context) {
+			continue
+		}
 		out = append(out, Active{Forward: a.Forward, Status: a.Status, Err: a.Err})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -133,6 +142,10 @@ func (m *Manager) List() []Active {
 		return ai.LocalPort < aj.LocalPort
 	})
 	return out
+}
+
+func (m *Manager) matchesContext(ctx string) bool {
+	return m.contextFilter == "" || ctx == "" || ctx == m.contextFilter
 }
 
 // State returns the persisted intent. Useful for restore prompts at
@@ -201,52 +214,94 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 	m.notify()
 	m.mu.Unlock()
 
+	if m.client == nil {
+		m.markError(id, errors.New("no kubernetes client"))
+		return errors.New("no kubernetes client")
+	}
+
 	if err := k8s.CheckLocalPortAvailable(fwd.LocalPort); err != nil {
 		friendly := friendlyBindError(err, fwd.LocalPort)
 		m.markError(id, friendly)
 		return friendly
 	}
 
-	pod, err := m.resolveTarget(ctx, fwd)
+	pod, remotePort, err := m.resolveTarget(ctx, fwd)
 	if err != nil {
 		m.markError(id, fmt.Errorf("resolve target: %w", err))
 		return err
 	}
+	if remotePort == 0 {
+		remotePort = fwd.RemotePort
+	}
 
-	sess, err := m.client.StartPodPortForward(ctx, fwd.Namespace, pod, fwd.LocalPort, fwd.RemotePort)
+	sess, err := m.client.StartPodPortForward(ctx, fwd.Namespace, pod, fwd.LocalPort, remotePort)
 	if err != nil {
 		m.markError(id, fmt.Errorf("start forward: %w", err))
 		return err
 	}
 
-	// Wait either for ready, an error, or the session to die before
-	// transitioning into a steady state. Whichever fires first wins.
-	select {
-	case <-sess.Ready:
-		m.mu.Lock()
-		if cur, ok := m.active[id]; ok {
-			cur.Status = StatusRunning
-			cur.session = sess
-		}
-		m.notify()
-		m.mu.Unlock()
-	case err := <-sess.Err:
-		sess.Close()
-		m.markError(id, err)
+	if !m.commitSession(id, sess) {
+		return nil
+	}
+	if err := m.waitForReady(ctx, id, sess); err != nil {
 		return err
-	case <-sess.Done:
-		m.markError(id, errors.New("forward terminated before ready"))
-		return errors.New("forward terminated before ready")
-	case <-ctx.Done():
-		sess.Close()
-		m.markError(id, ctx.Err())
-		return ctx.Err()
 	}
 
 	// Background supervisor: watch for unexpected termination so the
 	// UI can flip the status to error without a manual refresh.
 	go m.supervise(id, sess)
 	return nil
+}
+
+// commitSession stores the session handle while still in StatusStarting so
+// Stop/Remove can tear it down. Returns false if the forward was cancelled
+// before the session could be committed, in which case the session is closed.
+func (m *Manager) commitSession(id string, sess *k8s.PortForwardSession) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.active[id]
+	if !ok || cur.Status != StatusStarting {
+		go func() {
+			sess.Close()
+			select {
+			case <-sess.Done:
+			case <-time.After(2 * time.Second):
+			}
+		}()
+		return false
+	}
+	cur.session = sess
+	return true
+}
+
+// waitForReady blocks until the session signals ready, errors, or the caller
+// context expires. It promotes StatusStarting to StatusRunning on success.
+func (m *Manager) waitForReady(ctx context.Context, id string, sess *k8s.PortForwardSession) error {
+	select {
+	case <-sess.Ready:
+		m.mu.Lock()
+		cur, ok := m.active[id]
+		if !ok || cur.Status != StatusStarting || cur.session != sess {
+			m.mu.Unlock()
+			sess.Close()
+			return nil
+		}
+		cur.Status = StatusRunning
+		m.notify()
+		m.mu.Unlock()
+		return nil
+	case err := <-sess.Err:
+		sess.Close()
+		m.markErrorWithSession(id, sess, decorateError(err, sess.Stderr))
+		return err
+	case <-sess.Done:
+		m.markErrorWithSession(id, sess, errors.New("forward terminated before ready"))
+		return errors.New("forward terminated before ready")
+	case <-ctx.Done():
+		sess.Close()
+		m.markErrorWithSession(id, sess, ctx.Err())
+		return ctx.Err()
+	}
 }
 
 func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
@@ -258,7 +313,7 @@ func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
 	case <-sess.Done:
 	case err, ok := <-sess.Err:
 		if ok && err != nil {
-			m.markError(id, decorateError(err, sess.Stderr))
+			m.markErrorWithSession(id, sess, decorateError(err, sess.Stderr))
 			return
 		}
 	}
@@ -268,7 +323,7 @@ func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
 	select {
 	case err, ok := <-sess.Err:
 		if ok && err != nil {
-			m.markError(id, decorateError(err, sess.Stderr))
+			m.markErrorWithSession(id, sess, decorateError(err, sess.Stderr))
 			return
 		}
 	default:
@@ -281,16 +336,17 @@ func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
 	// which is *not* an error and shouldn't flip the status to red.
 	if sess.Stderr != nil {
 		if condensed := condense(strings.TrimSpace(sess.Stderr())); condensed != "" {
-			m.markError(id, errors.New(condensed))
+			m.markErrorWithSession(id, sess, errors.New(condensed))
 			return
 		}
 	}
 
 	// Clean stop — user closed the session via Stop(), or k8s closed
-	// the SPDY connection without complaint.
+	// the SPDY connection without complaint. Guard against a stale
+	// supervise goroutine from a previous session for the same ID.
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if cur, ok := m.active[id]; ok && cur.Status == StatusRunning {
+	if cur, ok := m.active[id]; ok && cur.session == sess && cur.Status == StatusRunning {
 		cur.Status = StatusStopped
 		cur.session = nil
 		m.notify()
@@ -345,14 +401,28 @@ func friendlyBindError(err error, port uint16) error {
 }
 
 func (m *Manager) markError(id string, err error) {
+	m.markErrorWithSession(id, nil, err)
+}
+
+func (m *Manager) markErrorWithSession(id string, sess *k8s.PortForwardSession, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if cur, ok := m.active[id]; ok {
-		cur.Status = StatusError
-		cur.Err = err
-		cur.session = nil
-		m.notify()
+	cur, ok := m.active[id]
+	if !ok {
+		return
 	}
+	if sess != nil && cur.session != sess {
+		return
+	}
+	if cur.Status == StatusStopped {
+		return
+	}
+	cur.Status = StatusError
+	cur.Err = err
+	if sess != nil {
+		cur.session = nil
+	}
+	m.notify()
 }
 
 // Stop signals the running session to terminate. It does NOT remove the
@@ -379,6 +449,39 @@ func (m *Manager) Stop(id string) error {
 	m.notify()
 	m.mu.Unlock()
 	sess.Close()
+	select {
+	case <-sess.Done:
+	case <-time.After(2 * time.Second):
+	}
+	return nil
+}
+
+// StopAll terminates every live forward and waits for their listeners to
+// close. Use this when switching contexts so the old cluster's forwards do
+// not pin local ports after the user has moved on.
+func (m *Manager) StopAll() error {
+	m.mu.Lock()
+	var sessions []*k8s.PortForwardSession
+	for _, a := range m.active {
+		if a.session != nil {
+			sessions = append(sessions, a.session)
+		}
+		a.Status = StatusStopped
+		a.session = nil
+		a.Err = nil
+	}
+	m.notify()
+	m.mu.Unlock()
+
+	for _, sess := range sessions {
+		sess.Close()
+	}
+	for _, sess := range sessions {
+		select {
+		case <-sess.Done:
+		case <-time.After(2 * time.Second):
+		}
+	}
 	return nil
 }
 
@@ -400,18 +503,20 @@ func (m *Manager) Remove(id string) error {
 	return nil
 }
 
-// resolveTarget turns the kind+name into a concrete pod name. Pod kinds
-// pass through; Service and Deployment go through their respective
-// resolvers in the k8s package.
-func (m *Manager) resolveTarget(ctx context.Context, f Forward) (string, error) {
+// resolveTarget turns the kind+name into a concrete pod name and the remote
+// port the tunnel should target. Pod kinds and deployments use the persisted
+// RemotePort; services use the Service's TargetPort so the user can forward
+// to the service port and still reach the pod's container port.
+func (m *Manager) resolveTarget(ctx context.Context, f Forward) (string, uint16, error) {
 	switch f.Kind {
 	case "pod":
-		return f.Name, nil
+		return f.Name, 0, nil
 	case "service":
-		pod, _, err := m.client.ResolveServiceToPod(ctx, f.Namespace, f.Name, "")
-		return pod, err
+		pod, targetPort, err := m.client.ResolveServiceToPod(ctx, f.Namespace, f.Name, "")
+		return pod, targetPort, err
 	case "deployment":
-		return m.client.ResolveDeploymentToPod(ctx, f.Namespace, f.Name)
+		pod, err := m.client.ResolveDeploymentToPod(ctx, f.Namespace, f.Name)
+		return pod, 0, err
 	}
-	return "", fmt.Errorf("unknown kind %q", f.Kind)
+	return "", 0, fmt.Errorf("unknown kind %q", f.Kind)
 }

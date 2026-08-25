@@ -32,6 +32,8 @@ A fast, opinionated TUI for Kubernetes (k8s & k3s) — written in Go on top of
   active sessions *(v1.1.0)*
 - **Logs from `:svc` too** — `l` on a service tails every backing pod,
   same flow as `:deploy` *(v1.1.1)*
+- **Time-merged multi-pod history** — `--tail` bursts from several pods
+  are sorted by timestamp instead of arriving pod-by-pod *(v1.1.2)*
 - **Exec** — `e` drops you into a pod shell via `kubectl exec`
 - **Top** — `kubectl top pods/nodes` straight from the metrics API
 - **Live filter** — `/` substring filter inside any list view

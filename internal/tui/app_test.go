@@ -7,6 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/LywwKkA-aD/k4s/internal/forwards"
 )
 
 // TestMain isolates every test in this package from the user's real
@@ -226,4 +228,95 @@ func contains(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+func TestBuildExecCommandIncludesContext(t *testing.T) {
+	t.Parallel()
+	cmd := buildExecCommand("staging", "ns", "pod-1", "app")
+	args := cmd.Args
+	want := []string{"kubectl", "exec", "-it", "--context", "staging", "-n", "ns", "-c", "app", "pod-1", "--", "sh"}
+	if len(args) != len(want) {
+		t.Fatalf("args = %v, want %v", args, want)
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Errorf("arg[%d] = %q, want %q", i, args[i], want[i])
+		}
+	}
+}
+
+func TestBuildExecCommandOmitsEmptyContext(t *testing.T) {
+	t.Parallel()
+	cmd := buildExecCommand("", "ns", "pod-1", "")
+	args := cmd.Args
+	if containsArg(args, "--context") {
+		t.Errorf("empty context should not add --context flag: %v", args)
+	}
+	if containsArg(args, "-c") {
+		t.Errorf("empty container should not add -c flag: %v", args)
+	}
+}
+
+func containsArg(args []string, target string) bool {
+	for _, a := range args {
+		if a == target {
+			return true
+		}
+	}
+	return false
+}
+
+func TestIsRebuildableView(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{viewDashboard, viewPods, viewNamespaces, viewDeployments, viewServices, viewContexts, viewTop, viewForwards} {
+		if !isRebuildableView(name) {
+			t.Errorf("%q should be rebuildable", name)
+		}
+	}
+	if isRebuildableView("logs · pod-x") {
+		t.Error("dynamic log title should not be rebuildable")
+	}
+	if isRebuildableView("pod · nginx") {
+		t.Error("dynamic describe title should not be rebuildable")
+	}
+}
+
+func TestForwardsForContext(t *testing.T) {
+	t.Parallel()
+	fwd := func(ctx string) forwards.Forward { return forwards.Forward{Context: ctx} }
+	forwards := []forwards.Forward{fwd("prod"), fwd("dev"), fwd(""), fwd("prod")}
+	if got := forwardsForContext(forwards, "prod"); got != 3 {
+		t.Errorf("prod count = %d, want 3", got)
+	}
+	if got := forwardsForContext(forwards, "dev"); got != 2 {
+		t.Errorf("dev count = %d, want 2", got)
+	}
+}
+
+func TestCmdErrorAutoClearsAfterTTL(t *testing.T) {
+	t.Parallel()
+
+	m := New(nil)
+	m, cmd := m.setCmdError("exec: boom")
+	if m.cmdError == "" {
+		t.Fatal("setCmdError did not record the error")
+	}
+	if cmd == nil {
+		t.Fatal("setCmdError did not arm the auto-clear timer")
+	}
+
+	// A stale timer must not wipe a newer error.
+	m.cmdError = "newer error"
+	upd, _ := m.Update(cmdErrorClearMsg{value: "exec: boom"})
+	m = upd.(Model)
+	if m.cmdError != "newer error" {
+		t.Fatalf("stale timer cleared newer error: cmdError = %q", m.cmdError)
+	}
+
+	// The matching timer clears it.
+	upd, _ = m.Update(cmdErrorClearMsg{value: "newer error"})
+	m = upd.(Model)
+	if m.cmdError != "" {
+		t.Fatalf("matching timer did not clear: cmdError = %q", m.cmdError)
+	}
 }

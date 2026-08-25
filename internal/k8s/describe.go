@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 )
 
 // kubectl writes the entire pod spec back as this annotation on every apply,
@@ -272,7 +274,10 @@ func truncateString(s string, maxLen int) string {
 	if maxLen <= 1 || len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen-1] + "…"
+	// ansi.Truncate counts display cells and never splits a multi-byte
+	// rune — a naive s[:maxLen-1] byte slice could cut a rune in half and
+	// emit invalid UTF-8 into the describe view.
+	return ansi.Truncate(s, maxLen, "…")
 }
 
 func writeContainer(w *strings.Builder, c *corev1.Container, status *corev1.ContainerStatus) {
@@ -335,11 +340,14 @@ func writeVolume(w *strings.Builder, v corev1.Volume) {
 }
 
 // writeEvents queries Events in the namespace and renders the ones whose
-// involvedObject matches (kind, name), most recent first. Filtering is done
-// client-side because the fake clientset does not honour FieldSelector and
-// we want the production and test code paths to behave identically.
+// involvedObject matches (kind, name), most recent first. The FieldSelector
+// is a server-side optimisation for the real API — the client-side filter
+// below stays the source of truth, both because a FieldSelector on
+// involvedObject.name alone still matches other kinds and because the fake
+// clientset used in tests ignores FieldSelector entirely.
 func writeEvents(ctx context.Context, c *Client, w *strings.Builder, namespace, kind, name string) {
-	list, err := c.Clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
+	selector := fields.OneTermEqualSelector("involvedObject.name", name).String()
+	list, err := c.Clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{FieldSelector: selector})
 	if err != nil {
 		return
 	}

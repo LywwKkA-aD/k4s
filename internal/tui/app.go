@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -65,6 +66,24 @@ const (
 // views are sized correctly without us re-entering tea.WindowSizeMsg, which
 // would otherwise overwrite m.height with the smaller body height each time.
 type relayoutMsg struct{}
+
+// cmdErrorTTL is how long a footer error lingers before auto-clearing —
+// long enough to read, short enough that a stale "exec: exit status 1"
+// does not haunt the footer until the next action.
+const cmdErrorTTL = 5 * time.Second
+
+// cmdErrorClearMsg fires when a footer error outlives cmdErrorTTL. It carries
+// the value the timer was armed with so a newer error is not wiped by an
+// older timer.
+type cmdErrorClearMsg struct{ value string }
+
+// setCmdError records a footer error and arms its auto-clear timer.
+func (m Model) setCmdError(msg string) (Model, tea.Cmd) {
+	m.cmdError = msg
+	return m, tea.Tick(cmdErrorTTL, func(time.Time) tea.Msg {
+		return cmdErrorClearMsg{value: msg}
+	})
+}
 
 // historyEntry captures the navigation snapshot we restore on Esc.
 //
@@ -143,7 +162,7 @@ func New(client *k8s.Client) Model {
 	restore := 0
 	if m, err := forwards.NewManager(client); err == nil {
 		mgr = m
-		restore = len(mgr.State().Forwards)
+		restore = forwardsForContext(mgr.State().Forwards, currentContextName(client))
 	}
 
 	model := Model{
@@ -193,12 +212,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case views.ForwardRequestMsg:
 		return m.onForwardRequest(msg)
 	case execDoneMsg:
-		if msg.err != nil {
-			m.cmdError = "exec: " + msg.err.Error()
+		return m.onExecDone(msg)
+	case cmdErrorClearMsg:
+		if msg.value == m.cmdError {
+			m.cmdError = ""
 		}
 		return m, nil
 	case tea.KeyMsg:
 		return m.onKey(msg)
+	}
+	return m.routeToActiveUI(msg)
+}
+
+// onExecDone handles the return of the kubectl exec subprocess.
+func (m Model) onExecDone(msg execDoneMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		return m.setCmdError("exec: " + msg.err.Error())
+	}
+	return m, nil
+}
+
+// routeToActiveUI delivers a message that matched no root case. Cursor blink
+// ticks are not key messages, so while a text prompt is open they must reach
+// the cmdBar explicitly — otherwise they fall through to the view and the
+// cursor freezes after the first blink.
+func (m Model) routeToActiveUI(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.cmdMode == cmdBarCommand || m.cmdMode == cmdBarTailPrompt || m.cmdMode == cmdBarForwardPrompt {
+		if _, ok := msg.(cursor.BlinkMsg); ok {
+			var cmd tea.Cmd
+			m.cmdBar, cmd = m.cmdBar.Update(msg)
+			return m, cmd
+		}
 	}
 	return m.forwardToView(msg)
 }
@@ -227,8 +271,7 @@ func (m Model) onRelayout() (tea.Model, tea.Cmd) {
 func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.Cmd) {
 	client, err := k8s.LoadFromKubeconfigContext("", msg.Name)
 	if err != nil {
-		m.cmdError = "context: " + err.Error()
-		return m, nil
+		return m.setCmdError("context: " + err.Error())
 	}
 	if m.current != nil {
 		_ = m.current.Close()
@@ -237,31 +280,31 @@ func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.C
 	m.namespace = ""
 	m.history = nil
 	m.cmdError = ""
-	// Re-init the port-forward manager against the new cluster. Any
-	// running forwards on the old client are abandoned — they were
-	// pinned to a cluster the user no longer wants to look at.
+	// Tear down live forwards for the old cluster before swapping managers;
+	// otherwise local ports stay bound and SPDY goroutines leak until exit.
+	if m.forwardMgr != nil {
+		_ = m.forwardMgr.StopAll()
+	}
+	var errCmd tea.Cmd
 	if mgr, err := forwards.NewManager(client); err == nil {
 		m.forwardMgr = mgr
+	} else {
+		m.forwardMgr = nil
+		m, errCmd = m.setCmdError("forwards: " + err.Error())
 	}
 	m.current = dashboard.New(m.client)
-	return m, m.relayoutCmd()
+	return m, tea.Batch(m.relayoutCmd(), errCmd)
 }
 
 func (m Model) onNamespaceSelected(msg views.NamespaceSelectedMsg) (tea.Model, tea.Cmd) {
-	m.history = append(m.history, historyEntry{
-		view:      m.current.Title(),
-		namespace: m.namespace,
-	})
+	m = m.pushHistory()
 	m.namespace = msg.Namespace
 	m = m.replaceView(viewPods)
 	return m, m.relayoutCmd()
 }
 
 func (m Model) onDescribeRequest(msg views.DescribeRequestMsg) (tea.Model, tea.Cmd) {
-	m.history = append(m.history, historyEntry{
-		view:      m.current.Title(),
-		namespace: m.namespace,
-	})
+	m = m.pushHistory()
 	m = m.swap(describe.New(m.client, describe.Kind(msg.Kind), msg.Namespace, msg.Name))
 	return m, m.relayoutCmd()
 }
@@ -300,10 +343,7 @@ func (m Model) onContainerPromptRequest(msg views.ContainerPromptRequestMsg) (te
 }
 
 func (m Model) onLogsRequest(msg views.LogsRequestMsg) (tea.Model, tea.Cmd) {
-	m.history = append(m.history, historyEntry{
-		view:      m.current.Title(),
-		namespace: m.namespace,
-	})
+	m = m.pushHistory()
 	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods, msg.Tail, msg.Container))
 	return m, m.relayoutCmd()
 }
@@ -314,8 +354,7 @@ func (m Model) onLogsRequest(msg views.LogsRequestMsg) (tea.Model, tea.Cmd) {
 // the submission path via dispatchForwardCmd.
 func (m Model) onForwardRequest(msg views.ForwardRequestMsg) (tea.Model, tea.Cmd) {
 	if m.forwardMgr == nil {
-		m.cmdError = "port-forward: state subsystem unavailable"
-		return m, nil
+		return m.setCmdError("port-forward: state subsystem unavailable")
 	}
 	// Wipe any stale "port already in use" / "permission denied" line
 	// from a previous attempt — re-opening the prompt should feel
@@ -359,7 +398,7 @@ func defaultLocalPort(remote uint16) uint16 {
 // via tea.ExecProcess so the shell takes over the terminal cleanly. When
 // the shell exits we get an execDoneMsg back at the root.
 func (m Model) onExecRequest(msg views.ExecRequestMsg) (tea.Model, tea.Cmd) {
-	cmd := buildExecCommand(msg.Namespace, msg.Pod, msg.Container)
+	cmd := buildExecCommand(currentContextName(m.client), msg.Namespace, msg.Pod, msg.Container)
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return execDoneMsg{err: err}
 	})
@@ -373,8 +412,12 @@ func (m Model) onExecRequest(msg views.ExecRequestMsg) (tea.Model, tea.Cmd) {
 // container names that the user already had RBAC to read). None of it
 // originates from a free-form text field — even the container name is
 // matched back against the API-supplied list before this is called.
-func buildExecCommand(namespace, pod, container string) *exec.Cmd {
-	args := []string{"exec", "-it", "-n", namespace}
+func buildExecCommand(contextName, namespace, pod, container string) *exec.Cmd {
+	args := []string{"exec", "-it"}
+	if contextName != "" {
+		args = append(args, "--context", contextName)
+	}
+	args = append(args, "-n", namespace)
 	if container != "" {
 		args = append(args, "-c", container)
 	}
@@ -494,8 +537,7 @@ func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case cmdBarForwardPrompt:
 			updated, err := dispatchForward(next, mgr, fwdKind, fwdNS, fwdName, fwdRemote, value)
 			if err != nil {
-				updated.cmdError = "port-forward: " + err.Error()
-				return updated, nil
+				return updated.setCmdError("port-forward: " + err.Error())
 			}
 			// Hop to the forwards view so the user sees the entry land.
 			next2 := updated.switchTo(viewForwards)
@@ -551,7 +593,8 @@ func (m Model) handleContainerPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleRestorePromptKey is the keymap for the startup restore popup —
 // y / Y / Enter revives every persisted forward in the state file;
-// anything else (n, Esc, Ctrl+C) dismisses without starting them.
+// n / q / Esc dismisses without starting them. (Ctrl+C never reaches this
+// handler: onKey intercepts it as force-quit before prompt dispatch.)
 //
 // "Revive" is best-effort: each Start call goes through the usual
 // port-availability pre-check, so entries whose local port is now
@@ -573,14 +616,18 @@ func (m Model) handleRestorePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// reviveAll kicks off Start for every forward in state. Each Start
-// blocks briefly on its own goroutine; we don't wait. The Manager's
-// change channel will refresh the forwards view automatically.
+// reviveAll kicks off Start for every forward in state that belongs to the
+// current context. Each Start blocks briefly on its own goroutine; we don't
+// wait. The Manager's change channel will refresh the forwards view automatically.
 func (m Model) reviveAll() Model {
 	if m.forwardMgr != nil {
 		state := m.forwardMgr.State()
 		mgr := m.forwardMgr
+		ctxName := currentContextName(m.client)
 		for _, fwd := range state.Forwards {
+			if fwd.Context != "" && fwd.Context != ctxName {
+				continue
+			}
 			id := fwd.ID
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -784,8 +831,7 @@ func dispatchContainerCmd(ns string, pods []string, container, nextKind string) 
 func (m Model) execCmd(input string) (Model, tea.Cmd) {
 	name, ok := command.Resolve(input)
 	if !ok {
-		m.cmdError = fmt.Sprintf("unknown command: %s", strings.TrimSpace(input))
-		return m, nil
+		return m.setCmdError(fmt.Sprintf("unknown command: %s", strings.TrimSpace(input)))
 	}
 	m.cmdError = ""
 	next := m.switchTo(name)
@@ -795,12 +841,34 @@ func (m Model) execCmd(input string) (Model, tea.Cmd) {
 // switchTo records the current view in history then constructs the named view.
 func (m Model) switchTo(name string) Model {
 	if m.current != nil && m.current.Title() != name {
+		m = m.pushHistory()
+	}
+	return m.replaceView(name)
+}
+
+// pushHistory saves the current rebuildable view so Esc can return to it.
+// Leaf views (describe, logs) have dynamic titles and cannot be rebuilt from
+// a title alone, so they are skipped.
+func (m Model) pushHistory() Model {
+	if m.current == nil {
+		return m
+	}
+	title := m.current.Title()
+	if isRebuildableView(title) {
 		m.history = append(m.history, historyEntry{
-			view:      m.current.Title(),
+			view:      title,
 			namespace: m.namespace,
 		})
 	}
-	return m.replaceView(name)
+	return m
+}
+
+func isRebuildableView(title string) bool {
+	switch title {
+	case viewDashboard, viewPods, viewNamespaces, viewDeployments, viewServices, viewContexts, viewTop, viewForwards:
+		return true
+	}
+	return false
 }
 
 // replaceView builds the named view without touching history.
@@ -834,6 +902,20 @@ func currentContextName(c *k8s.Client) string {
 		return ""
 	}
 	return c.Context
+}
+
+// forwardsForContext counts persisted forwards that belong to the named
+// context. Forwards with an empty context are treated as belonging to every
+// context for backward compatibility with state files written before the
+// context field was enforced.
+func forwardsForContext(forwards []forwards.Forward, ctx string) int {
+	n := 0
+	for _, f := range forwards {
+		if f.Context == "" || f.Context == ctx {
+			n++
+		}
+	}
+	return n
 }
 
 // swap closes the outgoing view (so its goroutines / streams are stopped)

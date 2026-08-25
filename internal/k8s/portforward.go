@@ -6,8 +6,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -113,17 +115,12 @@ func (c *Client) StartPodPortForward(ctx context.Context, namespace, podName str
 		return nil, fmt.Errorf("build SPDY transport: %w", err)
 	}
 
-	host := c.RestConfig.Host
-	host = strings.TrimPrefix(host, "https://")
-	host = strings.TrimPrefix(host, "http://")
-
-	serverURL := &url.URL{
-		Scheme: "https",
-		Host:   host,
-		Path:   fmt.Sprintf("/api/v1/namespaces/%s/pods/%s/portforward", namespace, podName),
+	serverURL, err := parsePortForwardURL(c.RestConfig.Host, namespace, podName)
+	if err != nil {
+		return nil, fmt.Errorf("build portforward URL: %w", err)
 	}
 
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, serverURL)
+	dialer := spdy.NewDialer(upgrader, spdyHTTPClient(transport), http.MethodPost, serverURL)
 
 	stopCh := make(chan struct{})
 	readyCh := make(chan struct{})
@@ -176,6 +173,46 @@ func (c *Client) StartPodPortForward(ctx context.Context, namespace, podName str
 		Stdout: stdout.String,
 		Stderr: stderr.String,
 	}, nil
+}
+
+// spdyUpgradeTimeout bounds how long we wait for the API server (or the
+// proxy in front of it) to answer the SPDY upgrade request with response
+// headers. Without it a stuck server leaves the dial goroutine parked
+// forever. The timeout stops applying the moment headers arrive, so an
+// established long-lived tunnel is unaffected — which is exactly why we
+// set ResponseHeaderTimeout on the transport instead of Timeout on the
+// http.Client (the latter would kill healthy tunnels mid-stream).
+const spdyUpgradeTimeout = 15 * time.Second
+
+// spdyHTTPClient returns the http.Client used for the SPDY upgrade. When the
+// transport is a plain *http.Transport we clone it and bound the header wait
+// so a stuck API server fails fast instead of leaking the goroutine; the
+// timeout stops applying once the upgrade response arrives, so established
+// tunnels are unaffected. Non-*http.Transport round trippers (wrappers,
+// test doubles) are passed through untouched — we can't clone what we
+// don't know.
+func spdyHTTPClient(transport http.RoundTripper) *http.Client {
+	if t, ok := transport.(*http.Transport); ok {
+		clone := t.Clone()
+		clone.ResponseHeaderTimeout = spdyUpgradeTimeout
+		return &http.Client{Transport: clone}
+	}
+	return &http.Client{Transport: transport}
+}
+
+// parsePortForwardURL parses RestConfig.Host into a URL that preserves any
+// path prefix (e.g. Rancher clusters at /k8s/clusters/c-xxx) and scheme
+// (https or http) instead of hardcoding https and dropping the path.
+func parsePortForwardURL(host, namespace, podName string) (*url.URL, error) {
+	if !strings.Contains(host, "://") {
+		host = "https://" + host
+	}
+	u, err := url.Parse(host)
+	if err != nil {
+		return nil, err
+	}
+	u.Path = path.Join(u.Path, fmt.Sprintf("/api/v1/namespaces/%s/pods/%s/portforward", namespace, podName))
+	return u, nil
 }
 
 // CheckLocalPortAvailable tries to bind 127.0.0.1:port and immediately
@@ -237,11 +274,18 @@ func (c *Client) ResolveDeploymentToPod(ctx context.Context, namespace, deployNa
 	if err != nil {
 		return "", fmt.Errorf("get deployment: %w", err)
 	}
-	if dep.Spec.Selector == nil || len(dep.Spec.Selector.MatchLabels) == 0 {
-		return "", fmt.Errorf("deployment %q has no matchLabels selector", deployName)
+	if dep.Spec.Selector == nil {
+		return "", fmt.Errorf("deployment %q has no pod selector", deployName)
 	}
-	selector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels).String()
-	pods, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	// LabelSelectorAsSelector honours matchExpressions too — a plain
+	// SelectorFromSet over MatchLabels would silently drop deployments whose
+	// selector is expression-only (e.g. `app In (demo)`), which the API
+	// considers perfectly valid.
+	selector, err := metav1.LabelSelectorAsSelector(dep.Spec.Selector)
+	if err != nil {
+		return "", fmt.Errorf("convert selector: %w", err)
+	}
+	pods, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return "", fmt.Errorf("list pods: %w", err)
 	}

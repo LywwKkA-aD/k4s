@@ -4,6 +4,7 @@ package namespaces
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -24,7 +25,14 @@ const (
 	allRowName    = "<all>"
 )
 
-type tickMsg time.Time
+var viewGen atomic.Int64
+
+func nextGen() int64 { return viewGen.Add(1) }
+
+type tickMsg struct {
+	gen int64
+	t   time.Time
+}
 
 // Model is the namespaces list view.
 type Model struct {
@@ -33,7 +41,11 @@ type Model struct {
 	raw    []k8s.Namespace
 	err    error
 	loaded bool
-	bodyH  int
+	// busy suppresses overlapping fetches: fetchTimeout == watchInterval,
+	// so without the guard requests stack up every tick against a dead API.
+	busy  bool
+	bodyH int
+	gen   int64
 
 	watchEnabled bool
 	filter       filter.Model
@@ -45,6 +57,7 @@ type Model struct {
 }
 
 type namespacesMsg struct {
+	gen   int64
 	items []k8s.Namespace
 	err   error
 }
@@ -68,6 +81,7 @@ func New(client *k8s.Client) Model {
 		table:        t,
 		watchEnabled: true,
 		filter:       filter.New(),
+		gen:          nextGen(),
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "select"),
@@ -87,24 +101,24 @@ func New(client *k8s.Client) Model {
 	}
 }
 
-func tickCmd() tea.Cmd {
-	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+func tickCmd(gen int64) tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg{gen: gen, t: t} })
 }
 
 // Init kicks off the first fetch and the watch ticker.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return tickCmd()
+		return tickCmd(m.gen)
 	}
-	return tea.Batch(fetchCmd(m.client), tickCmd())
+	return tea.Batch(fetchCmd(m.gen, m.client), tickCmd(m.gen))
 }
 
-func fetchCmd(c *k8s.Client) tea.Cmd {
+func fetchCmd(gen int64, c *k8s.Client) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
 		items, err := c.ListNamespaces(ctx)
-		return namespacesMsg{items: items, err: err}
+		return namespacesMsg{gen: gen, items: items, err: err}
 	}
 }
 
@@ -117,9 +131,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filter.SetWidth(msg.Width)
 		m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	case tickMsg:
-		cmds := []tea.Cmd{tickCmd()}
-		if m.watchEnabled && m.client != nil {
-			cmds = append(cmds, fetchCmd(m.client))
+		if msg.gen != m.gen {
+			return m, nil
+		}
+		cmds := []tea.Cmd{tickCmd(m.gen)}
+		if m.watchEnabled && m.client != nil && !m.busy {
+			m.busy = true
+			cmds = append(cmds, fetchCmd(m.gen, m.client))
 		}
 		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
@@ -136,6 +154,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	case namespacesMsg:
+		if msg.gen != m.gen {
+			return m, nil
+		}
+		m.busy = false
 		m.err = msg.err
 		m.loaded = true
 		if msg.err == nil {
@@ -160,8 +182,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.watchKey):
 		m.watchEnabled = !m.watchEnabled
 		return nil, true
-	case key.Matches(msg, m.refreshKey) && m.client != nil:
-		return fetchCmd(m.client), true
+	case key.Matches(msg, m.refreshKey) && m.client != nil && !m.busy:
+		m.busy = true
+		return fetchCmd(m.gen, m.client), true
 	case key.Matches(msg, m.selectKey) && m.loaded && len(m.table.Rows()) > 0:
 		row := m.table.SelectedRow()
 		if row == nil {

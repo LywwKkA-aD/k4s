@@ -1,10 +1,11 @@
 // Package services is the services list view: kubectl-style columns (TYPE,
-// CLUSTER-IP, EXTERNAL-IP, PORT(S)) with Enter wired to the describe view.
-// 'l' is intentionally absent — services don't produce logs themselves.
+// CLUSTER-IP, EXTERNAL-IP, PORT(S)) with Enter wired to the describe view,
+// 'l' tailing the logs of every pod behind the selected service.
 package services
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -24,7 +25,14 @@ const (
 	watchInterval = 5 * time.Second
 )
 
-type tickMsg time.Time
+var viewGen atomic.Int64
+
+func nextGen() int64 { return viewGen.Add(1) }
+
+type tickMsg struct {
+	gen int64
+	t   time.Time
+}
 
 // Model is the services list view scoped to a namespace ("" = all).
 type Model struct {
@@ -34,7 +42,11 @@ type Model struct {
 	raw       []k8s.Service
 	err       error
 	loaded    bool
-	bodyH     int
+	// busy suppresses overlapping fetches: fetchTimeout == watchInterval,
+	// so without the guard requests stack up every tick against a dead API.
+	busy  bool
+	bodyH int
+	gen   int64
 
 	watchEnabled bool
 	filter       filter.Model
@@ -60,8 +72,10 @@ type resolvedMsg struct {
 }
 
 type servicesMsg struct {
-	items []k8s.Service
-	err   error
+	gen       int64
+	namespace string
+	items     []k8s.Service
+	err       error
 }
 
 // New constructs a services view.
@@ -79,6 +93,7 @@ func New(client *k8s.Client, namespace string) Model {
 		table:        t,
 		watchEnabled: true,
 		filter:       filter.New(),
+		gen:          nextGen(),
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "describe"),
@@ -106,8 +121,8 @@ func New(client *k8s.Client, namespace string) Model {
 	}
 }
 
-func tickCmd() tea.Cmd {
-	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+func tickCmd(gen int64) tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg{gen: gen, t: t} })
 }
 
 func tableColumns(showNamespace bool) []table.Column {
@@ -129,17 +144,17 @@ func tableColumns(showNamespace bool) []table.Column {
 // Init kicks off the first services fetch and the watch ticker.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return tickCmd()
+		return tickCmd(m.gen)
 	}
-	return tea.Batch(fetchCmd(m.client, m.namespace), tickCmd())
+	return tea.Batch(fetchCmd(m.gen, m.client, m.namespace), tickCmd(m.gen))
 }
 
-func fetchCmd(c *k8s.Client, namespace string) tea.Cmd {
+func fetchCmd(gen int64, c *k8s.Client, namespace string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
 		items, err := c.ListServices(ctx, namespace)
-		return servicesMsg{items: items, err: err}
+		return servicesMsg{gen: gen, namespace: namespace, items: items, err: err}
 	}
 }
 
@@ -151,9 +166,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filter.SetWidth(msg.Width)
 		m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	case tickMsg:
-		cmds := []tea.Cmd{tickCmd()}
-		if m.watchEnabled && m.client != nil {
-			cmds = append(cmds, fetchCmd(m.client, m.namespace))
+		if msg.gen != m.gen {
+			return m, nil
+		}
+		cmds := []tea.Cmd{tickCmd(m.gen)}
+		if m.watchEnabled && m.client != nil && !m.busy {
+			m.busy = true
+			cmds = append(cmds, fetchCmd(m.gen, m.client, m.namespace))
 		}
 		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
@@ -174,12 +193,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	case servicesMsg:
-		m.err = msg.err
-		m.loaded = true
-		if msg.err == nil {
-			m.raw = msg.items
-			m.applyFilter()
+		if msg.gen != m.gen {
+			return m, nil
 		}
+		m.applyServices(msg)
 		return m, nil
 	case resolvedMsg:
 		return m, m.dispatchResolved(msg)
@@ -187,6 +204,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
+}
+
+// applyServices releases the busy flag and folds the fetch result into the
+// table. Answers that raced a namespace switch within one generation are
+// dropped (busy is still released so the next tick can fetch again).
+func (m *Model) applyServices(msg servicesMsg) {
+	m.busy = false
+	if msg.namespace != m.namespace {
+		return
+	}
+	m.err = msg.err
+	m.loaded = true
+	if msg.err == nil {
+		m.raw = msg.items
+		m.applyFilter()
+	}
 }
 
 // dispatchResolved is the second half of the 'l' flow: it has the pod
@@ -256,8 +289,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.filterKey):
 		return m.openFilter(), true
-	case key.Matches(msg, m.refreshKey) && m.client != nil:
-		return fetchCmd(m.client, m.namespace), true
+	case key.Matches(msg, m.refreshKey) && m.client != nil && !m.busy:
+		m.busy = true
+		return fetchCmd(m.gen, m.client, m.namespace), true
 	case key.Matches(msg, m.selectKey) && m.canActOnRow():
 		return m.describeAction(), true
 	case key.Matches(msg, m.logsKey) && m.canActOnRow() && m.client != nil:
@@ -318,11 +352,7 @@ func (m Model) forwardAction() tea.Cmd {
 func firstServicePort(s k8s.Service) uint16 {
 	ports := s.Ports
 	for i, c := range ports {
-		if c == '/' {
-			ports = ports[:i]
-			break
-		}
-		if c == ',' {
+		if c == '/' || c == ',' {
 			ports = ports[:i]
 			break
 		}

@@ -91,7 +91,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		m.loaded = true
 		if msg.err == nil {
-			m.table.SetRows(toRows(msg.items))
+			m.table.SetRows(m.toRows(msg.items))
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -116,7 +116,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // toRows builds the table rows, sorted by name with the current context
 // surfaced in the leading marker column.
-func toRows(items []k8s.Context) []table.Row {
+func (m Model) toRows(items []k8s.Context) []table.Row {
 	sorted := make([]k8s.Context, len(items))
 	copy(sorted, items)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
@@ -124,8 +124,12 @@ func toRows(items []k8s.Context) []table.Row {
 	rows := make([]table.Row, 0, len(sorted))
 	for _, c := range sorted {
 		marker := " "
-		if c.Current {
-			marker = styles.OK.Render("★")
+		if c.Name == m.currentContext {
+			// Plain rune, no lipgloss styling: the bubbles table truncates
+			// cells by rune width without ANSI awareness, so a styled "★"
+			// would emit a broken escape sequence and swallow the first
+			// letters of the neighbouring NAME column.
+			marker = "★"
 		}
 		rows = append(rows, table.Row{marker, c.Name, c.Cluster, c.AuthInfo, c.Namespace})
 	}

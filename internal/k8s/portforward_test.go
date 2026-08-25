@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -216,3 +217,67 @@ func TestResolveDeploymentNotFoundErrors(t *testing.T) {
 		t.Error("expected error for missing deployment")
 	}
 }
+
+func TestResolveDeploymentToPodMatchExpressionsSelector(t *testing.T) {
+	t.Parallel()
+	// A deployment whose selector is expression-only (no matchLabels) used
+	// to hit the "no matchLabels selector" error even though the API — and
+	// kubectl — accept it just fine.
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo", Namespace: "demo"},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: "app", Operator: metav1.LabelSelectorOpIn, Values: []string{"demo"}},
+				},
+			},
+		},
+	}
+	objs := []runtime.Object{
+		dep,
+		mkPod("demo-1", corev1.PodRunning, true, map[string]string{"app": "demo"}),
+	}
+	cs := fake.NewSimpleClientset(objs...)
+	c := &Client{Clientset: cs}
+	pod, err := c.ResolveDeploymentToPod(context.Background(), "demo", "demo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pod != "demo-1" {
+		t.Errorf("pod = %q, want demo-1", pod)
+	}
+}
+
+func TestSPDYHTTPClientBoundsHeaderWait(t *testing.T) {
+	t.Parallel()
+	orig := &http.Transport{}
+	client := spdyHTTPClient(orig)
+	got, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T, want *http.Transport", client.Transport)
+	}
+	if got.ResponseHeaderTimeout != spdyUpgradeTimeout {
+		t.Errorf("ResponseHeaderTimeout = %v, want %v", got.ResponseHeaderTimeout, spdyUpgradeTimeout)
+	}
+	if got == orig {
+		t.Error("client must wrap a clone; mutating the caller's transport would leak the timeout elsewhere")
+	}
+	if orig.ResponseHeaderTimeout != 0 {
+		t.Errorf("original transport mutated: ResponseHeaderTimeout = %v, want 0", orig.ResponseHeaderTimeout)
+	}
+}
+
+func TestSPDYHTTPClientPassesThroughNonTransport(t *testing.T) {
+	t.Parallel()
+	// Round trippers we don't recognise (wrappers, test doubles) can't be
+	// cloned safely — the helper must fall back without panicking.
+	stub := stubRoundTripper{}
+	client := spdyHTTPClient(stub)
+	if client.Transport != stub {
+		t.Errorf("transport = %T, want the stub passed through", client.Transport)
+	}
+}
+
+type stubRoundTripper struct{}
+
+func (stubRoundTripper) RoundTrip(*http.Request) (*http.Response, error) { return nil, nil }

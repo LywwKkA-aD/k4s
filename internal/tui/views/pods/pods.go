@@ -4,6 +4,7 @@ package pods
 import (
 	"context"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -23,10 +24,17 @@ const (
 	watchInterval = 5 * time.Second
 )
 
+var viewGen atomic.Int64
+
+func nextGen() int64 { return viewGen.Add(1) }
+
 // tickMsg is the per-view auto-refresh signal. Per-view typing means a
 // stale ticker that fires after the user has navigated away simply gets
 // ignored by whatever view is current — no global ticker plumbing needed.
-type tickMsg time.Time
+type tickMsg struct {
+	gen int64
+	t   time.Time
+}
 
 // Model is the pods list view scoped to a namespace ("" = all).
 type Model struct {
@@ -36,7 +44,11 @@ type Model struct {
 	raw       []k8s.Pod
 	err       error
 	loaded    bool
-	bodyH     int
+	// busy suppresses overlapping fetches: fetchTimeout == watchInterval,
+	// so without the guard requests stack up every tick against a dead API.
+	busy  bool
+	bodyH int
+	gen   int64
 
 	watchEnabled bool
 	filter       filter.Model
@@ -51,8 +63,10 @@ type Model struct {
 }
 
 type podsMsg struct {
-	pods []k8s.Pod
-	err  error
+	gen       int64
+	namespace string
+	pods      []k8s.Pod
+	err       error
 }
 
 // containersResolvedMsg is the result of an async ContainersForPod call.
@@ -83,6 +97,7 @@ func New(client *k8s.Client, namespace string) Model {
 		table:        t,
 		watchEnabled: true,
 		filter:       filter.New(),
+		gen:          nextGen(),
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "describe"),
@@ -132,21 +147,21 @@ func tableColumns(showNamespace bool) []table.Column {
 // Init kicks off the first pod fetch and the auto-refresh ticker.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return tickCmd()
+		return tickCmd(m.gen)
 	}
-	return tea.Batch(fetchPodsCmd(m.client, m.namespace), tickCmd())
+	return tea.Batch(fetchPodsCmd(m.gen, m.client, m.namespace), tickCmd(m.gen))
 }
 
-func tickCmd() tea.Cmd {
-	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+func tickCmd(gen int64) tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg{gen: gen, t: t} })
 }
 
-func fetchPodsCmd(c *k8s.Client, namespace string) tea.Cmd {
+func fetchPodsCmd(gen int64, c *k8s.Client, namespace string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
 		pods, err := c.ListPods(ctx, namespace)
-		return podsMsg{pods: pods, err: err}
+		return podsMsg{gen: gen, namespace: namespace, pods: pods, err: err}
 	}
 }
 
@@ -176,9 +191,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filter.SetWidth(msg.Width)
 		m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	case tickMsg:
-		cmds := []tea.Cmd{tickCmd()}
-		if m.watchEnabled && m.client != nil {
-			cmds = append(cmds, fetchPodsCmd(m.client, m.namespace))
+		if msg.gen != m.gen {
+			return m, nil
+		}
+		cmds := []tea.Cmd{tickCmd(m.gen)}
+		if m.watchEnabled && m.client != nil && !m.busy {
+			m.busy = true
+			cmds = append(cmds, fetchPodsCmd(m.gen, m.client, m.namespace))
 		}
 		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
@@ -197,17 +216,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case containersResolvedMsg:
 		return m, m.dispatchContainers(msg)
 	case podsMsg:
-		m.err = msg.err
-		m.loaded = true
-		if msg.err == nil {
-			m.raw = msg.pods
-			m.applyFilter()
+		if msg.gen != m.gen {
+			return m, nil
 		}
+		m.applyPods(msg)
 		return m, nil
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
+}
+
+// applyPods releases the busy flag and folds the fetch result into the
+// table. Answers that raced a namespace switch within one generation are
+// dropped (busy is still released so the next tick can fetch again).
+func (m *Model) applyPods(msg podsMsg) {
+	m.busy = false
+	if msg.namespace != m.namespace {
+		return
+	}
+	m.err = msg.err
+	m.loaded = true
+	if msg.err == nil {
+		m.raw = msg.pods
+		m.applyFilter()
+	}
 }
 
 // tableHeight reserves one body line for the filter bar when active so the
@@ -244,8 +277,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		m.filter, cmd = m.filter.Open()
 		m.applyFilter()
 		return cmd, true
-	case key.Matches(msg, m.refreshKey) && m.client != nil:
-		return fetchPodsCmd(m.client, m.namespace), true
+	case key.Matches(msg, m.refreshKey) && m.client != nil && !m.busy:
+		m.busy = true
+		return fetchPodsCmd(m.gen, m.client, m.namespace), true
 	case key.Matches(msg, m.watchKey):
 		m.watchEnabled = !m.watchEnabled
 		return nil, true

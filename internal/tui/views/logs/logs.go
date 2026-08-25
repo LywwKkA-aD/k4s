@@ -153,21 +153,26 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 	ctx, cancel := context.WithCancel(context.Background())
 	events := make(chan logEvent, eventBufferSize)
 
-	if client != nil && len(pods) > 0 {
+	switch {
+	case client == nil || len(pods) == 0:
+		close(events)
+	case len(pods) == 1:
 		var wg sync.WaitGroup
-		for _, pod := range pods {
-			wg.Add(1)
-			go func(p string) {
-				defer wg.Done()
-				streamOnePod(ctx, client, namespace, p, tail, container, events)
-			}(pod)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			streamOnePod(ctx, client, namespace, pods[0], tail, container, events)
+		}()
 		go func() {
 			wg.Wait()
 			close(events)
 		}()
-	} else {
-		close(events)
+	default:
+		// Multi-pod: merge the historical tail by timestamp before following live
+		// lines, so the user sees chronologically interleaved replicas.
+		go func() {
+			runMergedStreams(ctx, client, namespace, pods, tail, container, events)
+		}()
 	}
 
 	si := textinput.New()

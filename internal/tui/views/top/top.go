@@ -12,6 +12,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -28,6 +29,10 @@ const (
 	watchInterval = 5 * time.Second
 )
 
+var viewGen atomic.Int64
+
+func nextGen() int64 { return viewGen.Add(1) }
+
 // resourceMode tells the view what to fetch on every tick.
 type resourceMode int
 
@@ -36,7 +41,10 @@ const (
 	modeNodes
 )
 
-type tickMsg time.Time
+type tickMsg struct {
+	gen int64
+	t   time.Time
+}
 
 // Model is the top view.
 type Model struct {
@@ -47,6 +55,11 @@ type Model struct {
 	table  table.Model
 	err    error
 	loaded bool
+	// busy suppresses overlapping fetches: fetchTimeout == watchInterval,
+	// so without the guard requests stack up every tick against a dead API.
+	// Shared by both pod and node metrics fetches.
+	busy bool
+	gen  int64
 
 	watchEnabled bool
 
@@ -56,11 +69,15 @@ type Model struct {
 }
 
 type podMetricsMsg struct {
+	gen   int64
+	mode  resourceMode
 	items []k8s.PodMetric
 	err   error
 }
 
 type nodeMetricsMsg struct {
+	gen   int64
+	mode  resourceMode
 	items []k8s.NodeMetric
 	err   error
 }
@@ -73,6 +90,7 @@ func New(client *k8s.Client, namespace string) Model {
 		mode:         modePods,
 		table:        newTable(modePods, namespace == ""),
 		watchEnabled: true,
+		gen:          nextGen(),
 		toggleKey: key.NewBinding(
 			key.WithKeys("n"),
 			key.WithHelp("n", "nodes/pods"),
@@ -124,38 +142,38 @@ func tableColumns(mode resourceMode, showNamespace bool) []table.Column {
 // Init kicks off the first fetch for the current mode.
 func (m Model) Init() tea.Cmd {
 	if m.client == nil {
-		return tickCmd()
+		return tickCmd(m.gen)
 	}
-	return tea.Batch(fetchCmd(m), tickCmd())
+	return tea.Batch(fetchCmd(m), tickCmd(m.gen))
 }
 
-func tickCmd() tea.Cmd {
-	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+func tickCmd(gen int64) tea.Cmd {
+	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg{gen: gen, t: t} })
 }
 
 // fetchCmd dispatches the right metrics call for the current mode.
 func fetchCmd(m Model) tea.Cmd {
 	if m.mode == modeNodes {
-		return fetchNodesCmd(m.client)
+		return fetchNodesCmd(m.gen, m.mode, m.client)
 	}
-	return fetchPodsCmd(m.client, m.namespace)
+	return fetchPodsCmd(m.gen, m.mode, m.client, m.namespace)
 }
 
-func fetchPodsCmd(c *k8s.Client, namespace string) tea.Cmd {
+func fetchPodsCmd(gen int64, mode resourceMode, c *k8s.Client, namespace string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
 		items, err := c.ListPodMetrics(ctx, namespace)
-		return podMetricsMsg{items: items, err: err}
+		return podMetricsMsg{gen: gen, mode: mode, items: items, err: err}
 	}
 }
 
-func fetchNodesCmd(c *k8s.Client) tea.Cmd {
+func fetchNodesCmd(gen int64, mode resourceMode, c *k8s.Client) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
 		items, err := c.ListNodeMetrics(ctx)
-		return nodeMetricsMsg{items: items, err: err}
+		return nodeMetricsMsg{gen: gen, mode: mode, items: items, err: err}
 	}
 }
 
@@ -165,8 +183,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.table.SetHeight(max(msg.Height, minTableRows))
 	case tickMsg:
-		cmds := []tea.Cmd{tickCmd()}
-		if m.watchEnabled && m.client != nil {
+		if msg.gen != m.gen {
+			return m, nil
+		}
+		cmds := []tea.Cmd{tickCmd(m.gen)}
+		if m.watchEnabled && m.client != nil && !m.busy {
+			m.busy = true
 			cmds = append(cmds, fetchCmd(m))
 		}
 		return m, tea.Batch(cmds...)
@@ -176,23 +198,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return next, cmd
 		}
 	case podMetricsMsg:
-		m.loaded = true
-		m.err = msg.err
-		if msg.err == nil {
-			m.table.SetRows(podRows(msg.items, m.namespace == ""))
+		if msg.gen != m.gen || msg.mode != m.mode {
+			return m, nil
 		}
+		m.busy = false
+		m.applyPodMetrics(msg)
 		return m, nil
 	case nodeMetricsMsg:
-		m.loaded = true
-		m.err = msg.err
-		if msg.err == nil {
-			m.table.SetRows(nodeRows(msg.items))
+		if msg.gen != m.gen || msg.mode != m.mode {
+			return m, nil
 		}
+		m.busy = false
+		m.applyNodeMetrics(msg)
 		return m, nil
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
+}
+
+func (m *Model) applyPodMetrics(msg podMetricsMsg) {
+	m.loaded = true
+	m.err = msg.err
+	if msg.err == nil {
+		m.table.SetRows(podRows(msg.items, m.namespace == ""))
+	}
+}
+
+func (m *Model) applyNodeMetrics(msg nodeMetricsMsg) {
+	m.loaded = true
+	m.err = msg.err
+	if msg.err == nil {
+		m.table.SetRows(nodeRows(msg.items))
+	}
 }
 
 // handleKey returns (next-model, cmd, true) when the key matched a binding.
@@ -216,7 +254,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	case key.Matches(msg, m.watchKey):
 		m.watchEnabled = !m.watchEnabled
 		return m, nil, true
-	case key.Matches(msg, m.refreshKey) && m.client != nil:
+	case key.Matches(msg, m.refreshKey) && m.client != nil && !m.busy:
+		m.busy = true
 		return m, fetchCmd(m), true
 	}
 	return m, nil, false
