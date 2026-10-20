@@ -31,53 +31,66 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 	}
 	a.Status = StatusStarting
 	a.Err = nil
+	a.attempt++
+	attempt := a.attempt
 	fwd := a.Forward
 	m.notify()
 	m.mu.Unlock()
 
 	if m.tunnel == nil {
-		m.markError(id, errors.New("no kubernetes client"))
+		m.markError(id, attempt, nil, errors.New("no kubernetes client"))
 		return errors.New("no kubernetes client")
 	}
 
 	if err := m.probePort(fwd.LocalPort); err != nil {
 		friendly := friendlyBindError(err, fwd.LocalPort)
-		m.markError(id, friendly)
+		m.markError(id, attempt, nil, friendly)
 		return friendly
 	}
 
 	pod, remotePort, err := m.resolveTarget(ctx, fwd)
 	if err != nil {
-		m.markError(id, fmt.Errorf("resolve target: %w", err))
+		m.markError(id, attempt, nil, fmt.Errorf("resolve target: %w", err))
 		return err
 	}
 
 	sess, err := m.tunnel.StartPodPortForward(ctx, fwd.Namespace, pod, fwd.LocalPort, remotePort)
 	if err != nil {
-		m.markError(id, fmt.Errorf("start forward: %w", err))
+		m.markError(id, attempt, nil, fmt.Errorf("start forward: %w", err))
 		return err
 	}
 
-	if !m.commitSession(id, sess) {
+	if !m.commitSession(id, attempt, sess) {
 		return nil
 	}
-	if err := m.waitForReady(ctx, id, sess); err != nil {
+	if err := m.waitForReady(ctx, id, attempt, sess); err != nil {
 		return err
 	}
 
 	// Background supervisor: watch for unexpected termination so the
 	// UI can flip the status to error without a manual refresh.
-	go m.supervise(id, sess)
+	go m.supervise(id, attempt, sess)
 	return nil
+}
+
+// owned returns the forward when attempt is still its latest Start.
+// The caller holds m.mu.
+func (m *Manager) owned(id string, attempt uint64) (*Active, bool) {
+	cur, ok := m.active[id]
+	if !ok || cur.attempt != attempt {
+		return nil, false
+	}
+	return cur, true
 }
 
 // commitSession stores the session handle while still in StatusStarting so
 // Stop/Remove can tear it down. Returns false if the forward was cancelled
-// before the session could be committed, in which case the session is closed.
-func (m *Manager) commitSession(id string, sess *k8s.PortForwardSession) bool {
+// or restarted before the session could be committed, in which case the
+// session is closed.
+func (m *Manager) commitSession(id string, attempt uint64, sess *k8s.PortForwardSession) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cur, ok := m.active[id]
+	cur, ok := m.owned(id, attempt)
 	if !ok || cur.Status != StatusStarting {
 		go func() {
 			sess.Close()
@@ -94,11 +107,11 @@ func (m *Manager) commitSession(id string, sess *k8s.PortForwardSession) bool {
 
 // waitForReady blocks until the session signals ready, errors, or the caller
 // context expires. It promotes StatusStarting to StatusRunning on success.
-func (m *Manager) waitForReady(ctx context.Context, id string, sess *k8s.PortForwardSession) error {
+func (m *Manager) waitForReady(ctx context.Context, id string, attempt uint64, sess *k8s.PortForwardSession) error {
 	select {
 	case <-sess.Ready:
 		m.mu.Lock()
-		cur, ok := m.active[id]
+		cur, ok := m.owned(id, attempt)
 		if !ok || cur.Status != StatusStarting || cur.session != sess {
 			m.mu.Unlock()
 			sess.Close()
@@ -110,19 +123,19 @@ func (m *Manager) waitForReady(ctx context.Context, id string, sess *k8s.PortFor
 		return nil
 	case err := <-sess.Err:
 		sess.Close()
-		m.markErrorWithSession(id, sess, decorateError(err, sess.Stderr))
+		m.markError(id, attempt, sess, decorateError(err, sess.Stderr))
 		return err
 	case <-sess.Done:
-		m.markErrorWithSession(id, sess, errors.New("forward terminated before ready"))
+		m.markError(id, attempt, sess, errors.New("forward terminated before ready"))
 		return errors.New("forward terminated before ready")
 	case <-ctx.Done():
 		sess.Close()
-		m.markErrorWithSession(id, sess, ctx.Err())
+		m.markError(id, attempt, sess, ctx.Err())
 		return ctx.Err()
 	}
 }
 
-func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
+func (m *Manager) supervise(id string, attempt uint64, sess *k8s.PortForwardSession) {
 	// First leg: wait for either Done or an explicit error. fw.ForwardPorts
 	// signals failure by both writing to Err *and* closing Done, so Go's
 	// random select tie-breaking can drop us into either case — that's why
@@ -131,7 +144,7 @@ func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
 	case <-sess.Done:
 	case err, ok := <-sess.Err:
 		if ok && err != nil {
-			m.markErrorWithSession(id, sess, decorateError(err, sess.Stderr))
+			m.markError(id, attempt, sess, decorateError(err, sess.Stderr))
 			return
 		}
 	}
@@ -141,7 +154,7 @@ func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
 	select {
 	case err, ok := <-sess.Err:
 		if ok && err != nil {
-			m.markErrorWithSession(id, sess, decorateError(err, sess.Stderr))
+			m.markError(id, attempt, sess, decorateError(err, sess.Stderr))
 			return
 		}
 	default:
@@ -154,7 +167,7 @@ func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
 	// which is *not* an error and shouldn't flip the status to red.
 	if sess.Stderr != nil {
 		if condensed := condense(strings.TrimSpace(sess.Stderr())); condensed != "" {
-			m.markErrorWithSession(id, sess, errors.New(condensed))
+			m.markError(id, attempt, sess, errors.New(condensed))
 			return
 		}
 	}
@@ -164,21 +177,21 @@ func (m *Manager) supervise(id string, sess *k8s.PortForwardSession) {
 	// supervise goroutine from a previous session for the same ID.
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if cur, ok := m.active[id]; ok && cur.session == sess && cur.Status == StatusRunning {
+	if cur, ok := m.owned(id, attempt); ok && cur.session == sess && cur.Status == StatusRunning {
 		cur.Status = StatusStopped
 		cur.session = nil
 		m.notify()
 	}
 }
 
-func (m *Manager) markError(id string, err error) {
-	m.markErrorWithSession(id, nil, err)
-}
-
-func (m *Manager) markErrorWithSession(id string, sess *k8s.PortForwardSession, err error) {
+// markError flips the forward to StatusError unless the report is stale:
+// it comes from an older Start attempt, from a session the forward no
+// longer holds (sess is nil before a session exists), or the user has
+// stopped the forward since.
+func (m *Manager) markError(id string, attempt uint64, sess *k8s.PortForwardSession, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cur, ok := m.active[id]
+	cur, ok := m.owned(id, attempt)
 	if !ok {
 		return
 	}
