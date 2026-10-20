@@ -574,16 +574,16 @@ func (m *Model) appendOne(pod, text string, kind lineKind) {
 // rebuildRendered re-formats every rawLine according to the current
 // display flags. Called only when a mode toggle (showPodNames) changes
 // the way *every* line should look — never on the hot append path.
+//
+// It always allocates: Update runs on copies of Model, and writing into the
+// shared backing array would re-format lines an earlier copy still renders.
 func (m *Model) rebuildRendered() {
 	multi := len(m.pods) > 1
-	if cap(m.rendered) < len(m.rawLines) {
-		m.rendered = make([]string, len(m.rawLines))
-	} else {
-		m.rendered = m.rendered[:len(m.rawLines)]
-	}
+	rendered := make([]string, len(m.rawLines))
 	for i, ln := range m.rawLines {
-		m.rendered[i] = formatRawLine(ln, multi, m.showPodNames, m.podColors[ln.pod])
+		rendered[i] = formatRawLine(ln, multi, m.showPodNames, m.podColors[ln.pod])
 	}
+	m.rendered = rendered
 }
 
 // syncViewport pushes the cached rendered lines into the viewport,
