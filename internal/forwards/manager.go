@@ -53,6 +53,10 @@ type Active struct {
 	Status  Status
 	Err     error
 	session *k8s.PortForwardSession
+	// attempt numbers the Start calls for this forward. A Start that is
+	// still resolving when the user stops and restarts the forward must
+	// not report into the newer attempt.
+	attempt uint64
 }
 
 // Manager owns both the on-disk State and the in-memory runtime map.
