@@ -20,9 +20,11 @@ import (
 const logErrorFunc = "k8s.io/apimachinery/pkg/util/runtime.logError"
 
 // Install routes klog, apimachinery's HandleError, client-go API warnings
-// and the standard log package to s, and starts holding exec credential
-// plugin stderr in memory (see CapturePluginStderr). It changes
-// process-wide state: call it once from main before the TUI starts.
+// and the standard log package to s, and turns on exec credential plugin
+// stderr capture (see CapturePluginStderr and HoldPluginStderr). It changes
+// process-wide state: call it once from main, before the first kubeconfig
+// load — a clientset built earlier keeps the real stderr for its plugin —
+// and before the TUI starts.
 func (s *Sink) Install() error {
 	if err := routeKlog(s); err != nil {
 		return err

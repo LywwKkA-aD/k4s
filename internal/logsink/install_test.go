@@ -31,7 +31,10 @@ func restoreGlobals(t *testing.T) {
 		utilruntime.ErrorHandlers = handlers
 		rest.SetDefaultWarningHandler(rest.WarningLogger{})
 		log.SetOutput(stdlogOut)
-		_ = pluginStderr.flush(io.Discard, 0)
+		_ = pluginStderr.flush(io.Discard)
+		pluginStderr.mu.Lock()
+		pluginStderr.enabled = false
+		pluginStderr.mu.Unlock()
 
 		fs := flag.NewFlagSet("klog-restore", flag.ContinueOnError)
 		klog.InitFlags(fs)
