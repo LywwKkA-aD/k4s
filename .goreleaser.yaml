@@ -53,4 +53,6 @@ changelog:
 
 release:
   mode: keep-existing
+  # Tags like v1.2.0-rc.1 publish as pre-releases and never become Latest.
+  prerelease: auto
   replace_existing_artifacts: true
