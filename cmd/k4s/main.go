@@ -6,11 +6,17 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/LywwKkA-aD/k4s/internal/cli"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui"
 )
 
 func main() {
+	// Flags come first: --version and --help must not touch the terminal
+	// or load a kubeconfig.
+	if proceed, code := cli.Parse(os.Args[1:], os.Stdout, os.Stderr); !proceed {
+		os.Exit(code)
+	}
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "k4s: %v\n", err)
 		os.Exit(1)
