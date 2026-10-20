@@ -26,7 +26,7 @@ fmt lint vuln tidy tidy-check ci: export GOTOOLCHAIN ?= $(GO_TOOLCHAIN)
 .PHONY: help build run test tidy tidy-check tools-go-check fmt lint vuln ci snapshot clean k3s-up k3s-down k3s-clean kubeconfig seed seed-down demo gif
 
 help: ## show this help
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 build: ## build bin/k4s, version stamped from git describe
 	@mkdir -p bin

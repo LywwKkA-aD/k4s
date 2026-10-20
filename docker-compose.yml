@@ -44,12 +44,14 @@ services:
       # makes k3s skip every bundled manifest, CCM included.
       - K3S_CONFIG_FILE=/etc/k4s/${K4S_K3S_CONFIG:-full}.yaml
     ports:
-      - "6443:6443"
+      # Loopback only: the dev cluster uses a shared token and is not
+      # meant to be reachable from the LAN.
+      - "127.0.0.1:6443:6443"
       # Traefik (web / websecure) and the k4s-demo LoadBalancer Service, both
       # served by ServiceLB on the node.
-      - "${K4S_HTTP_PORT:-18080}:80"
-      - "${K4S_HTTPS_PORT:-18443}:443"
-      - "${K4S_LB_PORT:-18090}:8090"
+      - "127.0.0.1:${K4S_HTTP_PORT:-18080}:80"
+      - "127.0.0.1:${K4S_HTTPS_PORT:-18443}:443"
+      - "127.0.0.1:${K4S_LB_PORT:-18090}:8090"
     volumes:
       # Named volume: overlayfs (containerd's snapshotter) does not survive a
       # bind mount on macOS, so the k3s state lives inside Docker.
@@ -77,7 +79,9 @@ services:
     environment: &agent-env
       - K3S_URL=https://k3s:6443
       - K3S_TOKEN=k4s-dev
-    depends_on: [k3s]
+    depends_on:
+      k3s:
+        condition: service_healthy
     volumes:
       - k3s-agent-1:/var/lib/rancher/k3s
       - k3s-agent-1-node:/etc/rancher/node
@@ -89,7 +93,9 @@ services:
     hostname: k4s-agent-2
     command: [agent]
     environment: *agent-env
-    depends_on: [k3s]
+    depends_on:
+      k3s:
+        condition: service_healthy
     volumes:
       - k3s-agent-2:/var/lib/rancher/k3s
       - k3s-agent-2-node:/etc/rancher/node
