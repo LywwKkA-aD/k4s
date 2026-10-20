@@ -1,41 +1,65 @@
+# Local k3s for k4s development. Use the make targets rather than calling
+# compose directly; they wait for a fresh kubeconfig and a live API:
+#
+#   make k3s-up                          server with every bundled component
+#   make k3s-up K3S_PROFILE=minimal      no traefik / servicelb / metrics-server
+#   make k3s-up K3S_PROFILE=agents       server + 2 agent nodes
+#   make k3s-up K3S_PROFILE=minimal,agents
+#
+# The project name is fixed so every git worktree drives the same cluster.
+name: k4s
+
+x-k3s: &k3s
+  image: rancher/k3s:v1.36.5-k3s1
+  privileged: true
+  restart: unless-stopped
+  # Without tmpfs over /run + /var/run, containerd cannot create its runtime
+  # state and every pod sandbox fails with "proc: read-only file system".
+  tmpfs:
+    - /run
+    - /var/run
+  ulimits:
+    nproc: 65535
+    nofile:
+      soft: 65535
+      hard: 65535
+
 services:
   k3s:
-    image: rancher/k3s:v1.31.4-k3s1
+    <<: *k3s
     container_name: k4s-k3s
-    privileged: true
-    restart: unless-stopped
+    # A stable hostname keeps the node name across container recreation, so
+    # switching profiles does not leave a stale NotReady node behind.
+    hostname: k4s-server
     command:
       - server
       - --tls-san=127.0.0.1
       - --write-kubeconfig-mode=666
-      # traefik / servicelb / metrics-server are heavy and require host-level
-      # cgroups that Docker Desktop's linuxkit VM does not expose. Disabling
-      # them keeps the cluster boot clean for k4s development.
-      - --disable=traefik
-      - --disable=servicelb
-      - --disable=metrics-server
     environment:
       - K3S_TOKEN=k4s-dev
       - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
       - K3S_KUBECONFIG_MODE=666
-    # Without tmpfs over /run + /var/run, containerd cannot create its
-    # runtime state and every pod sandbox fails with "proc: read-only file
-    # system". This is the single fix that unblocks the cluster on Docker
-    # Desktop / macOS.
-    tmpfs:
-      - /run
-      - /var/run
-    ulimits:
-      nproc: 65535
-      nofile:
-        soft: 65535
-        hard: 65535
+      # deploy/k3s/full.yaml (every bundled component) or minimal.yaml. The
+      # disable list lives in a config file because an empty --disable= flag
+      # makes k3s skip every bundled manifest, CCM included.
+      - K3S_CONFIG_FILE=/etc/k4s/${K4S_K3S_CONFIG:-full}.yaml
     ports:
       - "6443:6443"
+      # Traefik (web / websecure) and the k4s-demo LoadBalancer Service, both
+      # served by ServiceLB on the node.
+      - "${K4S_HTTP_PORT:-18080}:80"
+      - "${K4S_HTTPS_PORT:-18443}:443"
+      - "${K4S_LB_PORT:-18090}:8090"
     volumes:
-      # Named volume — overlayfs (containerd's snapshotter) does not survive
-      # a bind mount on macOS, so the k3s state lives inside Docker.
+      # Named volume: overlayfs (containerd's snapshotter) does not survive a
+      # bind mount on macOS, so the k3s state lives inside Docker.
       - k3s-server:/var/lib/rancher/k3s
+      # The node password has to outlive the container: a recreated agent with
+      # the same hostname and a new password is rejected ("Node password
+      # rejected, duplicate hostname"), and the server logs
+      # NodePasswordValidationFailed for itself.
+      - k3s-server-node:/etc/rancher/node
+      - ./deploy/k3s:/etc/k4s:ro
       # Plain bind for the generated kubeconfig only.
       - ./.k3s/output:/output
     healthcheck:
@@ -44,6 +68,42 @@ services:
       timeout: 5s
       retries: 60
 
+  agent-1:
+    <<: *k3s
+    profiles: [agents]
+    container_name: k4s-agent-1
+    hostname: k4s-agent-1
+    command: [agent]
+    environment: &agent-env
+      - K3S_URL=https://k3s:6443
+      - K3S_TOKEN=k4s-dev
+    depends_on: [k3s]
+    volumes:
+      - k3s-agent-1:/var/lib/rancher/k3s
+      - k3s-agent-1-node:/etc/rancher/node
+
+  agent-2:
+    <<: *k3s
+    profiles: [agents]
+    container_name: k4s-agent-2
+    hostname: k4s-agent-2
+    command: [agent]
+    environment: *agent-env
+    depends_on: [k3s]
+    volumes:
+      - k3s-agent-2:/var/lib/rancher/k3s
+      - k3s-agent-2-node:/etc/rancher/node
+
 volumes:
   k3s-server:
     name: k4s-k3s-server
+  k3s-server-node:
+    name: k4s-k3s-server-node
+  k3s-agent-1:
+    name: k4s-k3s-agent-1
+  k3s-agent-1-node:
+    name: k4s-k3s-agent-1-node
+  k3s-agent-2:
+    name: k4s-k3s-agent-2
+  k3s-agent-2-node:
+    name: k4s-k3s-agent-2-node

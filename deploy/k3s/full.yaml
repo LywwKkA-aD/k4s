@@ -1,0 +1,4 @@
+# k3s server config for the default profile: every bundled component runs
+# (coredns, traefik, servicelb, metrics-server, local-storage).
+# Selected by docker-compose.yml through K3S_CONFIG_FILE.
+disable: []
