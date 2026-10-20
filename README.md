@@ -20,9 +20,11 @@ A fast, opinionated TUI for Kubernetes (k8s & k3s) — written in Go on top of
 
 - **Lists for the basics** — pods, namespaces, deployments, services
 - **Describe** — kubectl-style sections + events, scrollable
-- **Multi-pod log streaming** — per-pod FNV colour tag, search (`/`),
+- **Multi-pod log streaming** — per-pod colour tag, search (`/`),
   smart auto-follow, two-step clear, 5000-line buffer. Drain-batch
-  render means `--tail=5000` snaps to the bottom instantly *(v1.1.0)*
+  render means `--tail=5000` snaps to the bottom instantly *(v1.1.0)*.
+  Pod colours come from a hue-separated palette, so neighbouring pods
+  never share a hue *(v1.1.3)*
 - **Soft-wrap + horizontal scroll** — `w` in logs view toggles wrap,
   `←`/`→` pan when wrap is off *(v1.1.0)*
 - **Port-forward, persisted** — `f` in services / pods / deployments
@@ -36,15 +38,90 @@ A fast, opinionated TUI for Kubernetes (k8s & k3s) — written in Go on top of
   are sorted by timestamp instead of arriving pod-by-pod *(v1.1.2)*
 - **Exec** — `e` drops you into a pod shell via `kubectl exec`
 - **Top** — `kubectl top pods/nodes` straight from the metrics API
-- **Live filter** — `/` substring filter inside any list view
+- **Live filter** — `/` substring filter in the pods, namespaces,
+  deployments and services lists
 - **Context switcher** — `:ctx` to jump between kubeconfig contexts
-- **Watch by default** — `w` toggles 5s auto-refresh, footer shows `--watch`
+- **Watch by default** — `w` toggles 5s auto-refresh on the dashboard,
+  in `:top` and in the lists; the footer shows `--watch`
+- **Readable on any theme** — dark / light background detection,
+  `K4S_THEME` and `NO_COLOR` *(v1.1.5)*
 - **Footer hints** — every shortcut prints the equivalent `kubectl` command
 - **Centred help popup** — `?` shows global + view-specific bindings
 
-## Quickstart
+## Install
 
-Requires Go 1.26+, Docker, and `kubectl` on PATH.
+### Prebuilt binary
+
+Every [release](https://github.com/LywwKkA-aD/k4s/releases/latest) from
+v1.1.5 on carries an archive per platform and a `checksums.txt` (SHA-256).
+Each archive holds the `k4s` binary, `LICENSE` and `README.md`.
+
+| Platform                                   | Archive                                    |
+| ------------------------------------------ | ------------------------------------------ |
+| Linux amd64 / arm64 / armv7 (Raspberry Pi) | `k4s_<version>_linux_<amd64\|arm64\|armv7>.tar.gz` |
+| macOS Intel / Apple silicon                | `k4s_<version>_darwin_<amd64\|arm64>.tar.gz` |
+| Windows amd64                              | `k4s_<version>_windows_amd64.zip`          |
+
+`<version>` has no leading `v`, e.g. `k4s_1.1.5_linux_arm64.tar.gz`.
+
+```bash
+V=1.1.5 TARGET=linux_arm64
+curl -fLO "https://github.com/LywwKkA-aD/k4s/releases/download/v${V}/k4s_${V}_${TARGET}.tar.gz"
+curl -fLO "https://github.com/LywwKkA-aD/k4s/releases/download/v${V}/checksums.txt"
+sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-missing -c checksums.txt
+tar xzf "k4s_${V}_${TARGET}.tar.gz" k4s
+sudo install k4s /usr/local/bin/
+k4s --version
+```
+
+- **Windows:** unzip, then compare
+  `(Get-FileHash k4s_1.1.5_windows_amd64.zip -Algorithm SHA256).Hash` with
+  that file's line in `checksums.txt`.
+- **macOS:** the binaries are not notarized. If a browser downloaded the
+  archive, clear the quarantine flag with `xattr -d com.apple.quarantine k4s`.
+
+### With Go
+
+```bash
+go install github.com/LywwKkA-aD/k4s/cmd/k4s@latest
+```
+
+Requires Go 1.26+. `kubectl` on `PATH` is needed only for exec (`e`).
+
+## Usage
+
+```bash
+k4s              # kubeconfig from $KUBECONFIG, else ~/.kube/config
+k4s --version    # print the version and exit
+k4s --help       # list the flags and exit
+```
+
+k4s never prints over the TUI. client-go errors and Kubernetes API warnings
+go to `$XDG_STATE_HOME/k4s/k4s.log` (default `~/.local/state/k4s/k4s.log`);
+if anything was logged, k4s prints the count and the path when it exits.
+
+## Themes & accessibility
+
+At startup k4s detects whether the terminal background is dark or light and
+picks its colours to match. Override it with `K4S_THEME`:
+
+| `K4S_THEME`      | Colours                                         |
+| ---------------- | ----------------------------------------------- |
+| `auto` (default) | detected from the terminal background           |
+| `dark`           | tuned for dark backgrounds                      |
+| `light`          | tuned for light backgrounds                     |
+| `mono`           | none: bold, underline and reverse video only    |
+
+Setting [`NO_COLOR`](https://no-color.org) gives `mono`. Any explicit
+`K4S_THEME` skips the background detection.
+
+On Windows the background cannot be detected and dark is assumed; on a light
+theme set `K4S_THEME=light` (PowerShell: `$env:K4S_THEME = "light"`).
+
+## Quickstart (local k3s)
+
+To try k4s against a throwaway cluster, or to hack on it: requires Go 1.26+,
+Docker, and `kubectl` on PATH.
 
 ```bash
 # bring up local k3s in docker, seed demo workloads, write .kube/config
@@ -60,13 +137,17 @@ KUBECONFIG=$(pwd)/.kube/config make run
 
 | Global   | Action                                                     |
 | -------- | ---------------------------------------------------------- |
-| `?`      | help popup                                                 |
+| `?`      | help popup (global + current view)                         |
 | `:`      | command bar (`:pods`, `:ns`, `:ctx`, `:top`, `:pf`, ...)   |
-| `/`      | filter the current list                                    |
 | `q`      | go home, then quit on the dashboard                        |
 | `Esc`    | back                                                       |
-| `w`      | toggle 5s auto-refresh                                     |
 | `Ctrl+C` | force quit                                                 |
+
+| In the pods, namespaces, deployments, services lists | Action                                                          |
+| ---------------------------------------------------- | --------------------------------------------------------------- |
+| `/`                                                  | filter by substring                                             |
+| `w`                                                  | toggle 5s auto-refresh (also on the dashboard and in `:top`)    |
+| `r`                                                  | refresh now (also on the dashboard, in `:top`, `:ctx`, describe) |
 
 | In a pod row    | Action                                |
 | --------------- | ------------------------------------- |
@@ -86,6 +167,14 @@ KUBECONFIG=$(pwd)/.kube/config make run
 | `Enter`             | describe                              |
 | `l`                 | tail logs of every replica            |
 | `f`                 | port-forward to any backing pod       |
+
+| Other views                  | Action                          |
+| ---------------------------- | ------------------------------- |
+| `Enter` in `:ns`             | switch to that namespace        |
+| `Enter` in `:ctx`            | switch to that context          |
+| `n` in `:top`                | toggle pods / nodes             |
+
+In the logs view `/` searches and `w` toggles wrap:
 
 | In logs view  | Action                                          |
 | ------------- | ----------------------------------------------- |
@@ -139,6 +228,20 @@ days without activity; re-enable with `gh workflow enable ci`.
 `gosec` runs as part of `make lint` and covers the OWASP-aligned checks
 (hardcoded credentials, weak crypto, integer overflows, path traversal, ...).
 
+## Releases
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`: GoReleaser
+(`.goreleaser.yaml`) builds the six archives and `checksums.txt` and uploads
+them to that tag's GitHub release, keeping the hand-written release notes.
+
+```bash
+make build       # bin/k4s, version stamped from `git describe`
+make snapshot    # every release archive into dist/, nothing published
+```
+
+`make snapshot` fetches GoReleaser with `go run`, so its first run needs
+network access.
+
 ## Project layout
 
 ```
@@ -153,17 +256,18 @@ internal/
   forwards/             port-forward state file + Manager (intents persist
                         across launches; SPDY sessions are in-process)
   actions/              Action abstraction with kubectl-equivalent strings
+  version/              build version (ldflags stamp, else module version)
 deploy/seed/            demo manifests
 docker-compose.yml      single-node k3s for local development
-Makefile                build / test / k3s / quality targets
+Makefile                build / test / k3s / quality / release targets
+.goreleaser.yaml        release archives + checksums
 ```
 
 ## Status
 
-Latest: [**v1.1.1**](https://github.com/LywwKkA-aD/k4s/releases/tag/v1.1.1) —
-services `l` tails all backing pods. v1.1.0 added in-process port-forwarding
-with persisted intents, drain-batch logs render, soft-wrap and horizontal
-scroll. v1.0.0 was the initial kubectl-aware TUI.
+Release notes for every version are on the
+[releases page](https://github.com/LywwKkA-aD/k4s/releases);
+[CHANGELOG.md](./CHANGELOG.md) has the short version.
 
 Watch this space for resource actions (delete / scale / rollout restart),
 a YAML view, ConfigMap & Secret browsing, an events view, and a Homebrew
