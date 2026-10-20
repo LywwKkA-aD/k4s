@@ -207,6 +207,10 @@ In the logs view `/` searches and `w` toggles wrap:
 - `web-with-sidecar` — pod with two containers for container-switching tests
 - `log-spammer` — two pods, one log line per second, ideal for multi-log streaming
 - `crash-loop` — exercises the `CrashLoopBackOff` rendering
+- `named-port` — a Service whose targetPorts are container port names, like Traefik's
+- `init-crashloop` — a failing init container, stuck in `Init:CrashLoopBackOff`
+- `native-sidecar` — a sidecar declared as an init container with `restartPolicy: Always`
+- `nginx-lb` — a LoadBalancer Service served by ServiceLB (`<pending>` on `minimal` or kind)
 - a Secret and a CronJob (every 2 minutes) for read-only browsing
 
 ## Quality gate
