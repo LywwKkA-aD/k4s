@@ -5,7 +5,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -144,10 +143,6 @@ type Model struct {
 	pendingRestoreCount int
 }
 
-// execDoneMsg is delivered by tea.ExecProcess after the kubectl-exec shell
-// returns control to the TUI.
-type execDoneMsg struct{ err error }
-
 // New constructs the root model with the dashboard as the landing screen.
 //
 // The port-forward Manager is best-effort: if state loading fails (bad
@@ -223,14 +218,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onKey(msg)
 	}
 	return m.routeToActiveUI(msg)
-}
-
-// onExecDone handles the return of the kubectl exec subprocess.
-func (m Model) onExecDone(msg execDoneMsg) (tea.Model, tea.Cmd) {
-	if msg.err != nil {
-		return m.setCmdError("exec: " + msg.err.Error())
-	}
-	return m, nil
 }
 
 // routeToActiveUI delivers a message that matched no root case. Cursor blink
@@ -393,37 +380,6 @@ func defaultLocalPort(remote uint16) uint16 {
 		return remote + 8000
 	}
 	return remote
-}
-
-// onExecRequest runs `kubectl exec -it` against the named pod / container
-// via tea.ExecProcess so the shell takes over the terminal cleanly. When
-// the shell exits we get an execDoneMsg back at the root.
-func (m Model) onExecRequest(msg views.ExecRequestMsg) (tea.Model, tea.Cmd) {
-	cmd := buildExecCommand(currentContextName(m.client), msg.Namespace, msg.Pod, msg.Container)
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return execDoneMsg{err: err}
-	})
-}
-
-// buildExecCommand returns the kubectl exec command. Extracted so the args
-// are unit-testable without spawning a subprocess.
-//
-// gosec G204: exec.Command with variable args is normally a red flag, but
-// here every variable comes from a Kubernetes API object (namespace, pod,
-// container names that the user already had RBAC to read). None of it
-// originates from a free-form text field — even the container name is
-// matched back against the API-supplied list before this is called.
-func buildExecCommand(contextName, namespace, pod, container string) *exec.Cmd {
-	args := []string{"exec", "-it"}
-	if contextName != "" {
-		args = append(args, "--context", contextName)
-	}
-	args = append(args, "-n", namespace)
-	if container != "" {
-		args = append(args, "-c", container)
-	}
-	args = append(args, pod, "--", "sh")
-	return exec.Command("kubectl", args...) //nolint:gosec
 }
 
 func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
