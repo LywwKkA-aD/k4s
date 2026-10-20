@@ -64,6 +64,38 @@ lint: ## run golangci-lint (correctness, security, style)
 vuln: ## scan dependencies for known vulnerabilities (govulncheck)
 	$(TOOL) govulncheck $(PKGS)
 
+MAX_LINES     ?= 800
+COVER_PROFILE ?= coverage.out
+MODULE        := $(shell awk '/^module /{print $$2}' go.mod)
+
+.PHONY: lines cover
+
+lines: ## fail if a non-test .go file is over MAX_LINES lines (default 800)
+	@over=$$(find . -path './.*' -prune -o -type f -name '*.go' ! -name '*_test.go' ! -path '*/testdata/*' -exec wc -l {} + \
+		| awk -v max=$(MAX_LINES) '$$2 != "total" && $$1 > max { sub(/^\.\//, "", $$2); printf "  %6d  %s\n", $$1, $$2 }' \
+		| sort -rn); \
+	if [ -n "$$over" ]; then \
+		echo "non-test .go files over $(MAX_LINES) lines:"; \
+		echo "$$over"; \
+		exit 1; \
+	fi; \
+	echo "no non-test .go file is over $(MAX_LINES) lines"
+
+cover: ## print per-package test coverage, lowest last (profile: COVER_PROFILE)
+	@out=$$($(GO) test -race -coverprofile=$(COVER_PROFILE) $(PKGS) 2>&1) || { echo "$$out"; exit 1; }
+	@printf '%-36s %8s\n' PACKAGE COVERAGE
+	@awk -v mod='$(MODULE)/' ' \
+		NR == 1 { next } \
+		{ \
+			split($$1, loc, ":"); pkg = loc[1]; sub(/\/[^\/]*$$/, "", pkg); \
+			if (index(pkg, mod) == 1) pkg = substr(pkg, length(mod) + 1); \
+			if (!($$1 in seen)) { seen[$$1] = 1; stmts[pkg] += $$2 } \
+			if ($$3 > 0 && !($$1 in hit)) { hit[$$1] = 1; covered[pkg] += $$2 } \
+		} \
+		END { for (p in stmts) printf "%s %.1f\n", p, (stmts[p] ? 100 * covered[p] / stmts[p] : 0) }' \
+		$(COVER_PROFILE) | sort -k2,2nr -k1,1 | awk '{ printf "%-36s %7s%%\n", $$1, $$2 }'
+	@$(GO) tool cover -func=$(COVER_PROFILE) | awk 'END { printf "%-36s %8s\n", "total", $$NF }'
+
 ci: ## full quality gate: tidy-check + vet + lint + test + vuln
 	@$(MAKE) --no-print-directory tools-go-check
 	$(GO) mod tidy -diff
