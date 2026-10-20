@@ -308,6 +308,22 @@ func waitStatus(t *testing.T, m *Manager, id string, want Status) Active {
 	}
 }
 
+// assertMarked checks that forward f1 is in error and that Start returned
+// exactly the message the status column shows.
+func assertMarked(t *testing.T, m *Manager, returned error, want string) {
+	t.Helper()
+	a := statusOf(t, m, "f1")
+	if a.Status != StatusError {
+		t.Errorf("status = %v, want %v", a.Status, StatusError)
+	}
+	if returned == nil || a.Err == nil {
+		t.Fatalf("Start returned %v and marked %v, want both to be %q", returned, a.Err, want)
+	}
+	if returned.Error() != want || a.Err.Error() != want {
+		t.Errorf("Start returned %q and marked %q, want both to be %q", returned, a.Err, want)
+	}
+}
+
 func assertErrContains(t *testing.T, err error, want string) {
 	t.Helper()
 	if err == nil {
