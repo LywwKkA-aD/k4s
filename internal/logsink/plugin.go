@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"time"
 
 	"k8s.io/klog/v2"
 )
@@ -14,30 +13,36 @@ import (
 // pluginStderrLimit bounds the in-memory copy of plugin stderr.
 const pluginStderrLimit = 64 << 10
 
-// drainTimeout bounds how long FlushPluginStderr waits for the pipe to
-// empty. A plugin still running at exit (say, waiting on a browser login)
-// holds the write end open, so EOF may never come.
-const drainTimeout = 250 * time.Millisecond
-
 // pluginStderr is process-wide because os.Stderr is.
 var pluginStderr stderrCapture
 
-// CapturePluginStderr runs build with os.Stderr pointed at an in-memory
-// pipe once Install has run, and returns build's error. client-go's exec
-// credential authenticator (EKS, GKE, OIDC plugins) keeps the os.Stderr it
-// sees when a clientset is built and hands it to every later plugin run, so
-// every clientset build must go through here. Plugin output (device codes,
-// login URLs, sometimes tokens) then stays in memory: never on the TUI,
-// never in the log file. Before Install it just runs build.
+// CapturePluginStderr runs build with os.Stderr pointed at a pipe once
+// Install has run, and returns build's error. client-go's exec credential
+// authenticator (EKS, GKE, OIDC plugins) keeps the os.Stderr it sees when a
+// clientset is built and hands it to every later plugin run, so every
+// clientset build must go through here. Until HoldPluginStderr is called
+// the pipe passes plugin output straight to the real stderr, so login
+// prompts before the TUI starts stay visible. Before Install it just runs
+// build.
 func CapturePluginStderr(build func() error) error {
 	return pluginStderr.run(build)
 }
 
-// FlushPluginStderr stops the capture and writes what plugins printed (the
-// last 64 KiB) to w, which should be the real stderr once the TUI has
-// released the terminal. It writes nothing when plugins printed nothing.
+// HoldPluginStderr makes plugin output stay in memory (the last 64 KiB)
+// instead of reaching the terminal. Call it right before the TUI takes the
+// terminal: plugin output (device codes, login URLs, sometimes tokens) then
+// never paints over the screen and never lands in the log file.
+func HoldPluginStderr() {
+	pluginStderr.hold()
+}
+
+// FlushPluginStderr writes what plugins printed while held to w, which
+// should be the real stderr once the TUI has released the terminal, and
+// lets later plugin output through to the real stderr again. It writes
+// nothing when plugins printed nothing. The pipe stays open: cached
+// authenticators keep writing to it.
 func FlushPluginStderr(w io.Writer) error {
-	return pluginStderr.flush(w, drainTimeout)
+	return pluginStderr.flush(w)
 }
 
 // stderrCapture owns one pipe for the life of the process: authenticators
@@ -46,8 +51,8 @@ type stderrCapture struct {
 	mu      sync.Mutex // serialises swaps of os.Stderr
 	enabled bool
 	w       *os.File
-	buf     *tailBuffer
-	done    chan struct{}
+	route   *routeWriter
+	holding bool // applied to route once the pipe exists
 }
 
 func (c *stderrCapture) enable() {
@@ -76,38 +81,42 @@ func (c *stderrCapture) run(build func() error) error {
 	return build()
 }
 
+// startLocked creates the pipe. The current os.Stderr is the real terminal
+// stderr at this point, so it becomes the pass-through target.
 func (c *stderrCapture) startLocked() error {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return fmt.Errorf("create stderr pipe: %w", err)
 	}
-	buf := newTailBuffer(pluginStderrLimit)
-	done := make(chan struct{})
+	route := newRouteWriter(os.Stderr)
+	route.setHold(c.holding)
 	go func() {
-		defer close(done)
-		_, _ = io.Copy(buf, r)
+		_, _ = io.Copy(route, r)
 		_ = r.Close()
 	}()
-	c.w, c.buf, c.done = w, buf, done
+	c.w, c.route = w, route
 	return nil
 }
 
-func (c *stderrCapture) flush(w io.Writer, wait time.Duration) error {
+func (c *stderrCapture) hold() {
 	c.mu.Lock()
-	pw, buf, done := c.w, c.buf, c.done
-	c.enabled, c.w, c.buf, c.done = false, nil, nil, nil
+	defer c.mu.Unlock()
+	c.holding = true
+	if c.route != nil {
+		c.route.setHold(true)
+	}
+}
+
+func (c *stderrCapture) flush(w io.Writer) error {
+	c.mu.Lock()
+	c.holding = false
+	route := c.route
 	c.mu.Unlock()
-	if pw == nil {
+	if route == nil {
 		return nil
 	}
 
-	_ = pw.Close()
-	select {
-	case <-done:
-	case <-time.After(wait):
-	}
-
-	data, truncated := buf.Snapshot()
+	data, truncated := route.release()
 	if len(data) == 0 {
 		return nil
 	}
@@ -125,4 +134,45 @@ func (c *stderrCapture) flush(w io.Writer, wait time.Duration) error {
 		return fmt.Errorf("write plugin stderr: %w", err)
 	}
 	return nil
+}
+
+// routeWriter receives everything plugins write to the pipe and sends it
+// either to the real stderr or, while held, to a tail buffer.
+type routeWriter struct {
+	out io.Writer
+
+	mu   sync.Mutex
+	hold bool
+	buf  *tailBuffer
+}
+
+func newRouteWriter(out io.Writer) *routeWriter {
+	return &routeWriter{out: out, buf: newTailBuffer(pluginStderrLimit)}
+}
+
+// Write never fails: the pipe must keep draining or plugins block.
+func (r *routeWriter) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.hold {
+		return r.buf.Write(p)
+	}
+	_, _ = r.out.Write(p)
+	return len(p), nil
+}
+
+func (r *routeWriter) setHold(hold bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.hold = hold
+}
+
+// release stops holding and returns what was held, starting a fresh buffer.
+func (r *routeWriter) release() ([]byte, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, truncated := r.buf.Snapshot()
+	r.hold = false
+	r.buf = newTailBuffer(pluginStderrLimit)
+	return data, truncated
 }

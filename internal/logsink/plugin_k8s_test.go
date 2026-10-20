@@ -83,6 +83,7 @@ func TestExecPluginStderrIsHeldUntilFlush(t *testing.T) {
 
 	stop := logsink.SwapStderr(t)
 	logsink.EnablePluginCapture()
+	logsink.HoldPluginStderr()
 	t.Cleanup(func() { _ = logsink.FlushPluginStderr(io.Discard) })
 
 	client, err := k8s.LoadFromKubeconfigContext(kubeconfig, "")
