@@ -12,51 +12,17 @@ import (
 
 // Start opens the SPDY tunnel for the given ID. Resolves Service or
 // Deployment to a backing Pod when needed. The forward runs in a
-// goroutine; Start returns once Ready fires or an error surfaces.
-//
-// A local-port pre-check runs *before* we open the SPDY tunnel so the
-// user gets a clear, immediate error message — "permission denied for
-// port 80", "address already in use" — instead of a wall of kubectl
-// stderr leaking through the TUI.
+// goroutine; Start returns once Ready fires or an error surfaces. A
+// returned error is the same one the forward's status shows.
 func (m *Manager) Start(ctx context.Context, id string) error {
-	m.mu.Lock()
-	a, ok := m.active[id]
-	if !ok {
-		m.mu.Unlock()
-		return fmt.Errorf("forward %q not found", id)
-	}
-	if a.Status == StatusRunning || a.Status == StatusStarting {
-		m.mu.Unlock()
-		return errors.New("already running")
-	}
-	a.Status = StatusStarting
-	a.Err = nil
-	a.attempt++
-	attempt := a.attempt
-	fwd := a.Forward
-	m.notify()
-	m.mu.Unlock()
-
-	if m.tunnel == nil {
-		m.markError(id, attempt, nil, errors.New("no kubernetes client"))
-		return errors.New("no kubernetes client")
-	}
-
-	if err := m.probePort(fwd.LocalPort); err != nil {
-		friendly := friendlyBindError(err, fwd.LocalPort)
-		m.markError(id, attempt, nil, friendly)
-		return friendly
-	}
-
-	pod, remotePort, err := m.resolveTarget(ctx, fwd)
+	fwd, attempt, err := m.beginAttempt(id)
 	if err != nil {
-		m.markError(id, attempt, nil, fmt.Errorf("resolve target: %w", err))
 		return err
 	}
 
-	sess, err := m.tunnel.StartPodPortForward(ctx, fwd.Namespace, pod, fwd.LocalPort, remotePort)
+	sess, err := m.openTunnel(ctx, fwd)
 	if err != nil {
-		m.markError(id, attempt, nil, fmt.Errorf("start forward: %w", err))
+		m.markError(id, attempt, nil, err)
 		return err
 	}
 
@@ -71,6 +37,46 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 	// UI can flip the status to error without a manual refresh.
 	go m.supervise(id, attempt, sess)
 	return nil
+}
+
+// beginAttempt moves the forward to StatusStarting and numbers this Start.
+func (m *Manager) beginAttempt(id string) (Forward, uint64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.active[id]
+	if !ok {
+		return Forward{}, 0, fmt.Errorf("forward %q not found", id)
+	}
+	if a.Status == StatusRunning || a.Status == StatusStarting {
+		return Forward{}, 0, errors.New("already running")
+	}
+	a.Status = StatusStarting
+	a.Err = nil
+	a.attempt++
+	m.notify()
+	return a.Forward, a.attempt, nil
+}
+
+// openTunnel runs every step up to a session handle. The local-port
+// pre-check comes first so the user gets a clear, immediate error message
+// — "permission denied for port 80", "address already in use" — instead
+// of a wall of kubectl stderr leaking through the TUI.
+func (m *Manager) openTunnel(ctx context.Context, fwd Forward) (*k8s.PortForwardSession, error) {
+	if m.tunnel == nil {
+		return nil, errors.New("no kubernetes client")
+	}
+	if err := m.probePort(fwd.LocalPort); err != nil {
+		return nil, friendlyBindError(err, fwd.LocalPort)
+	}
+	pod, remotePort, err := m.resolveTarget(ctx, fwd)
+	if err != nil {
+		return nil, fmt.Errorf("resolve target: %w", err)
+	}
+	sess, err := m.tunnel.StartPodPortForward(ctx, fwd.Namespace, pod, fwd.LocalPort, remotePort)
+	if err != nil {
+		return nil, fmt.Errorf("start forward: %w", err)
+	}
+	return sess, nil
 }
 
 // owned returns the forward when attempt is still its latest Start.
@@ -123,11 +129,13 @@ func (m *Manager) waitForReady(ctx context.Context, id string, attempt uint64, s
 		return nil
 	case err := <-sess.Err:
 		sess.Close()
-		m.markError(id, attempt, sess, decorateError(err, sess.Stderr))
-		return err
+		failed := decorateError(err, sess.Stderr)
+		m.markError(id, attempt, sess, failed)
+		return failed
 	case <-sess.Done:
-		m.markError(id, attempt, sess, errors.New("forward terminated before ready"))
-		return errors.New("forward terminated before ready")
+		failed := errors.New("forward terminated before ready")
+		m.markError(id, attempt, sess, failed)
+		return failed
 	case <-ctx.Done():
 		sess.Close()
 		m.markError(id, attempt, sess, ctx.Err())

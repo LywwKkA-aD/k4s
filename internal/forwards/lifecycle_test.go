@@ -62,8 +62,6 @@ func TestStartFailsBeforeReady(t *testing.T) {
 		// kill ends the session before it is ready.
 		kill    func(s *fakeSession)
 		wantErr string
-		// wantDetail is the stderr suffix the status column shows.
-		wantDetail string
 		// wantClosed: a session that reported an error is closed; one
 		// that already exited has nothing left to close.
 		wantClosed bool
@@ -74,8 +72,7 @@ func TestStartFailsBeforeReady(t *testing.T) {
 				s.writeStderr("E1021 portforward.go:413] bind: address already in use\n")
 				s.Err <- errors.New("lost connection to pod")
 			},
-			wantErr:    "lost connection to pod",
-			wantDetail: "lost connection to pod: bind: address already in use",
+			wantErr:    "lost connection to pod: bind: address already in use",
 			wantClosed: true,
 		},
 		{
@@ -95,16 +92,7 @@ func TestStartFailsBeforeReady(t *testing.T) {
 			sess := fake.next(t)
 			tt.kill(sess)
 
-			assertErrContains(t, awaitErr(t, done), tt.wantErr)
-			a := statusOf(t, m, "f1")
-			if a.Status != StatusError {
-				t.Errorf("status = %v, want %v", a.Status, StatusError)
-			}
-			marked := tt.wantErr
-			if tt.wantDetail != "" {
-				marked = tt.wantDetail
-			}
-			assertErrContains(t, a.Err, marked)
+			assertMarked(t, m, awaitErr(t, done), tt.wantErr)
 			if tt.wantClosed {
 				sess.waitStopped(t)
 			}
@@ -121,13 +109,11 @@ func TestStartTimesOutWaitingForReady(t *testing.T) {
 	done := startAsync(timeoutCtx(t, 20*time.Millisecond), m, "f1")
 	sess := fake.next(t)
 
-	if err := awaitErr(t, done); !errors.Is(err, context.DeadlineExceeded) {
+	err := awaitErr(t, done)
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Start error = %v, want %v", err, context.DeadlineExceeded)
 	}
-	a := statusOf(t, m, "f1")
-	if a.Status != StatusError || !errors.Is(a.Err, context.DeadlineExceeded) {
-		t.Errorf("after timeout = %v (err: %v), want error with deadline exceeded", a.Status, a.Err)
-	}
+	assertMarked(t, m, err, context.DeadlineExceeded.Error())
 	sess.waitStopped(t)
 }
 
@@ -145,8 +131,8 @@ func TestStartFailsBeforeTunnel(t *testing.T) {
 	}{
 		{name: "no kubernetes client", kind: "pod", noClient: true, wantErr: "no kubernetes client"},
 		{name: "local port busy", kind: "pod", probeErr: busy, wantErr: "local port 18080 already in use"},
-		{name: "target does not resolve", kind: "deployment", resolveErr: errors.New("no ready pod"), wantErr: "no ready pod"},
-		{name: "tunnel does not open", kind: "pod", startErr: errors.New("no rest config"), wantErr: "no rest config"},
+		{name: "target does not resolve", kind: "deployment", resolveErr: errors.New("no ready pod"), wantErr: "resolve target: no ready pod"},
+		{name: "tunnel does not open", kind: "pod", startErr: errors.New("no rest config"), wantErr: "start forward: no rest config"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -163,12 +149,7 @@ func TestStartFailsBeforeTunnel(t *testing.T) {
 			m := newTestManager(t, d)
 			mustRegister(t, m, testForward("f1", tt.kind, 18080))
 
-			assertErrContains(t, m.Start(context.Background(), "f1"), tt.wantErr)
-			a := statusOf(t, m, "f1")
-			if a.Status != StatusError {
-				t.Errorf("status = %v, want %v", a.Status, StatusError)
-			}
-			assertErrContains(t, a.Err, tt.wantErr)
+			assertMarked(t, m, m.Start(context.Background(), "f1"), tt.wantErr)
 		})
 	}
 }

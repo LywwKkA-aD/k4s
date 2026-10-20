@@ -271,11 +271,9 @@ func (m *Manager) StopAll() error {
 
 // Remove stops the forward and deletes it from State.
 func (m *Manager) Remove(id string) error {
-	if err := m.Stop(id); err != nil {
-		// Don't abort — the intent should still be removed even if we
-		// failed to clean up a phantom session.
-		_ = err
-	}
+	// Best effort: Stop only fails for an unknown ID, and the intent is
+	// removed either way.
+	_ = m.Stop(id)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.active, id)
