@@ -210,12 +210,12 @@ func TestStopWhileStarting(t *testing.T) {
 
 		done := startAsync(context.Background(), m, "f1")
 		sess := fake.next(t)
+		// Stop may land just before or just after Start stores the
+		// session; either way the session must end up closed.
 		if err := m.Stop("f1"); err != nil {
 			t.Fatalf("Stop: %v", err)
 		}
-		if !sess.isStopped() {
-			t.Error("Stop returned before closing the session")
-		}
+		sess.waitStopped(t)
 		_ = awaitErr(t, done)
 		a := statusOf(t, m, "f1")
 		if a.Status != StatusStopped || a.Err != nil {
@@ -247,9 +247,7 @@ func TestRestartWhileStarting(t *testing.T) {
 	if a.Status != StatusRunning || a.Err != nil {
 		t.Errorf("after restart = %v (err: %v), want running without error", a.Status, a.Err)
 	}
-	if !old.isStopped() {
-		t.Error("the first session is still open")
-	}
+	old.waitStopped(t)
 	if cur.isStopped() {
 		t.Error("the restarted session was closed")
 	}

@@ -104,6 +104,31 @@ func TestStateReturnsACopy(t *testing.T) {
 	}
 }
 
+func TestStopRunningForwardClosesSession(t *testing.T) {
+	t.Parallel()
+	fake := newFakeTunneler(t)
+	m := newTestManager(t, deps{tunnel: fake})
+	mustRegister(t, m, testForward("f1", "pod", 18080))
+
+	done := startAsync(context.Background(), m, "f1")
+	sess := fake.next(t)
+	sess.ready()
+	if err := awaitErr(t, done); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if err := m.Stop("f1"); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if !sess.isStopped() {
+		t.Error("Stop returned before closing the session")
+	}
+	a := statusOf(t, m, "f1")
+	if a.Status != StatusStopped || a.Err != nil {
+		t.Errorf("after Stop = %v (err: %v), want stopped without error", a.Status, a.Err)
+	}
+}
+
 func TestStopNormalisesErrorAndRejectsUnknown(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t, deps{})
