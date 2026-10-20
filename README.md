@@ -169,6 +169,9 @@ outside `k4s-demo`, so `kubectl get pods -A` is Forbidden.
 
 ### Other clusters
 
+- `make kind-up` / `make kind-down`: a vanilla [kind](https://kind.sigs.k8s.io)
+  cluster, kubeconfig in `.kube/kind`; seed it with
+  `make seed KUBECONFIG_PATH=$(pwd)/.kube/kind`. Skipped when kind is missing.
 - If your Docker host cannot run the bundled components, use
   `K3S_PROFILE=minimal`, or [k3d](https://k3d.io):
   `k3d cluster create k4s --image rancher/k3s:v1.36.5-k3s1 && k3d kubeconfig get k4s > .kube/config && make seed`.
