@@ -62,7 +62,7 @@ func LoadFromKubeconfigContext(explicitPath, contextName string) (*Client, error
 		target = raw.CurrentContext
 	}
 	if target == "" {
-		return nil, fmt.Errorf("kubeconfig has no current-context and no explicit context requested")
+		return nil, fmt.Errorf("kubeconfig has no current-context")
 	}
 	if _, ok := raw.Contexts[target]; !ok {
 		return nil, fmt.Errorf("context %q not found in kubeconfig", target)
@@ -75,5 +75,10 @@ func LoadFromKubeconfigContext(explicitPath, contextName string) (*Client, error
 	if err != nil {
 		return nil, fmt.Errorf("new clientset: %w", err)
 	}
-	return &Client{Clientset: cs, Context: target, RestConfig: cfg}, nil
+	return &Client{
+		Clientset:       cs,
+		Context:         target,
+		RestConfig:      cfg,
+		KubeconfigPaths: rules.GetLoadingPrecedence(),
+	}, nil
 }

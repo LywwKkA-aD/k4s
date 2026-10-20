@@ -3,11 +3,8 @@
 package k8s
 
 import (
-	"fmt"
-
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 // Client wraps a Kubernetes clientset together with the kubeconfig context it
@@ -18,10 +15,14 @@ import (
 // the port-forward path, which builds an SPDY dialer — do not have to
 // re-parse the kubeconfig. It is nil only when the Client was constructed
 // without a kubeconfig (e.g. fake clients in tests).
+//
+// KubeconfigPaths lists the files the config was loaded from, in precedence
+// order, so a kubectl subprocess can be pointed at exactly the same config.
 type Client struct {
-	Clientset  kubernetes.Interface
-	Context    string
-	RestConfig *rest.Config
+	Clientset       kubernetes.Interface
+	Context         string
+	RestConfig      *rest.Config
+	KubeconfigPaths []string
 }
 
 // LoadFromKubeconfig builds a Client from a kubeconfig file.
@@ -31,28 +32,5 @@ type Client struct {
 //   - $KUBECONFIG (may be a colon-separated list)
 //   - $HOME/.kube/config
 func LoadFromKubeconfig(explicitPath string) (*Client, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if explicitPath != "" {
-		rules.ExplicitPath = explicitPath
-	}
-
-	raw, err := rules.Load()
-	if err != nil {
-		return nil, fmt.Errorf("load kubeconfig: %w", err)
-	}
-	if raw.CurrentContext == "" {
-		return nil, fmt.Errorf("kubeconfig has no current-context")
-	}
-
-	cfg, err := clientcmd.NewNonInteractiveClientConfig(*raw, raw.CurrentContext, nil, rules).ClientConfig()
-	if err != nil {
-		return nil, fmt.Errorf("build client config: %w", err)
-	}
-
-	cs, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("new clientset: %w", err)
-	}
-
-	return &Client{Clientset: cs, Context: raw.CurrentContext, RestConfig: cfg}, nil
+	return LoadFromKubeconfigContext(explicitPath, "")
 }
