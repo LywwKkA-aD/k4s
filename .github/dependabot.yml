@@ -1,0 +1,47 @@
+version: 2
+updates:
+  # App module: direct deps plus golang.org/x/*, which are indirect here but
+  # carry most of the security advisories (x/net, x/crypto).
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-type: direct
+      - dependency-name: "golang.org/x/*"
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      golang-x:
+        patterns: ["golang.org/x/*"]
+      k8s:
+        patterns: ["k8s.io/*"]
+      charm:
+        patterns: ["github.com/charmbracelet/*"]
+
+  # Tools module: only the two tools; their transitive graph never ships.
+  - package-ecosystem: gomod
+    directory: "/tools"
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: "github.com/golangci/golangci-lint/v2"
+      - dependency-name: "golang.org/x/vuln"
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      tools:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]

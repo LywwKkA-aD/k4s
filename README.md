@@ -117,15 +117,24 @@ KUBECONFIG=$(pwd)/.kube/config make run
 
 ## Quality gate
 
-All linters and vulnerability scanners are pinned through the `tool` directive
-in `go.mod` — no global installs needed.
+Linters and the vulnerability scanner are pinned in a separate module,
+`tools/go.mod` (run as `go tool -modfile=tools/go.mod <tool>`), so tool
+upgrades never move the app's dependencies — no global installs needed. The
+tool targets run on the toolchain pinned by `go.mod`; the first run may
+download it (`GOTOOLCHAIN=local make lint` to opt out).
 
 ```bash
-make fmt    # gofmt + goimports (via golangci-lint)
-make lint   # golangci-lint v2 — errcheck, staticcheck, gosec, revive, gocyclo, ...
-make vuln   # govulncheck — known CVEs in the dependency graph
-make ci     # vet + lint + test + vuln
+make fmt         # gofmt + goimports (via golangci-lint)
+make lint        # golangci-lint v2 — errcheck, staticcheck, gosec, revive, gocyclo, ...
+make vuln        # govulncheck — known CVEs in the dependency graph
+make tidy-check  # go.mod / go.sum of both modules are tidy
+make ci          # tidy-check + vet + lint + race tests + vuln
 ```
+
+GitHub Actions runs `make ci` and cross-builds (linux amd64/arm64/armv7,
+darwin, windows) on every push and pull request, plus a weekly scheduled run
+to catch new advisories. GitHub disables schedules on public repos after 60
+days without activity; re-enable with `gh workflow enable ci`.
 
 `gosec` runs as part of `make lint` and covers the OWASP-aligned checks
 (hardcoded credentials, weak crypto, integer overflows, path traversal, ...).
