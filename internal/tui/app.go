@@ -4,6 +4,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -664,7 +665,7 @@ func dispatchForward(m Model, mgr *forwards.Manager, kind, ns, name string, remo
 	// retype with another port and avoids cluttering the forwards
 	// list with born-dead entries.
 	if err := k8s.CheckLocalPortAvailable(local); err != nil {
-		return m, friendlyLocalBindError(err, local)
+		return m, errors.New(forwards.FriendlyBindError(err, local))
 	}
 	fwd := forwards.Forward{
 		ID:         forwards.NewID(),
@@ -684,20 +685,6 @@ func dispatchForward(m Model, mgr *forwards.Manager, kind, ns, name string, remo
 		_ = mgr.Start(ctx, id)
 	}(fwd.ID)
 	return m, nil
-}
-
-// friendlyLocalBindError mirrors the one in the forwards package — kept
-// here so the prompt path doesn't have to reach across packages just
-// to format an OS error. Stays in sync via the test suite.
-func friendlyLocalBindError(err error, port uint16) error {
-	s := err.Error()
-	switch {
-	case strings.Contains(s, "permission denied"):
-		return fmt.Errorf("permission denied binding local port %d (ports < 1024 need root — try %d)", port, port+8000)
-	case strings.Contains(s, "address already in use"):
-		return fmt.Errorf("local port %d already in use — pick another", port)
-	}
-	return fmt.Errorf("cannot bind local port %d: %w", port, err)
 }
 
 // parsePortPair accepts "local:remote", "local" (uses remoteHint), or
@@ -820,7 +807,9 @@ func (m Model) pushHistory() Model {
 	}
 	title := m.current.Title()
 	if isRebuildableView(title) {
-		m.history = append(m.history, historyEntry{
+		// Clip first: an earlier copy of the model may share this backing
+		// array, and a push must not write into its spare capacity.
+		m.history = append(slices.Clip(m.history), historyEntry{
 			view:      title,
 			namespace: m.namespace,
 		})
