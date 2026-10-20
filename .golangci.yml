@@ -30,7 +30,39 @@ linters:
     # Complexity
     - gocyclo
 
+    # Architecture
+    - depguard
+
   settings:
+    depguard:
+      rules:
+        # Views reach each other only through the messages in
+        # internal/tui/views; a direct import couples their models.
+        views-no-siblings:
+          list-mode: lax
+          files:
+            - "**/internal/tui/views/*/**"
+          deny:
+            - pkg: github.com/LywwKkA-aD/k4s/internal/tui/views/
+              desc: a view must not import a sibling view; emit a message from internal/tui/views
+        # The cluster, port-forward and log-sink layers stay free of the UI so
+        # they test headless and the Charm v2 port does not reach them.
+        # internal/kubectl is listed ahead of the package landing.
+        core-no-ui:
+          list-mode: lax
+          files:
+            - "**/internal/k8s/**"
+            - "**/internal/forwards/**"
+            - "**/internal/logsink/**"
+            - "**/internal/kubectl/**"
+          deny:
+            - pkg: github.com/LywwKkA-aD/k4s/internal/tui
+              desc: core packages must not import the TUI
+            - pkg: github.com/charmbracelet/
+              desc: core packages must not import Charm
+            - pkg: charm.land/
+              desc: core packages must not import Charm
+
     gosec:
       excludes:
         # G304: file inclusion via variable. We intentionally accept user-supplied
@@ -46,6 +78,15 @@ linters:
         - name: errorf
         - name: indent-error-flow
         - name: superfluous-else
+
+  exclusions:
+    rules:
+      # Known debt: describe truncates values with ansi.Truncate. Drop this
+      # once the truncation moves out of internal/k8s.
+      - path: internal/k8s/describe\.go
+        linters:
+          - depguard
+        text: charmbracelet/x/ansi
 
 formatters:
   enable:
