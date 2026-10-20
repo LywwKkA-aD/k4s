@@ -3,7 +3,7 @@ package filter
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
 
 func TestMatchSubstringCaseInsensitive(t *testing.T) {
@@ -52,7 +52,7 @@ func TestOpenCommitCloseLifecycle(t *testing.T) {
 	// Type 'd' + 'e' + 'm' + 'o'.
 	for _, r := range "demo" {
 		var consumed bool
-		m, _, consumed = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m, _, consumed = m.Update(tuitest.PressKey(string(r)))
 		if !consumed {
 			t.Fatalf("Update(%q) returned consumed=false while open", r)
 		}
@@ -62,7 +62,7 @@ func TestOpenCommitCloseLifecycle(t *testing.T) {
 	}
 
 	// Enter commits — query stays, prompt blurred.
-	m, _, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _, _ = m.Update(tuitest.PressKey("enter"))
 	if m.IsOpen() {
 		t.Fatal("after Enter: IsOpen should be false")
 	}
@@ -75,7 +75,7 @@ func TestOpenCommitCloseLifecycle(t *testing.T) {
 
 	// Re-Open + Esc → close, query wiped.
 	m, _ = m.Open()
-	m, _, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m, _, _ = m.Update(tuitest.PressKey("esc"))
 	if m.IsOpen() || m.Active() || m.Query() != "" {
 		t.Fatalf("after Esc: open=%v active=%v query=%q", m.IsOpen(), m.Active(), m.Query())
 	}
@@ -87,7 +87,7 @@ func TestCommitOnEmptyValueClosesFilter(t *testing.T) {
 	m := New()
 	m, _ = m.Open()
 	// Press Enter immediately — no value entered.
-	m, _, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _, _ = m.Update(tuitest.PressKey("enter"))
 	if m.Active() || m.IsOpen() {
 		t.Fatalf("Enter on empty value should close: active=%v open=%v", m.Active(), m.IsOpen())
 	}

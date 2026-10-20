@@ -2,33 +2,14 @@ package tui
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
+	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
-
-// TestMain isolates every test in this package from the user's real
-// $HOME by pointing XDG_STATE_HOME at a throwaway directory. Without
-// this, New() loads ~/.local/state/k4s/portforwards.json from the
-// developer's machine and may open the restore popup unbidden — which
-// would break tests that assume a clean cmdBarOff start.
-func TestMain(m *testing.M) {
-	tmp, err := os.MkdirTemp("", "k4s-tui-test-*")
-	if err != nil {
-		panic(err)
-	}
-	defer func() { _ = os.RemoveAll(tmp) }()
-	if err := os.Setenv("XDG_STATE_HOME", filepath.Join(tmp, "state")); err != nil {
-		panic(err)
-	}
-	os.Exit(m.Run())
-}
 
 // TestViewFillsTerminal asserts the chrome (header + footer) sits at the
 // terminal edges and the body fills everything in between, regardless of
@@ -45,7 +26,7 @@ func TestViewFillsTerminal(t *testing.T) {
 
 	for _, c := range cases {
 		m := New(nil, nil)
-		upd, _ := m.Update(tea.WindowSizeMsg{Width: c.w, Height: c.h})
+		upd, _ := m.Update(tuitest.Resize(c.w, c.h))
 		m = upd.(Model)
 
 		out := m.View()
@@ -64,7 +45,7 @@ func TestBodyPadsToBodyHeight(t *testing.T) {
 	t.Parallel()
 
 	m := New(nil, nil)
-	upd, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
+	upd, _ := m.Update(tuitest.Resize(100, 50))
 	m = upd.(Model)
 
 	bodyHeight := m.bodyHeight()
@@ -164,7 +145,7 @@ func TestRelayoutPreservesTerminalHeight(t *testing.T) {
 	t.Parallel()
 
 	m := New(nil, nil)
-	upd, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
+	upd, _ := m.Update(tuitest.Resize(100, 50))
 	m = upd.(Model)
 	if m.height != 50 {
 		t.Fatalf("initial height = %d, want 50", m.height)
@@ -191,7 +172,7 @@ func TestStartupLoadErrorSurvivesNavigation(t *testing.T) {
 
 	loadErr := errors.New("load kubeconfig: stat /nowhere/config: no such file or directory")
 	m := New(nil, loadErr)
-	upd, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
+	upd, _ := m.Update(tuitest.Resize(160, 30))
 	m = upd.(Model)
 
 	if out := m.View(); !strings.Contains(out, "/nowhere/config") {
@@ -221,10 +202,10 @@ func TestHelpPopupOpensAndCloses(t *testing.T) {
 	t.Parallel()
 
 	m := New(nil, nil)
-	upd, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	upd, _ := m.Update(tuitest.Resize(100, 40))
 	m = upd.(Model)
 
-	upd, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	upd, _ = m.Update(tuitest.Press("?"))
 	m = upd.(Model)
 	if m.cmdMode != cmdBarHelp {
 		t.Fatalf("cmdMode after '?' = %v, want cmdBarHelp", m.cmdMode)
@@ -235,7 +216,7 @@ func TestHelpPopupOpensAndCloses(t *testing.T) {
 		t.Errorf("help popup should render the title 'help'; got:\n%s", out)
 	}
 
-	upd, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	upd, _ = m.Update(tuitest.Esc())
 	m = upd.(Model)
 	if m.cmdMode != cmdBarOff {
 		t.Fatalf("cmdMode after Esc = %v, want cmdBarOff", m.cmdMode)
