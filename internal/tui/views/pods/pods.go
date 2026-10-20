@@ -24,13 +24,17 @@ const (
 	watchInterval = 5 * time.Second
 )
 
+// viewGen numbers Model instances. Ticks and fetch replies carry the gen
+// they were scheduled under, and Update drops any from another instance.
+// The message type cannot do this: when the view is rebuilt (Esc back, a
+// repeated command, a namespace switch) the old instance's pending tick
+// reaches the new one, where it would start a second refresh chain, and
+// its fetch reply could overwrite fresh rows.
 var viewGen atomic.Int64
 
 func nextGen() int64 { return viewGen.Add(1) }
 
-// tickMsg is the per-view auto-refresh signal. Per-view typing means a
-// stale ticker that fires after the user has navigated away simply gets
-// ignored by whatever view is current — no global ticker plumbing needed.
+// tickMsg is the watch tick of the instance whose gen it carries.
 type tickMsg struct {
 	gen int64
 	t   time.Time
