@@ -131,7 +131,10 @@ K3S_COMPOSE     = K4S_K3S_CONFIG=$(K3S_CONFIG) COMPOSE_PROFILES=$(if $(filter ag
 # down and clean must reach the agents even when K3S_PROFILE is not set.
 K3S_COMPOSE_ALL = COMPOSE_PROFILES=agents docker compose
 
-.PHONY: k3s-check-profile k3s-ready
+# kubeconfigs that act as namespaced ServiceAccounts (deploy/seed/90-restricted-rbac.yaml).
+SA_KUBECONFIG := deploy/fixtures/kubeconfig-sa.sh $(KUBECONFIG_PATH) k4s-demo
+
+.PHONY: k3s-check-profile k3s-ready kubeconfig-restricted kubeconfig-narrow kubeconfig-plugin kubeconfig-plugin-tty
 
 k3s-check-profile:
 	@if [ -n "$(k3s_unknown)" ]; then \
@@ -158,7 +161,19 @@ k3s-clean: ## stop k3s, drop the persistent volumes, and forget kubeconfigs
 kubeconfig: ## write .kube/config once k3s has a fresh kubeconfig and a live API
 	@deploy/dev/k3s-wait.sh $(K3S_CONTAINER) $(K3S_KUBECONFIG) $(KUBECONFIG_PATH)
 
-seed: ## apply demo workloads to the local k3s
+kubeconfig-restricted: ## write .kube/restricted: SA k4s-viewer (view + exec/port-forward in k4s-demo)
+	@$(SA_KUBECONFIG) k4s-viewer $(CURDIR)/.kube/restricted token
+
+kubeconfig-narrow: ## write .kube/narrow: SA k4s-narrow (pods only in k4s-demo)
+	@$(SA_KUBECONFIG) k4s-narrow $(CURDIR)/.kube/narrow token
+
+kubeconfig-plugin: ## write .kube/plugin: k4s-viewer through a slow exec credential plugin
+	@$(SA_KUBECONFIG) k4s-viewer $(CURDIR)/.kube/plugin plugin
+
+kubeconfig-plugin-tty: ## write .kube/plugin-tty: exec plugin that refuses to run without a TTY
+	@$(SA_KUBECONFIG) k4s-viewer $(CURDIR)/.kube/plugin-tty plugin-tty
+
+seed: ## apply demo workloads and RBAC fixtures to the local k3s
 	@deploy/dev/seed.sh $(KUBECONFIG_PATH) deploy/seed
 
 seed-down: ## remove demo workloads

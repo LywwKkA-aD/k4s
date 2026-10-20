@@ -1,0 +1,87 @@
+# Two tenant identities confined to k4s-demo. Neither can read anything
+# cluster-scoped or in another namespace, so `kubectl get pods -A`,
+# `kubectl get nodes` and `kubectl get ns` are Forbidden for both.
+#
+# k4s-viewer: what a tenant usually gets on a shared cluster - the built-in
+#   `view` ClusterRole bound in one namespace (pods, logs, services, endpoints,
+#   deployments, replicasets, events, ... but not secrets), plus exec and
+#   port-forward for debugging. `make kubeconfig-restricted` and
+#   `make kubeconfig-plugin` log in as this account.
+# k4s-narrow: deliberately minimal (pods only, no logs, no exec) to drive the
+#   Forbidden fallbacks. `make kubeconfig-narrow` logs in as this account.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k4s-viewer
+  namespace: k4s-demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k4s-viewer-view
+  namespace: k4s-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: k4s-viewer
+    namespace: k4s-demo
+---
+# kubectl exec / port-forward open a WebSocket (GET) or SPDY (POST) upgrade.
+# The k3s v1.36 API server authorizes both as create (get alone is Forbidden);
+# get stays for older API servers that authorize the WebSocket upgrade as get.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: k4s-viewer-debug
+  namespace: k4s-demo
+rules:
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/portforward"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k4s-viewer-debug
+  namespace: k4s-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: k4s-viewer-debug
+subjects:
+  - kind: ServiceAccount
+    name: k4s-viewer
+    namespace: k4s-demo
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k4s-narrow
+  namespace: k4s-demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: k4s-narrow
+  namespace: k4s-demo
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k4s-narrow
+  namespace: k4s-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: k4s-narrow
+subjects:
+  - kind: ServiceAccount
+    name: k4s-narrow
+    namespace: k4s-demo

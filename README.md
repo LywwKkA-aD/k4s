@@ -154,6 +154,19 @@ Traefik answers on `localhost:18080` / `18443` and the `nginx-lb`
 LoadBalancer Service on `localhost:18090` (`K4S_HTTP_PORT`, `K4S_HTTPS_PORT`,
 `K4S_LB_PORT` override them).
 
+### Restricted and exec-plugin kubeconfigs
+
+Kubeconfigs for the ServiceAccounts in `deploy/seed/90-restricted-rbac.yaml`,
+with 24h tokens (rerun the target to refresh). Neither account can read
+outside `k4s-demo`, so `kubectl get pods -A` is Forbidden.
+
+| Target                       | Writes             | Acts as                                                             |
+| ---------------------------- | ------------------ | ------------------------------------------------------------------- |
+| `make kubeconfig-restricted` | `.kube/restricted` | `k4s-viewer`: built-in `view` + exec / port-forward in `k4s-demo`   |
+| `make kubeconfig-narrow`     | `.kube/narrow`     | `k4s-narrow`: pods only (no logs, services, deployments, events)    |
+| `make kubeconfig-plugin`     | `.kube/plugin`     | `k4s-viewer` through an exec credential plugin that logs to stderr and takes 3s |
+| `make kubeconfig-plugin-tty` | `.kube/plugin-tty` | the same plugin, but it refuses to run without a terminal           |
+
 ### Other clusters
 
 - If your Docker host cannot run the bundled components, use
@@ -234,6 +247,7 @@ In the logs view `/` searches and `w` toggles wrap:
 - `native-sidecar` — a sidecar declared as an init container with `restartPolicy: Always`
 - `nginx-lb` — a LoadBalancer Service served by ServiceLB (`<pending>` on `minimal` or kind)
 - a Secret and a CronJob (every 2 minutes) for read-only browsing
+- `k4s-viewer` and `k4s-narrow` ServiceAccounts for the restricted kubeconfigs
 
 ## Quality gate
 
