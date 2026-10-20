@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/LywwKkA-aD/k4s/internal/version"
 )
 
 const testKubeconfig = `apiVersion: v1
@@ -50,7 +52,16 @@ func TestLoadFromKubeconfig(t *testing.T) {
 		t.Errorf("KubeconfigPaths = %v, want [%s]", c.KubeconfigPaths, path)
 	}
 	if c.RestConfig == nil || c.RestConfig.Host != "https://127.0.0.1:6443" {
-		t.Errorf("RestConfig not built from the kubeconfig: %+v", c.RestConfig)
+		t.Fatalf("RestConfig not built from the kubeconfig: %+v", c.RestConfig)
+	}
+	if c.RestConfig.QPS != 50 || c.RestConfig.Burst != 100 {
+		t.Errorf("QPS/Burst = %v/%d, want 50/100", c.RestConfig.QPS, c.RestConfig.Burst)
+	}
+	if want := "k4s/" + version.String(); c.RestConfig.UserAgent != want {
+		t.Errorf("UserAgent = %q, want %q", c.RestConfig.UserAgent, want)
+	}
+	if qps := c.Clientset.CoreV1().RESTClient().GetRateLimiter().QPS(); qps != 50 {
+		t.Errorf("clientset rate limiter QPS = %v, want 50", qps)
 	}
 }
 

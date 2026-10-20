@@ -3,7 +3,6 @@ package k8s
 import (
 	"fmt"
 
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -67,13 +66,13 @@ func LoadFromKubeconfigContext(explicitPath, contextName string) (*Client, error
 	if _, ok := raw.Contexts[target]; !ok {
 		return nil, fmt.Errorf("context %q not found in kubeconfig", target)
 	}
-	cfg, err := clientcmd.NewNonInteractiveClientConfig(*raw, target, nil, rules).ClientConfig()
+	cfg, err := buildConfig(*raw, target, rules)
 	if err != nil {
-		return nil, fmt.Errorf("build client config: %w", err)
+		return nil, err
 	}
-	cs, err := kubernetes.NewForConfig(cfg)
+	cs, err := newClientset(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("new clientset: %w", err)
+		return nil, err
 	}
 	return &Client{
 		Clientset:       cs,
