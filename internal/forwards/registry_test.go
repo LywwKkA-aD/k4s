@@ -90,6 +90,20 @@ func TestListFiltersByContextAndSorts(t *testing.T) {
 	}
 }
 
+func TestStateReturnsACopy(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t, deps{})
+	f := testForward("f1", "pod", 18080)
+	mustRegister(t, m, f)
+
+	snapshot := m.State()
+	snapshot.Forwards[0].Name = "changed by caller"
+
+	if got := m.State().Forwards[0]; got != f {
+		t.Errorf("State after a caller edit = %+v, want %+v", got, f)
+	}
+}
+
 func TestStopNormalisesErrorAndRejectsUnknown(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t, deps{})

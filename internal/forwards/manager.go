@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -167,12 +168,12 @@ func (m *Manager) matchesContext(ctx string) bool {
 	return m.cluster.contextName == "" || ctx == "" || ctx == m.cluster.contextName
 }
 
-// State returns the persisted intent. Useful for restore prompts at
-// startup or sanity-check tests; not what the UI uses for rendering.
+// State returns a copy of the persisted intent. Useful for restore prompts
+// at startup or sanity-check tests; not what the UI uses for rendering.
 func (m *Manager) State() State {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.state
+	return State{Forwards: slices.Clone(m.state.Forwards)}
 }
 
 // NewID generates a short opaque ID for a new forward. Eight bytes of
