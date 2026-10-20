@@ -1,0 +1,2 @@
+ q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  r refresh  ·  w watch
+ ≈ kubectl get all -A --watch

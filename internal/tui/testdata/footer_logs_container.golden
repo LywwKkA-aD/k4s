@@ -1,0 +1,3 @@
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  ↑↓/pgup/pgdn scroll  ·  f follow  ·  w wrap  ·  ← scroll left  ·  → scroll right  ·  / search
+ ·  n next match  ·  N prev match  ·  c clear
+ ≈ kubectl logs -f -c sidecar multi-0 -n demo --tail=20
