@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
@@ -29,7 +29,7 @@ func TestViewFillsTerminal(t *testing.T) {
 		upd, _ := m.Update(tuitest.Resize(c.w, c.h))
 		m = upd.(Model)
 
-		out := m.View()
+		out := m.View().Content
 		if h := lipgloss.Height(out); h != c.h {
 			t.Errorf("size=%dx%d: rendered height = %d, want %d (bodyHeight=%d)",
 				c.w, c.h, h, c.h, m.bodyHeight())
@@ -158,7 +158,7 @@ func TestRelayoutPreservesTerminalHeight(t *testing.T) {
 		if m.height != 50 {
 			t.Fatalf("after %d relayouts, height = %d, want 50", i+1, m.height)
 		}
-		out := m.View()
+		out := m.View().Content
 		if h := lipgloss.Height(out); h != 50 {
 			t.Fatalf("after %d relayouts, rendered height = %d, want 50", i+1, h)
 		}
@@ -175,11 +175,11 @@ func TestStartupLoadErrorSurvivesNavigation(t *testing.T) {
 	upd, _ := m.Update(tuitest.Resize(160, 30))
 	m = upd.(Model)
 
-	if out := m.View(); !strings.Contains(out, "/nowhere/config") {
+	if out := m.View().Content; !strings.Contains(out, "/nowhere/config") {
 		t.Fatalf("landing view does not show the load error:\n%s", out)
 	}
 	m = m.switchTo(viewPods).goHome()
-	if out := m.View(); !strings.Contains(out, "/nowhere/config") {
+	if out := m.View().Content; !strings.Contains(out, "/nowhere/config") {
 		t.Fatalf("dashboard lost the load error after navigation:\n%s", out)
 	}
 }
@@ -211,7 +211,7 @@ func TestHelpPopupOpensAndCloses(t *testing.T) {
 		t.Fatalf("cmdMode after '?' = %v, want cmdBarHelp", m.cmdMode)
 	}
 
-	out := m.View()
+	out := m.View().Content
 	if !contains(out, "help") {
 		t.Errorf("help popup should render the title 'help'; got:\n%s", out)
 	}

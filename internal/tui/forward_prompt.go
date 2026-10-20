@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
@@ -178,5 +178,5 @@ func (m Model) renderForwardPromptInner() string {
 	title := styles.PopupTitle.Render("port-forward")
 	subtitle := styles.Hint.Render(target)
 	hint := styles.Hint.Render("Enter start · Esc cancel · format local:remote (e.g. 8080:80)")
-	return lipgloss.JoinVertical(lipgloss.Left, title, subtitle, "", m.cmdBar.View(), "", hint)
+	return lipgloss.JoinVertical(lipgloss.Left, title, subtitle, "", m.cmdBarView(), "", hint)
 }

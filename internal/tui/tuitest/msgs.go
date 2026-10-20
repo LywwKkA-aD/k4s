@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // Find returns the first message of type T in msgs.

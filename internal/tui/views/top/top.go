@@ -15,12 +15,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
@@ -125,6 +126,7 @@ func newTable(mode resourceMode, showNamespace bool) table.Model {
 		table.WithHeight(20),
 	)
 	t.SetStyles(styles.Table())
+	styles.FitTable(&t)
 	return t
 }
 
@@ -187,7 +189,7 @@ func fetchNodesCmd(gen int64, mode resourceMode, c *k8s.Client) tea.Cmd {
 }
 
 // Update handles size, watch tick, key bindings, and metrics deliveries.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.table.SetHeight(max(msg.Height, minTableRows))
@@ -201,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, fetchCmd(m))
 		}
 		return m, tea.Batch(cmds...)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		next, cmd, handled := m.handleKey(msg)
 		if handled {
 			return next, cmd
@@ -245,7 +247,7 @@ func (m *Model) applyNodeMetrics(msg nodeMetricsMsg) {
 // handleKey returns (next-model, cmd, true) when the key matched a binding.
 // The model is returned by value because the toggle path mutates several
 // fields and we want the call site to keep using the result.
-func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.toggleKey):
 		if m.mode == modePods {

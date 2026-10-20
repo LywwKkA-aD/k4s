@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 func envOf(vars map[string]string) func(string) string {
@@ -65,18 +65,26 @@ func TestParseModeErrorNamesValueAndChoices(t *testing.T) {
 	}
 }
 
-// The Init tests change lipgloss's global renderer and this package's
-// styles, so they run sequentially and restore the colour theme.
+// resetTheme restores the theme the package starts with: dark colours and
+// no forced colour profile.
+func resetTheme() {
+	use(colourPalette(true))
+	forcedProfile = nil
+}
+
+// The Init tests change this package's styles, so they run sequentially and
+// restore the dark colour theme.
 func TestInitAppliesTheme(t *testing.T) {
-	t.Cleanup(func() { use(colourPalette) })
+	t.Cleanup(resetTheme)
 	cases := []struct {
 		name     string
 		env      map[string]string
 		wantDark bool
 		wantMono bool
+		wantHint string // Hint's foreground as hex; empty for none
 	}{
-		{name: "dark", env: map[string]string{"K4S_THEME": "dark"}, wantDark: true},
-		{name: "light", env: map[string]string{"K4S_THEME": "light"}, wantDark: false},
+		{name: "dark", env: map[string]string{"K4S_THEME": "dark"}, wantDark: true, wantHint: tokenMuted.Dark},
+		{name: "light", env: map[string]string{"K4S_THEME": "light"}, wantDark: false, wantHint: tokenMuted.Light},
 		{name: "mono via no color", env: map[string]string{"NO_COLOR": "1"}, wantDark: true, wantMono: true},
 	}
 	for _, c := range cases {
@@ -84,12 +92,15 @@ func TestInitAppliesTheme(t *testing.T) {
 			if err := Init(envOf(c.env)); err != nil {
 				t.Fatalf("Init: %v", err)
 			}
-			if got := lipgloss.HasDarkBackground(); got != c.wantDark {
-				t.Errorf("HasDarkBackground = %v, want %v", got, c.wantDark)
+			if active.dark != c.wantDark {
+				t.Errorf("dark background = %v, want %v", active.dark, c.wantDark)
 			}
 			_, colourless := Hint.GetForeground().(lipgloss.NoColor)
 			if colourless != c.wantMono {
 				t.Errorf("Hint colourless = %v, want %v", colourless, c.wantMono)
+			}
+			if c.wantHint != "" && Hint.GetForeground() != lipgloss.Color(c.wantHint) {
+				t.Errorf("Hint fg = %v, want %s", Hint.GetForeground(), c.wantHint)
 			}
 			if got := Table().Selected.GetReverse(); got != c.wantMono {
 				t.Errorf("selected row reverse = %v, want %v", got, c.wantMono)
@@ -99,23 +110,27 @@ func TestInitAppliesTheme(t *testing.T) {
 }
 
 func TestInitAutoDetectsWithoutError(t *testing.T) {
-	t.Cleanup(func() { use(colourPalette) })
+	t.Cleanup(resetTheme)
 	if err := Init(envOf(nil)); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if Hint.GetForeground() != tokenMuted {
-		t.Errorf("auto should use the adaptive palette, Hint fg = %v", Hint.GetForeground())
+	// A test binary's stdout is not a terminal, so auto assumes dark.
+	if Hint.GetForeground() != tokenMuted.on(true) {
+		t.Errorf("auto should use the dark palette off a terminal, Hint fg = %v", Hint.GetForeground())
+	}
+	if _, forced := ColorProfile(); forced {
+		t.Error("auto must leave the colour profile to the program")
 	}
 }
 
 func TestInitRejectsUnknownThemeAndKeepsStyles(t *testing.T) {
-	t.Cleanup(func() { use(colourPalette) })
-	use(colourPalette)
+	t.Cleanup(resetTheme)
+	use(colourPalette(true))
 	err := Init(envOf(map[string]string{"K4S_THEME": "neon", "NO_COLOR": "1"}))
 	if !errors.Is(err, ErrInvalidTheme) {
 		t.Fatalf("err = %v, want ErrInvalidTheme", err)
 	}
-	if Hint.GetForeground() != tokenMuted {
+	if Hint.GetForeground() != tokenMuted.on(true) {
 		t.Error("a rejected theme must not touch the styles")
 	}
 }

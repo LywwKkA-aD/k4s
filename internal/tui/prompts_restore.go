@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
+	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
@@ -21,11 +22,11 @@ import (
 // port-availability pre-check, so entries whose local port is now
 // occupied (or privileged) end up in Error status and the user can
 // retry from the forwards view.
-func (m Model) handleRestorePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
+func (m Model) handleRestorePromptKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case keys.IsEnter(msg):
 		return m.reviveAll(), nil
-	case tea.KeyEsc:
+	case keys.IsEsc(msg):
 		return m.dismissRestore(), nil
 	}
 	switch msg.String() {

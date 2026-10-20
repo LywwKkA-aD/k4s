@@ -5,8 +5,8 @@ package tui
 import (
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
@@ -128,8 +128,8 @@ type Model struct {
 func New(client *k8s.Client, loadErr error) Model {
 	ti := textinput.New()
 	ti.CharLimit = 64
-	ti.Width = 40
-	ti.PlaceholderStyle = styles.Placeholder
+	ti.SetWidth(40)
+	ti.SetStyles(styles.TextInput())
 
 	var mgr *forwards.Manager
 	restore := 0

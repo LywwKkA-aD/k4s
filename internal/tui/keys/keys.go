@@ -2,7 +2,7 @@
 // over the defaults defined here.
 package keys
 
-import "github.com/charmbracelet/bubbles/key"
+import "charm.land/bubbles/v2/key"
 
 // Map is the set of global key bindings k4s exposes.
 type Map struct {

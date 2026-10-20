@@ -3,13 +3,23 @@
 package views
 
 import (
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 )
 
-// View is the contract every k4s screen implements.
+// View is the contract every k4s screen implements. It mirrors tea.Model,
+// except that Update returns a View (so the root keeps the concrete screen
+// without type assertions) and View returns the body as a string: only the
+// root model builds the frame.
 type View interface {
-	tea.Model
+	// Init returns the screen's first command, run when it is mounted.
+	Init() tea.Cmd
+
+	// Update handles a message and returns the next state of the screen.
+	Update(msg tea.Msg) (View, tea.Cmd)
+
+	// View renders the body between the root's header and footer.
+	View() string
 
 	// Title is rendered in the header.
 	Title() string

@@ -1,9 +1,10 @@
 package styles
 
 import (
+	"image/color"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 func TestPodPaletteIDsAreUniqueAndOrdered(t *testing.T) {
@@ -12,7 +13,7 @@ func TestPodPaletteIDsAreUniqueAndOrdered(t *testing.T) {
 	if len(ids) != len(podColors) {
 		t.Fatalf("got %d ids, want %d", len(ids), len(podColors))
 	}
-	seen := make(map[lipgloss.Color]bool, len(ids))
+	seen := make(map[PodColorID]bool, len(ids))
 	for i, id := range ids {
 		if seen[id] {
 			t.Errorf("duplicate pod colour id %s", id)
@@ -37,11 +38,11 @@ func TestPodColor(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
-		id   lipgloss.Color
-		want lipgloss.TerminalColor
+		id   PodColorID
+		want color.Color
 	}{
-		{name: "first id resolves to its pair", id: lipgloss.Color(podColors[0].Dark), want: podColors[0]},
-		{name: "last id resolves to its pair", id: lipgloss.Color(podColors[len(podColors)-1].Dark), want: podColors[len(podColors)-1]},
+		{name: "first id resolves to its dark variant", id: PodColorID(podColors[0].Dark), want: lipgloss.Color(podColors[0].Dark)},
+		{name: "last id resolves to its dark variant", id: PodColorID(podColors[len(podColors)-1].Dark), want: lipgloss.Color(podColors[len(podColors)-1].Dark)},
 		{name: "unknown id passes through", id: "#123456", want: lipgloss.Color("#123456")},
 	}
 	for _, c := range cases {
@@ -54,8 +55,18 @@ func TestPodColor(t *testing.T) {
 	}
 }
 
+func TestPodColorFollowsALightBackground(t *testing.T) {
+	t.Cleanup(resetTheme)
+	use(colourPalette(false))
+	for i, id := range PodPalette() {
+		if got, want := PodColor(id), lipgloss.Color(podColors[i].Light); got != want {
+			t.Errorf("PodColor(%s) on light = %v, want %v", id, got, want)
+		}
+	}
+}
+
 func TestPodColorIsColourlessInMono(t *testing.T) {
-	t.Cleanup(func() { use(colourPalette) })
+	t.Cleanup(resetTheme)
 	use(monoPalette)
 	for _, id := range append(PodPalette(), "#123456") {
 		if _, ok := PodColor(id).(lipgloss.NoColor); !ok {

@@ -1,12 +1,13 @@
 // Package styles owns every lipgloss style used by the TUI so that visual
 // changes are localised and themeable in one place. Init picks the theme
-// from the environment; until then the styles follow the terminal
-// background through adaptive colours.
+// from the environment; until then the styles use the dark variants.
 package styles
 
 import (
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Styles shared by every view. Init rebuilds them for the chosen theme, so
@@ -57,7 +58,7 @@ var (
 // active is the palette the styles were last built from.
 var active palette
 
-func init() { use(colourPalette) }
+func init() { use(colourPalette(true)) }
 
 // use rebuilds every style from p. The mono attributes (bold, underline,
 // reverse) only switch on when p has no colours to carry state.
@@ -114,4 +115,41 @@ func Table() table.Styles {
 		Bold(true).
 		Reverse(active.mono)
 	return s
+}
+
+// FitTable sizes t to the width its columns render at. A bubbles v2 table
+// renders no rows at width 0, which is what an unsized bubbles v1 table
+// treated as "as wide as the columns"; rows wider than the screen still
+// wrap in the body as before.
+func FitTable(t *table.Model) {
+	pad := Table().Cell.GetHorizontalFrameSize()
+	w := 0
+	for _, c := range t.Columns() {
+		if c.Width > 0 {
+			w += c.Width + pad
+		}
+	}
+	t.SetWidth(w)
+}
+
+// TextInput returns the text input styles used by the command bar, the
+// prompts, the list filter and the logs search. Prompt and text stay
+// unstyled and the cursor is a plain reverse-video block: the bubbles
+// defaults paint the prompt, the cursor and blurred text in ANSI colours
+// that would leak into mono.
+func TextInput() textinput.Styles {
+	state := textinput.StyleState{
+		Text:        lipgloss.NewStyle(),
+		Placeholder: Placeholder,
+		Suggestion:  Placeholder,
+		Prompt:      lipgloss.NewStyle(),
+	}
+	return textinput.Styles{
+		Focused: state,
+		Blurred: state,
+		Cursor: textinput.CursorStyle{
+			Shape: tea.CursorBlock,
+			Blink: true,
+		},
+	}
 }

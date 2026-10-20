@@ -7,10 +7,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
@@ -82,6 +82,7 @@ func New(client *k8s.Client) Model {
 		table.WithHeight(20),
 	)
 	t.SetStyles(styles.Table())
+	styles.FitTable(&t)
 
 	return Model{
 		client:       client,
@@ -130,7 +131,7 @@ func fetchCmd(gen int64, c *k8s.Client) tea.Cmd {
 }
 
 // Update handles size, refresh, selection and forwards keystrokes to the table.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		// msg.Height is already the body height (root model adjusts it).
@@ -147,15 +148,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, fetchCmd(m.gen, m.client))
 		}
 		return m, tea.Batch(cmds...)
-	case tea.KeyMsg:
-		if m.filter.IsOpen() {
-			var cmd tea.Cmd
-			var consumed bool
-			m.filter, cmd, consumed = m.filter.Update(msg)
-			if consumed {
-				m.applyFilter()
-				return m, cmd
-			}
+	case tea.PasteMsg:
+		cmd, _ := m.feedFilter(msg)
+		return m, cmd
+	case tea.KeyPressMsg:
+		if cmd, consumed := m.feedFilter(msg); consumed {
+			return m, cmd
 		}
 		if cmd, handled := m.handleKey(msg); handled {
 			return m, cmd
@@ -179,7 +177,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // handleKey returns (cmd, true) when the key matched a binding.
-func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.filterKey):
 		var cmd tea.Cmd
@@ -213,6 +211,21 @@ func (m Model) tableHeight() int {
 		return m.bodyH - 1
 	}
 	return m.bodyH
+}
+
+// feedFilter hands a key press or a paste to the open filter and refilters
+// the rows. It reports false when the filter is closed or let the key pass.
+func (m *Model) feedFilter(msg tea.Msg) (tea.Cmd, bool) {
+	if !m.filter.IsOpen() {
+		return nil, false
+	}
+	var cmd tea.Cmd
+	var consumed bool
+	m.filter, cmd, consumed = m.filter.Update(msg)
+	if consumed {
+		m.applyFilter()
+	}
+	return cmd, consumed
 }
 
 // applyFilter rebuilds visible rows. The synthetic "<all>" row is kept

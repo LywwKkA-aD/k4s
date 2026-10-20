@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -51,7 +51,7 @@ func (m Model) maxXOffset() int {
 			widest = w
 		}
 	}
-	visible := m.viewport.Width
+	visible := m.viewport.Width()
 	if visible <= 0 {
 		visible = 1
 	}
@@ -70,10 +70,10 @@ func (m Model) maxXOffset() int {
 func (m *Model) syncViewport() {
 	var content string
 	switch {
-	case m.wrap && m.viewport.Width > 0:
+	case m.wrap && m.viewport.Width() > 0:
 		wrapped := make([]string, len(m.rendered))
 		for i, line := range m.rendered {
-			wrapped[i] = wrapLine(line, m.viewport.Width)
+			wrapped[i] = wrapLine(line, m.viewport.Width())
 		}
 		content = strings.Join(wrapped, "\n")
 	case m.xOffset > 0:
@@ -123,7 +123,7 @@ func wrapLine(s string, width int) string {
 //
 // Stream-error and stream-closed notices keep the pod name inline so they
 // remain readable regardless of the prefix mode.
-func formatRawLine(ln logLine, multi, full bool, colour lipgloss.Color) string {
+func formatRawLine(ln logLine, multi, full bool, colour styles.PodColorID) string {
 	switch ln.kind {
 	case lineStreamErr:
 		return styles.Warn.Render(fmt.Sprintf("[%s] stream error: %s", ln.pod, ln.text))
@@ -150,8 +150,8 @@ func formatRawLine(ln logLine, multi, full bool, colour lipgloss.Color) string {
 var podPalette = styles.PodPalette()
 
 // assignPodColors deals palette colours to pods round-robin by list position.
-func assignPodColors(pods []string) map[string]lipgloss.Color {
-	out := make(map[string]lipgloss.Color, len(pods))
+func assignPodColors(pods []string) map[string]styles.PodColorID {
+	out := make(map[string]styles.PodColorID, len(pods))
 	for i, p := range pods {
 		out[p] = podPalette[i%len(podPalette)]
 	}

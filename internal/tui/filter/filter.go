@@ -23,8 +23,11 @@ package filter
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
+	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
 // Model is the filter state. Zero value is not usable — call New().
@@ -41,7 +44,8 @@ func New() Model {
 	ti := textinput.New()
 	ti.Prompt = "/ "
 	ti.CharLimit = 64
-	ti.Width = 32
+	ti.SetWidth(32)
+	ti.SetStyles(styles.TextInput())
 	return Model{
 		input:  ti,
 		prompt: "/ ",
@@ -56,7 +60,7 @@ func (m *Model) SetWidth(w int) {
 	if inputW < 8 {
 		inputW = 8
 	}
-	m.input.Width = inputW
+	m.input.SetWidth(inputW)
 }
 
 // Open focuses the input. Returns a Cmd to start the cursor blink.
@@ -89,21 +93,28 @@ func (m Model) Commit() Model {
 	return m
 }
 
-// Update handles a key message while the input is focused. Returns the
-// updated model, a Cmd from textinput, and a "consumed" flag the host uses
-// to decide whether to also let its own bindings run.
+// Update handles a key press or a paste while the input is focused.
+// Returns the updated model, a Cmd from textinput, and a "consumed" flag the
+// host uses to decide whether to also let its own bindings run.
 //
-// Hosts call it only while IsOpen reports true; on a closed filter it
-// changes nothing and reports the key as not consumed.
-func (m Model) Update(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+// Hosts call it only while IsOpen reports true; on a closed filter, and for
+// any other message, it changes nothing and reports the message as not
+// consumed.
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd, bool) {
 	if !m.open {
 		return m, nil, false
 	}
-	switch msg.Type {
-	case tea.KeyEsc:
-		return m.Close(), nil, true
-	case tea.KeyEnter:
-		return m.Commit(), nil, true
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		if keys.IsEsc(msg) {
+			return m.Close(), nil, true
+		}
+		if keys.IsEnter(msg) {
+			return m.Commit(), nil, true
+		}
+	case tea.PasteMsg:
+	default:
+		return m, nil, false
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)

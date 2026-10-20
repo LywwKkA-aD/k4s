@@ -1,13 +1,14 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/cursor"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
@@ -45,17 +46,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cmdError = ""
 		}
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.onKey(msg)
 	}
 	return m.routeToActiveUI(msg)
 }
 
-// routeToActiveUI delivers a message that matched no root case. Cursor blink
-// ticks are not key messages, so while a text prompt is open they must reach
-// the cmdBar explicitly — otherwise they fall through to the view and the
-// cursor freezes after the first blink.
+// onPaste delivers bracketed-paste text where typed text would go: the
+// open text prompt, else the active view. Popups without a text field
+// ignore it, except help, which closes on any input.
+func (m Model) onPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+	switch m.cmdMode {
+	case cmdBarOff:
+		return m.forwardToView(msg)
+	case cmdBarCommand, cmdBarTailPrompt, cmdBarForwardPrompt:
+		var cmd tea.Cmd
+		m.cmdBar, cmd = m.cmdBar.Update(msg)
+		return m, cmd
+	case cmdBarHelp:
+		return m.closeCmdBar(), nil
+	}
+	return m, nil
+}
+
+// routeToActiveUI delivers a message that matched no root case. Pastes go
+// where typed text would. Cursor blink ticks are not key messages, so while
+// a text prompt is open they must reach the cmdBar explicitly — otherwise
+// they fall through to the view and the cursor freezes after the first
+// blink.
 func (m Model) routeToActiveUI(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if paste, ok := msg.(tea.PasteMsg); ok {
+		return m.onPaste(paste)
+	}
 	if m.cmdMode == cmdBarCommand || m.cmdMode == cmdBarTailPrompt || m.cmdMode == cmdBarForwardPrompt {
 		if _, ok := msg.(cursor.BlinkMsg); ok {
 			var cmd tea.Cmd
@@ -135,8 +157,8 @@ func (m Model) onLogsRequest(msg views.LogsRequestMsg) (tea.Model, tea.Cmd) {
 	return m, m.relayoutCmd()
 }
 
-func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.Type == tea.KeyCtrlC {
+func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if keys.IsForceQuit(msg) {
 		return m, tea.Quit
 	}
 	if m.cmdMode != cmdBarOff {
@@ -176,10 +198,8 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) forwardToView(msg tea.Msg) (tea.Model, tea.Cmd) {
-	upd, cmd := m.current.Update(msg)
-	if v, ok := upd.(views.View); ok {
-		m.current = v
-	}
+	var cmd tea.Cmd
+	m.current, cmd = m.current.Update(msg)
 	return m, cmd
 }
 

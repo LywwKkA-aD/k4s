@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/cli"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
@@ -55,7 +55,11 @@ func run() error {
 	}
 	logsink.HoldPluginStderr()
 
-	p := tea.NewProgram(tui.New(client, loadErr), tea.WithAltScreen())
+	var opts []tea.ProgramOption
+	if profile, ok := styles.ColorProfile(); ok {
+		opts = append(opts, tea.WithColorProfile(profile))
+	}
+	p := tea.NewProgram(tui.New(client, loadErr), opts...)
 	_, err := p.Run()
 
 	// The TUI has released the terminal: show what was held back.

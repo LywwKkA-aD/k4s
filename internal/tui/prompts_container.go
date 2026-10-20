@@ -3,9 +3,10 @@ package tui
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -28,21 +29,21 @@ func (m Model) onContainerPromptRequest(msg views.ContainerPromptRequestMsg) (te
 
 // handleContainerPickerKey is the keymap for the container-picker popup —
 // arrows / j-k navigate, Enter / 1..9 confirm, Esc cancels.
-func (m Model) handleContainerPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleContainerPickerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	n := len(m.pendingContainerContainers)
 	if n == 0 {
 		return m.closeCmdBar(), nil
 	}
 
-	switch msg.Type {
-	case tea.KeyEsc:
+	switch {
+	case keys.IsEsc(msg):
 		return m.closeCmdBar(), nil
-	case tea.KeyEnter:
+	case keys.IsEnter(msg):
 		return m.commitContainerPick(m.pendingContainerIdx)
-	case tea.KeyUp:
+	case keys.IsArrow(msg, tea.KeyUp):
 		m.pendingContainerIdx = (m.pendingContainerIdx - 1 + n) % n
 		return m, nil
-	case tea.KeyDown:
+	case keys.IsArrow(msg, tea.KeyDown):
 		m.pendingContainerIdx = (m.pendingContainerIdx + 1) % n
 		return m, nil
 	}

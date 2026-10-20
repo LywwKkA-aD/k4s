@@ -1,12 +1,14 @@
 package logs
 
 import (
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
-func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) onKey(msg tea.KeyPressMsg) (views.View, tea.Cmd) {
 	if m.searchOpen {
 		return m.onSearchKey(msg)
 	}
@@ -23,7 +25,7 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+func (m Model) handleViewKey(msg tea.KeyPressMsg) (views.View, tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.followKey):
 		m.autoFollow = !m.autoFollow

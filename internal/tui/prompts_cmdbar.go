@@ -4,15 +4,17 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/command"
+	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 )
 
 // handleCmdBar dispatches based on the prompt mode. Container picker is a
 // list and has its own keymap; help is a static popup that closes on any
 // key; everything else (command, tail) shares the textinput-driven path.
-func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleCmdBar(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.cmdMode == cmdBarHelp {
 		return m.closeCmdBar(), nil
 	}
@@ -22,10 +24,10 @@ func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.cmdMode == cmdBarRestorePrompt {
 		return m.handleRestorePromptKey(msg)
 	}
-	switch msg.Type {
-	case tea.KeyEsc:
+	switch {
+	case keys.IsEsc(msg):
 		return m.closeCmdBar(), nil
-	case tea.KeyEnter:
+	case keys.IsEnter(msg):
 		value := m.cmdBar.Value()
 		mode := m.cmdMode
 		// Snapshot the pending-* context BEFORE closeCmdBar wipes it.
@@ -52,6 +54,18 @@ func (m Model) handleCmdBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.cmdBar, cmd = m.cmdBar.Update(msg)
 	return m, cmd
+}
+
+// cmdBarView renders the prompt bar. bubbles v2 pads a placeholder out to
+// the width of a typed value plus the prompt; k4s has always fitted it,
+// prompt included, into the input width, so an emptied prompt keeps the
+// popup at the size it had.
+func (m Model) cmdBarView() string {
+	ti := m.cmdBar
+	if ti.Value() == "" && ti.Placeholder != "" {
+		ti.SetWidth(max(ti.Width()-lipgloss.Width(ti.Prompt)-1, 1))
+	}
+	return ti.View()
 }
 
 // closeCmdBar resets the prompt bar and clears any prompt-specific state.
