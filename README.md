@@ -100,6 +100,11 @@ k4s never prints over the TUI. client-go errors and Kubernetes API warnings
 go to `$XDG_STATE_HOME/k4s/k4s.log` (default `~/.local/state/k4s/k4s.log`);
 if anything was logged, k4s prints the count and the path when it exits.
 
+Contexts that log in through a credential plugin (EKS, GKE, OIDC/kubelogin)
+are contacted once before the TUI starts, so an SSO or device-code prompt
+shows up on the plain terminal. Plugin output while the TUI runs is kept in
+memory and printed after exit; it is never written to the log file.
+
 ## Themes & accessibility
 
 At startup k4s detects whether the terminal background is dark or light and
