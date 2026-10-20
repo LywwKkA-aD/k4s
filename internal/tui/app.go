@@ -157,6 +157,7 @@ func New(client *k8s.Client) Model {
 	ti := textinput.New()
 	ti.CharLimit = 64
 	ti.Width = 40
+	ti.PlaceholderStyle = styles.Placeholder
 
 	var mgr *forwards.Manager
 	restore := 0
