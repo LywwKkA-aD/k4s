@@ -126,17 +126,39 @@ theme set `K4S_THEME=light` (PowerShell: `$env:K4S_THEME = "light"`).
 ## Quickstart (local k3s)
 
 To try k4s against a throwaway cluster, or to hack on it: requires Go 1.26+,
-Docker, and `kubectl` on PATH.
+Docker (tested on OrbStack), and `kubectl` on PATH.
 
 ```bash
-# bring up local k3s in docker, seed demo workloads, write .kube/config
+# k3s v1.36 in docker with traefik, servicelb, metrics-server and local-path;
+# applies the demo workloads, writes .kube/config, waits until all are Ready
 make demo
 
 # run k4s against that cluster
 KUBECONFIG=$(pwd)/.kube/config make run
 ```
 
-`make help` lists every target. `make k3s-clean` wipes the local cluster.
+`make k3s-down` stops the cluster and keeps its state, `make k3s-clean` wipes
+it. `make k3s-up` only waits for a kubeconfig written by the current k3s
+start and a live API, so a file left by an earlier cluster is never used.
+
+`K3S_PROFILE` picks the cluster shape, e.g. `make demo K3S_PROFILE=agents`:
+
+| `K3S_PROFILE`    | Cluster                                                       |
+| ---------------- | ------------------------------------------------------------- |
+| *(unset)*        | one server, every bundled component                           |
+| `minimal`        | no traefik, servicelb or metrics-server                       |
+| `agents`         | server + 2 agent nodes                                        |
+| `minimal,agents` | both                                                          |
+
+Traefik answers on `localhost:18080` / `18443` and the `nginx-lb`
+LoadBalancer Service on `localhost:18090` (`K4S_HTTP_PORT`, `K4S_HTTPS_PORT`,
+`K4S_LB_PORT` override them).
+
+### Other clusters
+
+- If your Docker host cannot run the bundled components, use
+  `K3S_PROFILE=minimal`, or [k3d](https://k3d.io):
+  `k3d cluster create k4s --image rancher/k3s:v1.36.5-k3s1 && k3d kubeconfig get k4s > .kube/config && make seed`.
 
 ## Keys
 

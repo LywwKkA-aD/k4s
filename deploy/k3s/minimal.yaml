@@ -1,0 +1,4 @@
+# k3s server config for K3S_PROFILE=minimal: no traefik, servicelb or
+# metrics-server, for hosts that cannot run them.
+# deploy/dev/k3s-ready.sh reads this list, so keep it on one line.
+disable: [traefik, servicelb, metrics-server]

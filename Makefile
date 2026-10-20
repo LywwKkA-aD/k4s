@@ -114,21 +114,46 @@ snapshot: ## build every release archive into dist/ (GoReleaser, no publish)
 clean: ## remove build artifacts
 	rm -rf bin dist
 
+# Local dev cluster (docker compose, see docker-compose.yml). K3S_PROFILE is a
+# comma list: "minimal" disables traefik, servicelb and metrics-server, and
+# "agents" adds two agent nodes, e.g. `make demo K3S_PROFILE=minimal,agents`.
+K3S_PROFILE    ?=
 K3S_CONTAINER  := k4s-k3s
 K3S_KUBECONFIG := .k3s/output/kubeconfig.yaml
+k3s_comma      := ,
+k3s_empty      :=
+k3s_space      := $(k3s_empty) $(k3s_empty)
+k3s_profiles   := $(subst $(k3s_comma),$(k3s_space),$(K3S_PROFILE))
+k3s_unknown    := $(filter-out minimal agents,$(k3s_profiles))
+# The k3s server config file, deploy/k3s/$(K3S_CONFIG).yaml.
+K3S_CONFIG     := $(if $(filter minimal,$(k3s_profiles)),minimal,full)
+K3S_COMPOSE     = K4S_K3S_CONFIG=$(K3S_CONFIG) COMPOSE_PROFILES=$(if $(filter agents,$(k3s_profiles)),agents) docker compose
+# down and clean must reach the agents even when K3S_PROFILE is not set.
+K3S_COMPOSE_ALL = COMPOSE_PROFILES=agents docker compose
 
-k3s-up: ## start local k3s in docker and write .kube/config
+.PHONY: k3s-check-profile k3s-ready
+
+k3s-check-profile:
+	@if [ -n "$(k3s_unknown)" ]; then \
+		echo "unknown K3S_PROFILE value(s): $(k3s_unknown) (want minimal, agents)"; exit 1; \
+	fi
+
+k3s-up: k3s-check-profile ## start local k3s and write .kube/config (K3S_PROFILE=minimal,agents)
 	@mkdir -p $(dir $(K3S_KUBECONFIG))
-	docker compose up -d
+	$(K3S_COMPOSE) up -d
 	@$(MAKE) --no-print-directory kubeconfig
+	@deploy/dev/k3s-prune-agents.sh $(KUBECONFIG_PATH)
 
-k3s-down: ## stop local k3s (preserves volume)
-	docker compose down
+k3s-ready: ## wait until every node and bundled k3s component is Ready
+	@deploy/dev/k3s-ready.sh $(KUBECONFIG_PATH) $(K3S_CONTAINER)
 
-k3s-clean: ## stop k3s, drop the persistent volume, and forget kubeconfig
-	docker compose down -v
+k3s-down: ## stop local k3s and its agents (preserves volumes)
+	$(K3S_COMPOSE_ALL) down
+
+k3s-clean: ## stop k3s, drop the persistent volumes, and forget kubeconfigs
+	$(K3S_COMPOSE_ALL) down -v
 	rm -rf .k3s .kube
-	@echo "k3s container + volume + local kubeconfig wiped"
+	@echo "k3s containers + volumes + local kubeconfigs wiped"
 
 kubeconfig: ## write .kube/config once k3s has a fresh kubeconfig and a live API
 	@deploy/dev/k3s-wait.sh $(K3S_CONTAINER) $(K3S_KUBECONFIG) $(KUBECONFIG_PATH)
@@ -139,7 +164,10 @@ seed: ## apply demo workloads to the local k3s
 seed-down: ## remove demo workloads
 	@KUBECONFIG=$(KUBECONFIG_PATH) kubectl delete -f deploy/seed/ --ignore-not-found
 
-demo: k3s-up seed ## bring up k3s and apply demo workloads
+demo: ## bring up k3s, apply demo workloads, wait for every component
+	@$(MAKE) --no-print-directory k3s-up
+	@$(MAKE) --no-print-directory seed
+	@$(MAKE) --no-print-directory k3s-ready
 	@echo "demo cluster ready — export KUBECONFIG=$(KUBECONFIG_PATH)"
 
 gif: build ## record docs/demo.gif via VHS (requires: brew install vhs ttyd ffmpeg)
