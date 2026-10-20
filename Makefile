@@ -134,7 +134,10 @@ K3S_COMPOSE_ALL = COMPOSE_PROFILES=agents docker compose
 # kubeconfigs that act as namespaced ServiceAccounts (deploy/seed/90-restricted-rbac.yaml).
 SA_KUBECONFIG := deploy/fixtures/kubeconfig-sa.sh $(KUBECONFIG_PATH) k4s-demo
 
-.PHONY: k3s-check-profile k3s-ready kubeconfig-restricted kubeconfig-narrow kubeconfig-plugin kubeconfig-plugin-tty
+KIND_CLUSTER    ?= k4s
+KIND_KUBECONFIG := $(CURDIR)/.kube/kind
+
+.PHONY: k3s-check-profile k3s-ready kubeconfig-restricted kubeconfig-narrow kubeconfig-plugin kubeconfig-plugin-tty kind-up kind-down
 
 k3s-check-profile:
 	@if [ -n "$(k3s_unknown)" ]; then \
@@ -184,6 +187,25 @@ demo: ## bring up k3s, apply demo workloads, wait for every component
 	@$(MAKE) --no-print-directory seed
 	@$(MAKE) --no-print-directory k3s-ready
 	@echo "demo cluster ready — export KUBECONFIG=$(KUBECONFIG_PATH)"
+
+kind-up: ## optional vanilla cluster via kind, kubeconfig in .kube/kind
+	@if ! command -v kind >/dev/null; then \
+		echo "kind not on PATH, skipping (https://kind.sigs.k8s.io)"; exit 0; \
+	fi; \
+	mkdir -p .kube; \
+	if kind get clusters 2>/dev/null | grep -qx '$(KIND_CLUSTER)'; then \
+		kind export kubeconfig --name '$(KIND_CLUSTER)' --kubeconfig '$(KIND_KUBECONFIG)'; \
+	else \
+		kind create cluster --name '$(KIND_CLUSTER)' --kubeconfig '$(KIND_KUBECONFIG)' --wait 180s; \
+	fi && \
+	chmod 600 '$(KIND_KUBECONFIG)' && \
+	echo "  export KUBECONFIG=$(KIND_KUBECONFIG)" && \
+	echo "  seed it: make seed KUBECONFIG_PATH=$(KIND_KUBECONFIG)"
+
+kind-down: ## delete the kind cluster
+	@if ! command -v kind >/dev/null; then echo "kind not on PATH, nothing to do"; exit 0; fi; \
+	kind delete cluster --name '$(KIND_CLUSTER)'
+	@rm -f '$(KIND_KUBECONFIG)'
 
 gif: build ## record docs/demo.gif via VHS (requires: brew install vhs ttyd ffmpeg)
 	@command -v vhs >/dev/null || { echo "vhs not on PATH — brew install vhs ttyd ffmpeg"; exit 1; }
