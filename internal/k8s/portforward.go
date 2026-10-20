@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
@@ -232,38 +234,43 @@ func CheckLocalPortAvailable(port uint16) error {
 	return ln.Close()
 }
 
-// ResolveServiceToPod walks Service → label selector → first ready Pod and
-// returns its name. It also returns the targetPort the service exposes so
-// the caller does not have to ask separately.
-//
-// When portName is empty the first declared port is used — matching
-// `kubectl port-forward service/X local:remote` ergonomics.
-func (c *Client) ResolveServiceToPod(ctx context.Context, namespace, serviceName, portName string) (string, uint16, error) {
+// ResolveServiceToPod picks the first ready pod behind the Service and
+// translates svcPort to the container port on that pod, the way
+// `kubectl port-forward svc/X LOCAL:REMOTE` does: REMOTE is a Service port,
+// and its targetPort (a number, or a name looked up in the pod's
+// containers) is where the tunnel lands. svcPort 0 selects the first
+// declared port.
+func (c *Client) ResolveServiceToPod(ctx context.Context, namespace, serviceName string, svcPort int32) (*corev1.Pod, int32, error) {
 	svc, err := c.Clientset.CoreV1().Services(namespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err != nil {
-		return "", 0, fmt.Errorf("get service: %w", err)
+		return nil, 0, fmt.Errorf("get service: %w", err)
 	}
 	if len(svc.Spec.Selector) == 0 {
 		// Headless or selector-less services have no backing pods we
 		// can resolve. The user has to forward to a pod directly.
-		return "", 0, fmt.Errorf("service %q has no selector; forward to a pod instead", serviceName)
+		return nil, 0, fmt.Errorf("service %q has no selector; forward to a pod instead", serviceName)
 	}
 
-	targetPort, err := resolveServicePort(svc, portName)
+	port, err := pickServicePort(svc, svcPort)
 	if err != nil {
-		return "", 0, err
+		return nil, 0, err
 	}
 
 	selector := labels.SelectorFromSet(svc.Spec.Selector).String()
 	pods, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
-		return "", 0, fmt.Errorf("list pods: %w", err)
+		return nil, 0, fmt.Errorf("list pods: %w", err)
 	}
-	pod, ok := firstReadyPod(pods.Items)
-	if !ok {
-		return "", 0, fmt.Errorf("no ready pod backs service %q", serviceName)
+	pod := firstReadyPod(pods.Items)
+	if pod == nil {
+		return nil, 0, fmt.Errorf("no ready pod backs service %q", serviceName)
 	}
-	return pod, targetPort, nil
+
+	target, err := resolveTargetPort(port, pod)
+	if err != nil {
+		return nil, 0, err
+	}
+	return pod, target, nil
 }
 
 // ResolveDeploymentToPod returns the first ready pod produced by the
@@ -289,65 +296,80 @@ func (c *Client) ResolveDeploymentToPod(ctx context.Context, namespace, deployNa
 	if err != nil {
 		return "", fmt.Errorf("list pods: %w", err)
 	}
-	pod, ok := firstReadyPod(pods.Items)
-	if !ok {
+	pod := firstReadyPod(pods.Items)
+	if pod == nil {
 		return "", fmt.Errorf("no ready pod for deployment %q", deployName)
 	}
-	return pod, nil
+	return pod.Name, nil
 }
 
-// resolveServicePort picks a port from the service spec: by name if the
-// caller supplied one, otherwise the first declared port. Named ports
-// resolve to their underlying targetPort number; raw numbers pass
-// through. We intentionally do *not* support string targetPorts that
-// resolve to container portNames — that would require a second lookup
-// to the pod template, and the common case is numeric targetPorts.
-func resolveServicePort(svc *corev1.Service, portName string) (uint16, error) {
+// pickServicePort returns the ServicePort whose Port equals port, or the
+// first declared one when port is 0. A missing port is an error that lists
+// what the Service does expose, so a mistyped REMOTE is easy to fix.
+func pickServicePort(svc *corev1.Service, port int32) (corev1.ServicePort, error) {
 	if len(svc.Spec.Ports) == 0 {
-		return 0, fmt.Errorf("service %q exposes no ports", svc.Name)
+		return corev1.ServicePort{}, fmt.Errorf("service %q exposes no ports", svc.Name)
 	}
-	pick := svc.Spec.Ports[0]
-	if portName != "" {
-		found := false
-		for _, p := range svc.Spec.Ports {
-			if p.Name == portName {
-				pick = p
-				found = true
-				break
-			}
+	if port == 0 {
+		return svc.Spec.Ports[0], nil
+	}
+	declared := make([]string, 0, len(svc.Spec.Ports))
+	for _, p := range svc.Spec.Ports {
+		if p.Port == port {
+			return p, nil
 		}
-		if !found {
-			return 0, fmt.Errorf("service %q has no port named %q", svc.Name, portName)
-		}
+		declared = append(declared, strconv.Itoa(int(p.Port)))
 	}
-	if pick.TargetPort.IntValue() > 0 {
-		return uint16(pick.TargetPort.IntValue()), nil //nolint:gosec // value clamped by k8s API to int32, range fits
-	}
-	if pick.Port > 0 {
-		return uint16(pick.Port), nil //nolint:gosec // Service.Port is int32 in [0, 65535]
-	}
-	return 0, fmt.Errorf("service %q port %q has no usable number", svc.Name, pick.Name)
+	return corev1.ServicePort{}, fmt.Errorf("service %q has no port %d (ports: %s)",
+		svc.Name, port, strings.Join(declared, ", "))
 }
 
-// firstReadyPod walks pods in declaration order and returns the first
-// that is Running + Ready. Caller-visible side-effect: forwards prefer
-// the alphabetically first replica that's healthy — deterministic and
-// matches kubectl's behaviour.
-func firstReadyPod(items []corev1.Pod) (string, bool) {
-	for _, p := range items {
-		if p.Status.Phase != corev1.PodRunning {
-			continue
-		}
-		ready := false
-		for _, c := range p.Status.Conditions {
-			if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
-				ready = true
-				break
+// resolveTargetPort maps a ServicePort to the container port on pod: a
+// numeric targetPort as is, a named one through the pod's container ports,
+// and an omitted one to the Service port itself (what the API defaults it to).
+func resolveTargetPort(port corev1.ServicePort, pod *corev1.Pod) (int32, error) {
+	target := port.TargetPort
+	if target.Type == intstr.String && target.StrVal != "" {
+		return containerPortByName(pod, target.StrVal)
+	}
+	if target.Type == intstr.Int && target.IntVal > 0 {
+		return target.IntVal, nil
+	}
+	return port.Port, nil
+}
+
+// containerPortByName finds the named port across the pod's containers.
+// Like kubectl, it does not search init containers.
+func containerPortByName(pod *corev1.Pod, name string) (int32, error) {
+	for _, c := range pod.Spec.Containers {
+		for _, p := range c.Ports {
+			if p.Name == name {
+				return p.ContainerPort, nil
 			}
 		}
-		if ready {
-			return p.Name, true
+	}
+	return 0, fmt.Errorf("pod %q has no container port named %q", pod.Name, name)
+}
+
+// firstReadyPod walks pods in list order and returns the first that is
+// Running + Ready, or nil, so forwards land on a deterministic replica.
+func firstReadyPod(items []corev1.Pod) *corev1.Pod {
+	for i := range items {
+		if isRunningAndReady(&items[i]) {
+			return &items[i]
 		}
 	}
-	return "", false
+	return nil
+}
+
+func isRunningAndReady(p *corev1.Pod) bool {
+	if p.Status.Phase != corev1.PodRunning {
+		return false
+	}
+	for _, c := range p.Status.Conditions {
+		if c.Type == corev1.PodReady {
+			return c.Status == corev1.ConditionTrue
+		}
+	}
+	return false
 }

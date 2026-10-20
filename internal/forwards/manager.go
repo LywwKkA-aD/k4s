@@ -230,9 +230,6 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 		m.markError(id, fmt.Errorf("resolve target: %w", err))
 		return err
 	}
-	if remotePort == 0 {
-		remotePort = fwd.RemotePort
-	}
 
 	sess, err := m.client.StartPodPortForward(ctx, fwd.Namespace, pod, fwd.LocalPort, remotePort)
 	if err != nil {
@@ -503,20 +500,39 @@ func (m *Manager) Remove(id string) error {
 	return nil
 }
 
-// resolveTarget turns the kind+name into a concrete pod name and the remote
-// port the tunnel should target. Pod kinds and deployments use the persisted
-// RemotePort; services use the Service's TargetPort so the user can forward
-// to the service port and still reach the pod's container port.
+// resolveTarget turns the kind+name into a concrete pod name and the
+// container port the tunnel should target. Pods and deployments use the
+// persisted RemotePort as is. For services RemotePort is a Service port, as
+// in `kubectl port-forward svc/X LOCAL:REMOTE`, and is translated to that
+// port's targetPort on the chosen pod.
 func (m *Manager) resolveTarget(ctx context.Context, f Forward) (string, uint16, error) {
 	switch f.Kind {
 	case "pod":
-		return f.Name, 0, nil
+		return f.Name, f.RemotePort, nil
 	case "service":
-		pod, targetPort, err := m.client.ResolveServiceToPod(ctx, f.Namespace, f.Name, "")
-		return pod, targetPort, err
+		pod, target, err := m.client.ResolveServiceToPod(ctx, f.Namespace, f.Name, int32(f.RemotePort))
+		if err != nil {
+			return "", 0, err
+		}
+		port, err := portNumber(target)
+		if err != nil {
+			return "", 0, fmt.Errorf("service %q port %d on pod %q: %w", f.Name, f.RemotePort, pod.Name, err)
+		}
+		return pod.Name, port, nil
 	case "deployment":
 		pod, err := m.client.ResolveDeploymentToPod(ctx, f.Namespace, f.Name)
-		return pod, 0, err
+		if err != nil {
+			return "", 0, err
+		}
+		return pod, f.RemotePort, nil
 	}
 	return "", 0, fmt.Errorf("unknown kind %q", f.Kind)
+}
+
+// portNumber narrows a Kubernetes int32 port to a TCP port number.
+func portNumber(p int32) (uint16, error) {
+	if p < 1 || p > 65535 {
+		return 0, fmt.Errorf("port %d is outside 1-65535", p)
+	}
+	return uint16(p), nil
 }
