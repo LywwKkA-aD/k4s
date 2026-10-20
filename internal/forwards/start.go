@@ -52,7 +52,8 @@ func (m *Manager) beginAttempt(id string) (Forward, uint64, error) {
 	}
 	a.Status = StatusStarting
 	a.Err = nil
-	a.attempt++
+	m.attempts++
+	a.attempt = m.attempts
 	m.notify()
 	return a.Forward, a.attempt, nil
 }

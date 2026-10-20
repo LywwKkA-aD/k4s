@@ -73,6 +73,10 @@ type Manager struct {
 	statePath string
 	state     State
 	active    map[string]*Active
+	// attempts numbers every Start across the Manager's life, so an ID that
+	// is removed and registered again never reuses an attempt a parked
+	// Start still holds.
+	attempts uint64
 	// changeCh is closed and re-created on every mutation so a single
 	// UI goroutine can `select` on it and refresh. Channels feel more
 	// idiomatic here than condvars or callbacks.
