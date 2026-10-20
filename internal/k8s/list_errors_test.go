@@ -118,7 +118,10 @@ func TestListsWithRevokedCredentials(t *testing.T) {
 	}
 }
 
-func TestListsSlowerThanDeadline(t *testing.T) {
+// The fake clientset drops the context, so this only proves the list
+// wrappers keep a deadline cause reachable through %w; real deadlines are
+// covered over REST with k8stest.Hang().
+func TestListErrorsKeepDeadlineCause(t *testing.T) {
 	t.Parallel()
 
 	for _, l := range listers() {

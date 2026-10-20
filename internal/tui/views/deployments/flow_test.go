@@ -165,7 +165,7 @@ func TestViewStates(t *testing.T) {
 		{
 			name: "fetch error",
 			m:    func(t *testing.T) deployments.Model { return mounted(t, tuitest.NewFakeClient(t, failing), "") },
-			want: []string{"deployments unavailable: deployments.apps is forbidden"},
+			want: []string{"deployments unavailable: list deployments: deployments.apps is forbidden"},
 		},
 	}
 	for _, tc := range cases {
