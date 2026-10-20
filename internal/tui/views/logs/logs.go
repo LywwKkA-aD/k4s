@@ -693,7 +693,7 @@ func formatRawLine(ln logLine, multi, full bool, colour lipgloss.Color) string {
 		return ln.text
 	}
 
-	style := lipgloss.NewStyle().Foreground(colour)
+	style := lipgloss.NewStyle().Foreground(styles.PodColor(colour))
 	if full {
 		return style.Bold(true).Render("["+ln.pod+"]") + " " + ln.text
 	}
@@ -704,18 +704,8 @@ func formatRawLine(ln logLine, multi, full bool, colour lipgloss.Color) string {
 // colour wheel as possible. Pods are coloured by position in the session's
 // pod list, so the pods you actually compare side by side never share a hue
 // family (the old FNV hash could hand out e.g. yellow and orange together).
-var podPalette = []lipgloss.Color{
-	"#7D56F4", // purple
-	"#04B575", // green
-	"#F2A65A", // orange
-	"#56B4D4", // blue
-	"#FF6B9D", // pink
-	"#A3BE8C", // lime
-	"#E5C07B", // yellow
-	"#E06C75", // red
-	"#3FC1C9", // cyan
-	"#C678DD", // magenta
-}
+// The entries are IDs; formatRawLine resolves them for the active theme.
+var podPalette = styles.PodPalette()
 
 // assignPodColors deals palette colours to pods round-robin by list position.
 func assignPodColors(pods []string) map[string]lipgloss.Color {
