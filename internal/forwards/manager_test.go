@@ -2,6 +2,7 @@ package forwards
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,7 +30,8 @@ func readyPod(name string, labels map[string]string, ports ...corev1.ContainerPo
 
 // resolveFixture is a Traefik-shaped Service (two ports, named targetPorts)
 // plus a Deployment, both backed by the same ready pod.
-func resolveFixture() *Manager {
+func resolveFixture(t *testing.T) *Manager {
+	t.Helper()
 	labels := map[string]string{"app": "named-port"}
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "named-port", Namespace: resolveNS},
@@ -50,7 +52,11 @@ func resolveFixture() *Manager {
 		corev1.ContainerPort{Name: "websecure", ContainerPort: 9443},
 	)
 	client := &k8s.Client{Clientset: fake.NewSimpleClientset(svc, dep, pod)}
-	return &Manager{client: client, active: map[string]*Active{}, changeCh: make(chan struct{})}
+	m, err := newManager(deps{tunnel: client, statePath: filepath.Join(t.TempDir(), "portforwards.json")})
+	if err != nil {
+		t.Fatalf("newManager: %v", err)
+	}
+	return m
 }
 
 func TestResolveTargetHonoursRemotePort(t *testing.T) {
@@ -96,7 +102,7 @@ func TestResolveTargetHonoursRemotePort(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := resolveFixture()
+			m := resolveFixture(t)
 			fwd := tt.fwd
 			fwd.Namespace = resolveNS
 			pod, port, err := m.resolveTarget(context.Background(), fwd)

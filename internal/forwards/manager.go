@@ -61,11 +61,13 @@ type Active struct {
 // struct is value-copied) so the UI never holds a pointer into the
 // internal map. Writes happen under Manager.mu.
 type Manager struct {
-	mu            sync.Mutex
-	client        *k8s.Client
-	contextFilter string
-	state         State
-	active        map[string]*Active
+	mu        sync.Mutex
+	tunnel    tunneler
+	cluster   cluster
+	probePort func(port uint16) error
+	statePath string
+	state     State
+	active    map[string]*Active
 	// changeCh is closed and re-created on every mutation so a single
 	// UI goroutine can `select` on it and refresh. Channels feel more
 	// idiomatic here than condvars or callbacks.
@@ -76,20 +78,36 @@ type Manager struct {
 // known intent starts in StatusStopped — we do not auto-revive forwards
 // on launch, the user explicitly opts in via the forwards view.
 func NewManager(client *k8s.Client) (*Manager, error) {
-	state, err := Load()
+	path, err := statePath()
 	if err != nil {
 		return nil, fmt.Errorf("load state: %w", err)
 	}
-	ctxName := ""
+	d := deps{
+		cluster:   clusterOf(client),
+		probePort: k8s.CheckLocalPortAvailable,
+		statePath: path,
+	}
+	// A nil *k8s.Client stored in the interface would not compare equal
+	// to nil, and Start relies on that check.
 	if client != nil {
-		ctxName = client.Context
+		d.tunnel = client
+	}
+	return newManager(d)
+}
+
+func newManager(d deps) (*Manager, error) {
+	state, err := loadFrom(d.statePath)
+	if err != nil {
+		return nil, fmt.Errorf("load state: %w", err)
 	}
 	m := &Manager{
-		client:        client,
-		contextFilter: ctxName,
-		state:         state,
-		active:        make(map[string]*Active),
-		changeCh:      make(chan struct{}),
+		tunnel:    d.tunnel,
+		cluster:   d.cluster,
+		probePort: d.probePort,
+		statePath: d.statePath,
+		state:     state,
+		active:    make(map[string]*Active),
+		changeCh:  make(chan struct{}),
 	}
 	for _, f := range state.Forwards {
 		m.active[f.ID] = &Active{Forward: f, Status: StatusStopped}
@@ -142,7 +160,7 @@ func (m *Manager) List() []Active {
 }
 
 func (m *Manager) matchesContext(ctx string) bool {
-	return m.contextFilter == "" || ctx == "" || ctx == m.contextFilter
+	return m.cluster.contextName == "" || ctx == "" || ctx == m.cluster.contextName
 }
 
 // State returns the persisted intent. Useful for restore prompts at
@@ -179,7 +197,7 @@ func (m *Manager) Register(f Forward) error {
 	} else {
 		m.active[f.ID] = &Active{Forward: f, Status: StatusStopped}
 	}
-	if err := m.state.Save(); err != nil {
+	if err := m.state.saveTo(m.statePath); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
 	m.notify()
@@ -257,7 +275,7 @@ func (m *Manager) Remove(id string) error {
 	defer m.mu.Unlock()
 	delete(m.active, id)
 	m.state = m.state.Remove(id)
-	if err := m.state.Save(); err != nil {
+	if err := m.state.saveTo(m.statePath); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
 	m.notify()
