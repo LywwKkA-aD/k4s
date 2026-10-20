@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -42,7 +44,7 @@ func TestViewFillsTerminal(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		m := New(nil)
+		m := New(nil, nil)
 		upd, _ := m.Update(tea.WindowSizeMsg{Width: c.w, Height: c.h})
 		m = upd.(Model)
 
@@ -61,7 +63,7 @@ func TestViewFillsTerminal(t *testing.T) {
 func TestBodyPadsToBodyHeight(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil)
+	m := New(nil, nil)
 	upd, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
 	m = upd.(Model)
 
@@ -82,7 +84,7 @@ func TestBodyPadsToBodyHeight(t *testing.T) {
 func TestNavigationHistoryAndGoHome(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil)
+	m := New(nil, nil)
 	if got := m.current.Title(); got != viewDashboard {
 		t.Fatalf("initial view = %q, want %q", got, viewDashboard)
 	}
@@ -139,7 +141,7 @@ func TestNavigationHistoryAndGoHome(t *testing.T) {
 func TestGoHomeClearsHistory(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil)
+	m := New(nil, nil)
 	m = m.switchTo(viewNamespaces)
 	m = m.switchTo(viewPods)
 	if len(m.history) != 2 {
@@ -161,7 +163,7 @@ func TestGoHomeClearsHistory(t *testing.T) {
 func TestRelayoutPreservesTerminalHeight(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil)
+	m := New(nil, nil)
 	upd, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
 	m = upd.(Model)
 	if m.height != 50 {
@@ -182,10 +184,29 @@ func TestRelayoutPreservesTerminalHeight(t *testing.T) {
 	}
 }
 
+// TestStartupLoadErrorSurvivesNavigation asserts the dashboard keeps showing
+// the kubeconfig load error after the user wanders off and comes back home.
+func TestStartupLoadErrorSurvivesNavigation(t *testing.T) {
+	t.Parallel()
+
+	loadErr := errors.New("load kubeconfig: stat /nowhere/config: no such file or directory")
+	m := New(nil, loadErr)
+	upd, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
+	m = upd.(Model)
+
+	if out := m.View(); !strings.Contains(out, "/nowhere/config") {
+		t.Fatalf("landing view does not show the load error:\n%s", out)
+	}
+	m = m.switchTo(viewPods).goHome()
+	if out := m.View(); !strings.Contains(out, "/nowhere/config") {
+		t.Fatalf("dashboard lost the load error after navigation:\n%s", out)
+	}
+}
+
 func TestSwitchToSamePageDoesNotPushHistory(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil)
+	m := New(nil, nil)
 	// dashboard -> dashboard should be a no-op for history.
 	m = m.switchTo(viewDashboard)
 	if len(m.history) != 0 {
@@ -199,7 +220,7 @@ func TestSwitchToSamePageDoesNotPushHistory(t *testing.T) {
 func TestHelpPopupOpensAndCloses(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil)
+	m := New(nil, nil)
 	upd, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = upd.(Model)
 
@@ -296,7 +317,7 @@ func TestForwardsForContext(t *testing.T) {
 func TestCmdErrorAutoClearsAfterTTL(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil)
+	m := New(nil, nil)
 	m, cmd := m.setCmdError("exec: boom")
 	if m.cmdError == "" {
 		t.Fatal("setCmdError did not record the error")

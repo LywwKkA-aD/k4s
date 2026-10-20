@@ -4,6 +4,7 @@ package dashboard
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -38,6 +39,10 @@ type Model struct {
 	busy   bool
 	gen    int64
 
+	// loadErr and home explain a nil client; see disconnectedView.
+	loadErr error
+	home    string
+
 	watchEnabled bool
 
 	refreshKey key.Binding
@@ -50,10 +55,19 @@ type statsMsg struct {
 	err   error
 }
 
-// New constructs the dashboard view.
-func New(client *k8s.Client) Model {
+// New constructs the dashboard view. loadErr is the kubeconfig load failure
+// that left client nil; it is rendered (with $HOME shortened to ~) in place
+// of the cluster counters.
+func New(client *k8s.Client, loadErr error) Model {
+	home, _ := os.UserHomeDir()
+	return newModel(client, loadErr, home)
+}
+
+func newModel(client *k8s.Client, loadErr error, home string) Model {
 	return Model{
 		client:       client,
+		loadErr:      loadErr,
+		home:         home,
 		watchEnabled: true,
 		gen:          nextGen(),
 		refreshKey: key.NewBinding(
@@ -125,7 +139,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the dashboard body (header / footer come from the root).
 func (m Model) View() string {
 	if m.client == nil {
-		return styles.Warn.Render("no kubeconfig — set KUBECONFIG or run `make k3s-up`")
+		return disconnectedView(m.loadErr, m.home)
 	}
 	if !m.loaded {
 		return styles.Hint.Render("loading cluster stats…")
