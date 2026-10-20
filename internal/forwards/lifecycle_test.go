@@ -120,6 +120,7 @@ func TestStartTimesOutWaitingForReady(t *testing.T) {
 func TestStartFailsBeforeTunnel(t *testing.T) {
 	t.Parallel()
 	busy := errors.New("listen tcp 127.0.0.1:18080: bind: address already in use")
+	privileged := errors.New("listen tcp 127.0.0.1:18080: bind: permission denied")
 	tests := []struct {
 		name       string
 		kind       string
@@ -130,7 +131,8 @@ func TestStartFailsBeforeTunnel(t *testing.T) {
 		wantErr    string
 	}{
 		{name: "no kubernetes client", kind: "pod", noClient: true, wantErr: "no kubernetes client"},
-		{name: "local port busy", kind: "pod", probeErr: busy, wantErr: "local port 18080 already in use"},
+		{name: "local port busy", kind: "pod", probeErr: busy, wantErr: "local port 18080 already in use — pick another"},
+		{name: "local port privileged", kind: "pod", probeErr: privileged, wantErr: "permission denied binding local port 18080 (ports < 1024 need root — try 26080)"},
 		{name: "target does not resolve", kind: "deployment", resolveErr: errors.New("no ready pod"), wantErr: "resolve target: no ready pod"},
 		{name: "tunnel does not open", kind: "pod", startErr: errors.New("no rest config"), wantErr: "start forward: no rest config"},
 	}
