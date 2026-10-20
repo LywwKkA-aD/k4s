@@ -111,14 +111,15 @@ func Collect(t testing.TB, cmd tea.Cmd) []tea.Msg {
 	return runner{t: t}.collect(cmd)
 }
 
-// settle drains queue through m until no message is left. The bool reports
-// that a tea.QuitMsg was reached.
-func settle[M tea.Model](r runner, m M, queue []tea.Msg) (M, []tea.Msg, bool) {
+// settle feeds pending through m, then everything the resulting Cmds
+// produce, until nothing is left. The bool reports that a tea.QuitMsg was
+// reached.
+func settle[M tea.Model](r runner, m M, pending []tea.Msg) (M, []tea.Msg, bool) {
 	r.t.Helper()
+	queue := slices.Clone(pending)
 	var emitted []tea.Msg
-	for fed := 0; len(queue) > 0; fed++ {
-		msg := queue[0]
-		queue = queue[1:]
+	for fed := 0; fed < len(queue); fed++ {
+		msg := queue[fed]
 		if _, quit := msg.(tea.QuitMsg); quit {
 			return m, emitted, true
 		}
