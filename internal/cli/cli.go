@@ -51,8 +51,6 @@ func Parse(args []string, stdout, stderr io.Writer) (proceed bool, code int) {
 	case err != nil:
 		// The flag package has already written the error line itself.
 		w, msg, code = stderr, "\n"+usage, ExitUsage
-	case fs.NArg() > 0:
-		w, msg, code = stderr, fmt.Sprintf("unexpected argument %q\n\n%s", fs.Arg(0), usage), ExitUsage
 	case *showVersion:
 		w, msg, code = stdout, versionLine()+"\n", 0
 	default:

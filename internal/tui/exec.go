@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -92,14 +93,22 @@ func execEnv(base, paths []string) []string {
 	if len(paths) == 0 {
 		return nil
 	}
-	prefix := kubeconfigEV + "="
-	out := make([]string, 0, len(base)+1)
-	for _, kv := range base {
-		if !strings.HasPrefix(kv, prefix) {
-			out = append(out, kv)
+	out := withoutEnvKey(base, kubeconfigEV, runtime.GOOS == "windows")
+	return append(out, kubeconfigEV+"="+strings.Join(paths, string(os.PathListSeparator)))
+}
+
+// withoutEnvKey returns a copy of env without key. Windows environment
+// names are case-insensitive, so foldCase drops "Kubeconfig=" there too.
+func withoutEnvKey(env []string, key string, foldCase bool) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		if name == key || (foldCase && strings.EqualFold(name, key)) {
+			continue
 		}
+		out = append(out, kv)
 	}
-	return append(out, prefix+strings.Join(paths, string(os.PathListSeparator)))
+	return out
 }
 
 func kubeconfigPaths(c *k8s.Client) []string {

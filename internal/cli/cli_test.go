@@ -38,12 +38,8 @@ func TestParse(t *testing.T) {
 			wantCode:   ExitUsage,
 			wantStderr: append([]string{"flag provided but not defined: -bogus"}, usageParts...),
 		},
-		{
-			name:       "positional argument",
-			args:       []string{"pods"},
-			wantCode:   ExitUsage,
-			wantStderr: append([]string{`unexpected argument "pods"`}, usageParts...),
-		},
+		// Earlier releases ignored stray arguments; a patch release keeps that.
+		{name: "positional argument is ignored", args: []string{"pods"}, wantProceed: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

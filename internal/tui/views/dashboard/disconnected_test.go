@@ -119,3 +119,26 @@ func TestTildeHome(t *testing.T) {
 		})
 	}
 }
+
+func TestOneLine(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("x", maxReasonLen+50)
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "short single line", in: "context \"a\" not found", want: "context \"a\" not found"},
+		{name: "newlines and runs of space collapse", in: "yaml: line 3:\n\t  mapping values\nnot allowed", want: "yaml: line 3: mapping values not allowed"},
+		{name: "long text is capped", in: long, want: strings.Repeat("x", maxReasonLen) + "…"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := oneLine(tc.in); got != tc.want {
+				t.Fatalf("oneLine(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
