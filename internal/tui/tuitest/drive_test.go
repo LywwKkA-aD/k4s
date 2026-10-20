@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 // label is the only message the probe model reacts to.
@@ -256,6 +257,32 @@ func TestCollectAndMessageHelpers(t *testing.T) {
 	}
 	if got := tuitest.Collect(t, nil); got != nil {
 		t.Errorf("Collect(nil) = %v", got)
+	}
+}
+
+func TestRequestsKeepsCrossViewMessagesOnly(t *testing.T) {
+	t.Parallel()
+
+	describe := views.DescribeRequestMsg{Kind: "pod", Namespace: "demo", Name: "web-1"}
+	got := tuitest.Requests([]tea.Msg{label("private"), describe, nil, views.NamespaceSelectedMsg{}})
+	if len(got) != 2 || got[0] != describe {
+		t.Errorf("Requests = %s", tuitest.Describe(got))
+	}
+}
+
+func TestMountSizesThenStarts(t *testing.T) {
+	t.Parallel()
+
+	p := probe{react: reactions(map[label]tea.Cmd{"init": emit("ready")})}
+	m, out := tuitest.Mount(t, p, 80, 24)
+	if got := labels(out); !slices.Equal(got, []label{"init", "ready"}) {
+		t.Errorf("Mount emitted %v", got)
+	}
+	if m.View() != "init,ready" {
+		t.Errorf("model saw %q", m.View())
+	}
+	if n := len(tuitest.FilterBy("web")); n != 3 {
+		t.Errorf("FilterBy returned %d keys, want open, text, commit", n)
 	}
 }
 

@@ -64,12 +64,41 @@ func WaitGoroutines(t testing.TB, want int, timeout time.Duration, pkgs ...strin
 	}
 }
 
+// Parked counts goroutines that are blocked (neither running nor runnable)
+// with a frame in pkg, for example "internal/tui/views/forwards.": a
+// stream or watcher waiting on a channel. Test goroutines (running a
+// test, or parked in t.Parallel) never count. Matching on the package
+// rather than a function name survives renames and inlining.
+func Parked(pkg string) int {
+	n := 0
+	for _, s := range allStacks() {
+		header, _, _ := strings.Cut(s, "\n")
+		switch {
+		case strings.Contains(header, "[running]"), strings.Contains(header, "[runnable]"):
+		case strings.Contains(s, "testing.tRunner("):
+		case strings.Contains(s, pkg):
+			n++
+		}
+	}
+	return n
+}
+
+func allStacks() []string {
+	size := 1 << 20
+	for {
+		buf := make([]byte, size)
+		n := runtime.Stack(buf, true)
+		if n < size {
+			return strings.Split(string(buf[:n]), "\n\n")
+		}
+		size *= 2
+	}
+}
+
 // Stacks returns the stacks of every goroutine whose frames mention one of
 // pkgs, or of all goroutines when pkgs is empty.
 func Stacks(pkgs ...string) string {
-	buf := make([]byte, 1<<20)
-	buf = buf[:runtime.Stack(buf, true)]
-	stacks := strings.Split(string(buf), "\n\n")
+	stacks := allStacks()
 	if len(pkgs) == 0 {
 		return strings.Join(stacks, "\n\n")
 	}

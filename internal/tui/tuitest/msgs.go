@@ -40,6 +40,22 @@ func Contains(msgs []tea.Msg, want tea.Msg) bool {
 	return false
 }
 
+// viewsPkg is where the cross-view request messages live.
+const viewsPkg = "github.com/LywwKkA-aD/k4s/internal/tui/views"
+
+// Requests returns the cross-view messages in msgs (NamespaceSelectedMsg,
+// DescribeRequestMsg, LogsRequestMsg, ...): what a view asks the root to
+// do, without the view's private bookkeeping messages.
+func Requests(msgs []tea.Msg) []tea.Msg {
+	var out []tea.Msg
+	for _, m := range msgs {
+		if t := reflect.TypeOf(m); t != nil && t.PkgPath() == viewsPkg {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // Describe lists msgs as "%T %+v" lines for failure messages.
 func Describe(msgs []tea.Msg) string {
 	if len(msgs) == 0 {
