@@ -5,15 +5,19 @@
 //
 // Lifecycle:
 //
-//	'/' (in the host view)         → Open() — focuses the input
-//	keystrokes inside the bar      → Update() — query changes live
-//	Enter (with non-empty value)   → Commit() — keeps query, blurs input
-//	Esc (or '/' on empty value)    → Close()  — clears query
+//	'/' (in the host view)      → Open()   focuses the input, prefilled with the current query
+//	keystrokes inside the bar   → Update() query changes live
+//	Enter                       → Commit() keeps the query and blurs the input
+//	Enter on an empty value     → Close()  via Commit
+//	Esc                         → Close()  clears the query
 //
-// Hosts call Active to decide whether to forward keys to the filter or
-// process them as their own bindings, and Query to know what to match
-// against. Match is a small convenience that ANDs the query as a single
-// case-insensitive substring across the supplied fields.
+// While the input is focused '/' is an ordinary character. A committed query
+// is cleared by reopening the bar with '/' and pressing Esc.
+//
+// Hosts call IsOpen to decide whether to forward keys to the filter or
+// process them as their own bindings, and Active to decide whether to
+// filter rows and draw the bar. Match reports whether the query is a
+// case-insensitive substring of any of the supplied fields.
 package filter
 
 import (
@@ -73,8 +77,8 @@ func (m Model) Close() Model {
 	return m
 }
 
-// Commit blurs the input but keeps the query so it remains active until the
-// user explicitly clears it with Esc / '/'.
+// Commit blurs the input but keeps the trimmed query, so rows stay filtered
+// after the bar closes. An empty query closes the filter instead.
 func (m Model) Commit() Model {
 	m.query = strings.TrimSpace(m.input.Value())
 	if m.query == "" {
@@ -89,7 +93,8 @@ func (m Model) Commit() Model {
 // updated model, a Cmd from textinput, and a "consumed" flag the host uses
 // to decide whether to also let its own bindings run.
 //
-// The host is expected to gate this behind Open() returning true.
+// Hosts call it only while IsOpen reports true; on a closed filter it
+// changes nothing and reports the key as not consumed.
 func (m Model) Update(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	if !m.open {
 		return m, nil, false
@@ -111,13 +116,12 @@ func (m Model) Update(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 // place. Either way the host should be filtering rows.
 func (m Model) Active() bool { return m.open || m.query != "" }
 
-// Open reports whether the prompt is currently focused — host views use
-// this to know whether '/' should re-open or commit.
+// IsOpen reports whether the input is focused. Host views use it to route
+// every keystroke to Update instead of their own bindings.
 func (m Model) IsOpen() bool { return m.open }
 
-// Query returns the current substring filter (lower-case for callers'
-// convenience — Match handles case-insensitivity already, but exposing it
-// pre-lowered avoids surprises in any other downstream check).
+// Query returns the current query as typed, trimmed of surrounding
+// whitespace. Case is preserved; Match lowers both sides itself.
 func (m Model) Query() string { return m.query }
 
 // View renders the filter bar — empty when the filter is dormant so the
