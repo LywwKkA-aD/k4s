@@ -35,12 +35,12 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 	m.notify()
 	m.mu.Unlock()
 
-	if m.client == nil {
+	if m.tunnel == nil {
 		m.markError(id, errors.New("no kubernetes client"))
 		return errors.New("no kubernetes client")
 	}
 
-	if err := k8s.CheckLocalPortAvailable(fwd.LocalPort); err != nil {
+	if err := m.probePort(fwd.LocalPort); err != nil {
 		friendly := friendlyBindError(err, fwd.LocalPort)
 		m.markError(id, friendly)
 		return friendly
@@ -52,7 +52,7 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 		return err
 	}
 
-	sess, err := m.client.StartPodPortForward(ctx, fwd.Namespace, pod, fwd.LocalPort, remotePort)
+	sess, err := m.tunnel.StartPodPortForward(ctx, fwd.Namespace, pod, fwd.LocalPort, remotePort)
 	if err != nil {
 		m.markError(id, fmt.Errorf("start forward: %w", err))
 		return err
@@ -206,7 +206,7 @@ func (m *Manager) resolveTarget(ctx context.Context, f Forward) (string, uint16,
 	case "pod":
 		return f.Name, f.RemotePort, nil
 	case "service":
-		pod, target, err := m.client.ResolveServiceToPod(ctx, f.Namespace, f.Name, int32(f.RemotePort))
+		pod, target, err := m.tunnel.ResolveServiceToPod(ctx, f.Namespace, f.Name, int32(f.RemotePort))
 		if err != nil {
 			return "", 0, err
 		}
@@ -216,7 +216,7 @@ func (m *Manager) resolveTarget(ctx context.Context, f Forward) (string, uint16,
 		}
 		return pod.Name, port, nil
 	case "deployment":
-		pod, err := m.client.ResolveDeploymentToPod(ctx, f.Namespace, f.Name)
+		pod, err := m.tunnel.ResolveDeploymentToPod(ctx, f.Namespace, f.Name)
 		if err != nil {
 			return "", 0, err
 		}
