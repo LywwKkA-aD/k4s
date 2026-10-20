@@ -96,8 +96,9 @@ cover: ## print per-package test coverage, lowest last (profile: COVER_PROFILE)
 		$(COVER_PROFILE) | sort -k2,2nr -k1,1 | awk '{ printf "%-36s %7s%%\n", $$1, $$2 }'
 	@$(GO) tool cover -func=$(COVER_PROFILE) | awk 'END { printf "%-36s %8s\n", "total", $$NF }'
 
-ci: ## full quality gate: tidy-check + vet + lint + test + vuln
+ci: ## full quality gate: tidy-check + line cap + vet + lint + test + vuln
 	@$(MAKE) --no-print-directory tools-go-check
+	@$(MAKE) --no-print-directory lines
 	$(GO) mod tidy -diff
 	cd tools && $(GO) mod tidy -diff
 	$(GO) vet $(PKGS)
