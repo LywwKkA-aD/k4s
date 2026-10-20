@@ -66,7 +66,7 @@ func (m *Manager) openTunnel(ctx context.Context, fwd Forward) (*k8s.PortForward
 		return nil, errors.New("no kubernetes client")
 	}
 	if err := m.probePort(fwd.LocalPort); err != nil {
-		return nil, friendlyBindError(err, fwd.LocalPort)
+		return nil, errors.New(FriendlyBindError(err, fwd.LocalPort))
 	}
 	pod, remotePort, err := m.resolveTarget(ctx, fwd)
 	if err != nil {

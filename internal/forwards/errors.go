@@ -2,6 +2,7 @@ package forwards
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -38,16 +39,32 @@ func condense(s string) string {
 	return s
 }
 
-// friendlyBindError translates a raw net.Listen error into a one-liner
-// the user can act on. Falls through with a generic message when the
-// OS does not surface a recognised string.
-func friendlyBindError(err error, port uint16) error {
+// unprivilegedOffset moves a privileged port into the user range the way
+// people tend to by hand: 80 becomes 8080 and 443 becomes 8443.
+const unprivilegedOffset = 8000
+
+// FriendlyBindError translates a failed listen on local port into a
+// one-liner the user can act on: a privileged port gets a suggested
+// alternative, a busy one a hint to pick another. Unrecognised errors keep
+// their own text. A nil err yields "".
+func FriendlyBindError(err error, port uint16) string {
+	if err == nil {
+		return ""
+	}
 	s := err.Error()
 	switch {
 	case strings.Contains(s, "permission denied"):
-		return fmt.Errorf("permission denied binding local port %d (ports < 1024 need root)", port)
+		return fmt.Sprintf("permission denied binding local port %d (%s)", port, privilegedHint(port))
 	case strings.Contains(s, "address already in use"):
-		return fmt.Errorf("local port %d already in use", port)
+		return fmt.Sprintf("local port %d already in use — pick another", port)
 	}
-	return fmt.Errorf("cannot bind local port %d: %w", port, err)
+	return fmt.Sprintf("cannot bind local port %d: %v", port, err)
+}
+
+func privilegedHint(port uint16) string {
+	alt := int(port) + unprivilegedOffset
+	if alt > math.MaxUint16 {
+		return "ports < 1024 need root"
+	}
+	return fmt.Sprintf("ports < 1024 need root — try %d", alt)
 }
