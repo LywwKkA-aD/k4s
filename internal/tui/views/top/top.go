@@ -29,6 +29,14 @@ const (
 	watchInterval = 5 * time.Second
 )
 
+// viewGen numbers Model instances. Ticks and fetch replies carry the gen
+// they were scheduled under, and Update drops any from another instance.
+// The message type cannot do this: when the view is rebuilt (Esc back or a
+// repeated command) the old instance's pending tick reaches the new one,
+// where it would start a second refresh chain, and its fetch reply could
+// overwrite fresh rows.
+// Metric replies also carry the mode, so a reply for the mode the user
+// toggled away from is dropped as well.
 var viewGen atomic.Int64
 
 func nextGen() int64 { return viewGen.Add(1) }
@@ -41,6 +49,7 @@ const (
 	modeNodes
 )
 
+// tickMsg is the watch tick of the instance whose gen it carries.
 type tickMsg struct {
 	gen int64
 	t   time.Time
