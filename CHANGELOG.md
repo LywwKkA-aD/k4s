@@ -14,10 +14,13 @@ Planned as 1.1.5, a bug-fix release.
 - Nothing writes over the TUI any more. client-go (klog) errors and Kubernetes
   API warnings go to `$XDG_STATE_HOME/k4s/k4s.log` (default
   `~/.local/state/k4s/k4s.log`); on exit k4s prints how many messages were
-  logged and where.
+  logged and where. Credential plugin output (EKS, GKE, OIDC) is held in
+  memory while the TUI runs and printed after exit, never logged; contexts
+  that use such a plugin are contacted once before the TUI starts, so login
+  prompts appear on the plain terminal.
 - Readable colours on dark and light terminal themes. The background is
   detected at startup; `K4S_THEME=auto|dark|light|mono` overrides it and
-  `NO_COLOR` selects `mono`
+  `NO_COLOR` selects `mono` (bold, underline and reverse video, no colour)
   ([#3](https://github.com/LywwKkA-aD/k4s/issues/3)).
 - Service port-forward targets the Service port you typed instead of the
   Service's first port, and resolves a named `targetPort` against the pod's

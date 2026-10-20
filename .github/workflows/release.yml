@@ -31,6 +31,9 @@ jobs:
           # No cache restore: release binaries must not be built from a cache
           # that another workflow run could have written (cache poisoning).
           cache: false
+      # A tag can point at any commit; never publish one that fails the gate.
+      - name: make ci (tidy-check, vet, lint, race tests, govulncheck)
+        run: make ci
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
