@@ -100,12 +100,10 @@ traefik_ready() {
   return 1
 }
 
-lb_services_pending() {
-  kubectl get services -A -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.namespace}/{.metadata.name}={.status.loadBalancer.ingress[0].ip}{"\n"}{end}' | grep -q '=$'
-}
-
+# Fails when kubectl fails, so an API blip is never read as "all served".
 lb_services_served() {
-  ! lb_services_pending
+  out=$(kubectl get services -A -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.namespace}/{.metadata.name}={.status.loadBalancer.ingress[0].ip}{"\n"}{end}') || return 1
+  ! printf '%s\n' "$out" | grep -q '=$'
 }
 
 traefik_svclb_exists() {
