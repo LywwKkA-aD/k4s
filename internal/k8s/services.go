@@ -27,7 +27,7 @@ type Service struct {
 func (c *Client) ListServices(ctx context.Context, namespace string) ([]Service, error) {
 	list, err := c.Clientset.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list services: %w", err)
 	}
 	out := make([]Service, 0, len(list.Items))
 	now := time.Now()

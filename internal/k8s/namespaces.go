@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,7 +20,7 @@ type Namespace struct {
 func (c *Client) ListNamespaces(ctx context.Context) ([]Namespace, error) {
 	list, err := c.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list namespaces: %w", err)
 	}
 	out := make([]Namespace, 0, len(list.Items))
 	for _, ns := range list.Items {

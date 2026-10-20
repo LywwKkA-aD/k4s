@@ -24,7 +24,7 @@ type Deployment struct {
 func (c *Client) ListDeployments(ctx context.Context, namespace string) ([]Deployment, error) {
 	list, err := c.Clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list deployments: %w", err)
 	}
 	out := make([]Deployment, 0, len(list.Items))
 	now := time.Now()
