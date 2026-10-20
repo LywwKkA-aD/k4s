@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# Release binaries for k4s. Run by .github/workflows/release.yml on a v* tag;
+# `make snapshot` builds the same archives locally into dist/.
+version: 2
+
+project_name: k4s
+
+builds:
+  - id: k4s
+    main: ./cmd/k4s
+    binary: k4s
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # .Version has the leading v stripped; .Tag would stamp a snapshot with
+    # the previous release's tag.
+    ldflags:
+      - -s -w -X github.com/LywwKkA-aD/k4s/internal/version.Version=v{{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: k4s
+    ids: [k4s]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-SNAPSHOT-{{ .ShortCommit }}"
+
+# Release notes are written by hand on GitHub; GoReleaser only uploads assets.
+changelog:
+  disable: true
+
+release:
+  mode: keep-existing
+  replace_existing_artifacts: true
