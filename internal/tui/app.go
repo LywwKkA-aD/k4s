@@ -5,6 +5,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -899,12 +900,14 @@ func (m Model) goHome() Model {
 }
 
 // popHistory restores the previous view + namespace; returns false if empty.
+// The shortened stack is clipped so the next push allocates instead of
+// overwriting the popped slot, which an earlier copy of the model still holds.
 func (m Model) popHistory() (Model, bool) {
 	if len(m.history) == 0 {
 		return m, false
 	}
 	last := m.history[len(m.history)-1]
-	m.history = m.history[:len(m.history)-1]
+	m.history = slices.Clip(m.history[:len(m.history)-1])
 	m.namespace = last.namespace
 	return m.replaceView(last.view), true
 }
