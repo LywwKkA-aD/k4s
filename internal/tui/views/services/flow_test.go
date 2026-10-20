@@ -168,7 +168,7 @@ func TestViewStates(t *testing.T) {
 		{
 			name: "fetch error",
 			m:    func(t *testing.T) services.Model { return mounted(t, tuitest.NewFakeClient(t, failing), "") },
-			want: []string{"services unavailable: services is forbidden"},
+			want: []string{"services unavailable: list services: services is forbidden"},
 		},
 	}
 	for _, tc := range cases {

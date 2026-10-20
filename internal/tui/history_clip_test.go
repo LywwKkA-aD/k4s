@@ -6,6 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
 
 // TestEscOnEarlierModelIgnoresLaterNavigation pins T-13 for the history
@@ -21,13 +23,9 @@ func TestEscOnEarlierModelIgnoresLaterNavigation(t *testing.T) {
 		}
 		return m
 	}
-	esc := tea.KeyMsg{Type: tea.KeyEsc}
+	esc := tuitest.Esc()
 	command := func(m tea.Model, name string) tea.Model {
-		return send(m,
-			tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")},
-			tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(name)},
-			tea.KeyMsg{Type: tea.KeyEnter},
-		)
+		return send(m, tuitest.Press(":"), tuitest.Type(name), tuitest.Enter())
 	}
 	header := func(m tea.Model) string {
 		lines := strings.Split(ansi.Strip(m.View()), "\n")

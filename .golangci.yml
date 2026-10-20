@@ -42,6 +42,8 @@ linters:
           list-mode: lax
           files:
             - "**/internal/tui/views/*/**"
+            # External test packages (package pods_test) import their own view.
+            - "!$test"
           deny:
             - pkg: github.com/LywwKkA-aD/k4s/internal/tui/views/
               desc: a view must not import a sibling view; emit a message from internal/tui/views

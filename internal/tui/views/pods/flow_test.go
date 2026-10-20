@@ -169,7 +169,7 @@ func TestViewStates(t *testing.T) {
 		{
 			name: "fetch error",
 			m:    func(t *testing.T) pods.Model { return mounted(t, tuitest.NewFakeClient(t, failing), "") },
-			want: []string{"pods unavailable: pods is forbidden"},
+			want: []string{"pods unavailable: list pods: pods is forbidden"},
 		},
 	}
 	for _, tc := range cases {

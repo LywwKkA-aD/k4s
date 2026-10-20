@@ -9,6 +9,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
 
 // TestTagsToggleLeavesEarlierModelUntouched pins T-13 for the logs view:
@@ -38,7 +39,7 @@ func TestTagsToggleLeavesEarlierModelUntouched(t *testing.T) {
 		t.Fatalf("tags should start off, screen:\n%s", got)
 	}
 
-	toggled := send(before, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	toggled := send(before, tuitest.Press("t"))
 	if got := screen(toggled); !strings.Contains(got, "[alpha] hello") {
 		t.Fatalf("'t' should tag lines with the pod name, screen:\n%s", got)
 	}

@@ -113,7 +113,7 @@ func TestViewStates(t *testing.T) {
 		{
 			name: "fetch error",
 			m:    func(t *testing.T) namespaces.Model { return mounted(t, tuitest.NewFakeClient(t, failing)) },
-			want: []string{"namespaces unavailable: namespaces is forbidden"},
+			want: []string{"namespaces unavailable: list namespaces: namespaces is forbidden"},
 		},
 	}
 	for _, tc := range cases {
