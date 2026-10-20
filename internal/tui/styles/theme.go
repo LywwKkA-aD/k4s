@@ -3,10 +3,16 @@ package styles
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+	"golang.org/x/term"
 )
+
+// stdoutIsTerminal is a variable so tests can pretend to be on a terminal.
+var stdoutIsTerminal = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
 
 // Mode is a K4S_THEME value.
 type Mode string
@@ -77,13 +83,22 @@ func apply(mode Mode) {
 		// keeps them from querying the terminal mid-session.
 		lipgloss.SetHasDarkBackground(true)
 		// termenv maps NO_COLOR to its Ascii profile, which also strips
-		// bold and reverse and would hide the selected row. Use the
-		// terminal's own profile; the mono palette already has no colour.
-		lipgloss.SetColorProfile(lipgloss.DefaultRenderer().Output().ColorProfile())
+		// bold, underline and reverse and would hide the selected row.
+		// The mono palette has no colour, so plain ANSI is safe.
+		lipgloss.SetColorProfile(monoProfile(stdoutIsTerminal(), os.Getenv("TERM")))
 		use(monoPalette)
 		return
 	default:
 		lipgloss.HasDarkBackground()
 	}
 	use(colourPalette)
+}
+
+// monoProfile keeps text attributes on a real terminal and drops every
+// escape code where they would be noise: pipes, files and TERM=dumb.
+func monoProfile(isTerminal bool, termName string) termenv.Profile {
+	if !isTerminal || termName == "dumb" {
+		return termenv.Ascii
+	}
+	return termenv.ANSI
 }

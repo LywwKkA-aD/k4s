@@ -2,6 +2,7 @@ package styles
 
 import (
 	"io"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // colourRenderer returns a renderer that emits colour codes. A test
@@ -173,5 +175,61 @@ func TestMonoKeepsStateVisible(t *testing.T) {
 	}
 	if slices.Contains(sgrCodes(out["hint"]), 2) {
 		t.Error("hint must not be faint")
+	}
+}
+
+func TestMonoProfile(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		tty  bool
+		term string
+		want termenv.Profile
+	}{
+		{name: "terminal keeps attributes", tty: true, term: "xterm-256color", want: termenv.ANSI},
+		{name: "unset TERM on a terminal", tty: true, term: "", want: termenv.ANSI},
+		{name: "dumb terminal", tty: true, term: "dumb", want: termenv.Ascii},
+		{name: "not a terminal", tty: false, term: "xterm-256color", want: termenv.Ascii},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := monoProfile(tc.tty, tc.term); got != tc.want {
+				t.Fatalf("monoProfile(%v, %q) = %v, want %v", tc.tty, tc.term, got, tc.want)
+			}
+		})
+	}
+}
+
+// NO_COLOR is how most people reach mono, and termenv maps it to the Ascii
+// profile, which strips reverse, bold and underline along with colour.
+// Changes global lipgloss state, so it does not run in parallel.
+func TestNoColorKeepsStateMarkers(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("TERM", "xterm-256color")
+	prevTTY, prevProfile := stdoutIsTerminal, lipgloss.ColorProfile()
+	stdoutIsTerminal = func() bool { return true }
+	t.Cleanup(func() {
+		stdoutIsTerminal = prevTTY
+		lipgloss.SetColorProfile(prevProfile)
+		use(colourPalette)
+	})
+
+	if err := Init(os.Getenv); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	for name, s := range map[string]string{
+		"selected row": Table().Selected.Render("nginx"),
+		"warn":         Warn.Render("warn"),
+		"err":          Err.Render("err"),
+	} {
+		codes := sgrCodes(s)
+		if !slices.ContainsFunc(codes, func(c int) bool { return c == 1 || c == 4 || c == 7 }) {
+			t.Errorf("%s %q has no bold, underline or reverse under NO_COLOR", name, s)
+		}
+		if slices.ContainsFunc(codes, func(c int) bool { return c == 38 || c == 48 }) {
+			t.Errorf("%s %q carries a colour code under NO_COLOR", name, s)
+		}
 	}
 }
