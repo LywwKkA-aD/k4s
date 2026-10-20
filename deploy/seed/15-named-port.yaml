@@ -1,0 +1,93 @@
+# A two-port Service whose targetPorts are container port *names*, the way
+# k3s Traefik (web / websecure) and most Helm charts declare them. Service
+# ports, container ports and names all differ, so a forward that lands on
+# the wrong port fails visibly:
+#
+#   kubectl -n k4s-demo port-forward svc/named-port 8080:80    -> container 8080 ("web")
+#   kubectl -n k4s-demo port-forward svc/named-port 8443:8443  -> container 9443 ("websecure")
+#   curl -s localhost:8443   # prints "named-port: websecure (container 9443)"
+#
+# Both listeners speak plain HTTP so curl works without certificates; only
+# the names mirror Traefik.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: named-port-nginx
+  namespace: k4s-demo
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      default_type text/plain;
+      location / { return 200 "named-port: web (container 8080)\n"; }
+    }
+    server {
+      listen 9443;
+      default_type text/plain;
+      location / { return 200 "named-port: websecure (container 9443)\n"; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: named-port
+  namespace: k4s-demo
+  labels:
+    app: named-port
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: named-port
+  template:
+    metadata:
+      labels:
+        app: named-port
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - name: web
+              containerPort: 8080
+            - name: websecure
+              containerPort: 9443
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: web
+            initialDelaySeconds: 2
+            periodSeconds: 5
+      volumes:
+        - name: conf
+          configMap:
+            name: named-port-nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: named-port
+  namespace: k4s-demo
+  labels:
+    app: named-port
+spec:
+  selector:
+    app: named-port
+  ports:
+    - name: http
+      port: 80
+      targetPort: web
+    - name: https
+      port: 8443
+      targetPort: websecure
