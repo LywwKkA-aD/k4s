@@ -97,7 +97,10 @@ type historyEntry struct {
 
 // Model is the root Bubble Tea model.
 type Model struct {
-	client     *k8s.Client
+	client *k8s.Client
+	// loadErr is why client is nil at startup; cleared once a context
+	// switch produces a working client.
+	loadErr    error
 	forwardMgr *forwards.Manager
 	keys       keys.Map
 	width      int
@@ -144,11 +147,13 @@ type Model struct {
 }
 
 // New constructs the root model with the dashboard as the landing screen.
+// loadErr is the kubeconfig load failure behind a nil client; the dashboard
+// shows it instead of the cluster counters.
 //
 // The port-forward Manager is best-effort: if state loading fails (bad
 // JSON, permission error) we keep the manager nil so the rest of k4s
 // stays usable, and the forwards view will show an "unavailable" hint.
-func New(client *k8s.Client) Model {
+func New(client *k8s.Client, loadErr error) Model {
 	ti := textinput.New()
 	ti.CharLimit = 64
 	ti.Width = 40
@@ -163,10 +168,11 @@ func New(client *k8s.Client) Model {
 
 	model := Model{
 		client:              client,
+		loadErr:             loadErr,
 		forwardMgr:          mgr,
 		keys:                keys.Default(),
 		cmdBar:              ti,
-		current:             dashboard.New(client),
+		current:             dashboard.New(client, loadErr),
 		pendingRestoreCount: restore,
 	}
 	// Open the restore popup automatically when the state file had
@@ -265,6 +271,7 @@ func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.C
 		_ = m.current.Close()
 	}
 	m.client = client
+	m.loadErr = nil
 	m.namespace = ""
 	m.history = nil
 	m.cmdError = ""
@@ -280,7 +287,7 @@ func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.C
 		m.forwardMgr = nil
 		m, errCmd = m.setCmdError("forwards: " + err.Error())
 	}
-	m.current = dashboard.New(m.client)
+	m.current = dashboard.New(m.client, nil)
 	return m, tea.Batch(m.relayoutCmd(), errCmd)
 }
 
@@ -840,7 +847,7 @@ func (m Model) replaceView(name string) Model {
 	case viewServices:
 		return m.swap(services.New(m.client, m.namespace))
 	case viewDashboard:
-		return m.swap(dashboard.New(m.client))
+		return m.swap(dashboard.New(m.client, m.loadErr))
 	case viewContexts:
 		return m.swap(contexts.New(currentContextName(m.client)))
 	case viewTop:

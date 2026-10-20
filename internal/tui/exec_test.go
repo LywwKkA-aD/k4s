@@ -124,7 +124,7 @@ func TestNewExecCommandKubectlMissing(t *testing.T) {
 func TestExecRequestWithoutKubectlShowsFooterError(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
-	m := New(nil)
+	m := New(nil, nil)
 	upd, cmd := m.Update(views.ExecRequestMsg{Namespace: "ns", Pod: "pod-1"})
 	m = upd.(Model)
 	if !strings.Contains(m.cmdError, "kubectl not found on PATH") {

@@ -18,11 +18,11 @@ func main() {
 }
 
 func run() error {
-	// Best-effort kubeconfig load — failure is fine, the TUI will render a
-	// "not connected" banner and let the user fix it interactively.
-	client, _ := k8s.LoadFromKubeconfig("")
+	// A load failure is not fatal: the dashboard shows the reason and the
+	// user can still pick a working context with :ctx.
+	client, loadErr := k8s.LoadFromKubeconfig("")
 
-	p := tea.NewProgram(tui.New(client), tea.WithAltScreen())
+	p := tea.NewProgram(tui.New(client, loadErr), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
