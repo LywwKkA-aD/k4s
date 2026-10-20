@@ -84,8 +84,13 @@ func TestGoroutineHelpers(t *testing.T) {
 	if !strings.Contains(tuitest.Stacks("tuitest_test.TestGoroutineHelpers"), "TestGoroutineHelpers") {
 		t.Error("Stacks did not find the parked goroutine")
 	}
+	tuitest.Eventually(t, time.Second, func() bool { return tuitest.Parked("tuitest_test.TestGoroutineHelpers") == 1 },
+		"Parked should count the helper goroutine and skip the test goroutine")
 	close(release)
 	tuitest.WaitGoroutines(t, base, 2*time.Second)
+	if n := tuitest.Parked("tuitest_test.TestGoroutineHelpers"); n != 0 {
+		t.Errorf("Parked = %d after release", n)
+	}
 
 	fatals, _ := record(func(tb testing.TB) {
 		tuitest.Eventually(tb, 20*time.Millisecond, func() bool { return false }, "never true")

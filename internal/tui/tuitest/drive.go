@@ -258,3 +258,12 @@ func IsQuit(msg tea.Msg) bool {
 	_, ok := msg.(tea.QuitMsg)
 	return ok
 }
+
+// Mount sizes m to width x height, then starts it with Init, the way the
+// root brings up a view after a switch. It returns every produced message.
+func Mount[M tea.Model](t testing.TB, m M, width, height int) (M, []tea.Msg) {
+	t.Helper()
+	sized, resized := Drive(t, m, Resize(width, height))
+	started, initial := Init(t, sized)
+	return started, slices.Concat(resized, initial)
+}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -112,4 +113,21 @@ func KeyName(msg tea.Msg) (string, bool) {
 		return "", false
 	}
 	return k.String(), true
+}
+
+// HelpKeys lists the key labels of the bindings v advertises, in order.
+func HelpKeys(v interface{ Help() []key.Binding }) []string {
+	bindings := v.Help()
+	out := make([]string, 0, len(bindings))
+	for _, b := range bindings {
+		out = append(out, b.Help().Key)
+	}
+	return out
+}
+
+// FilterBy returns the keys that open a list view's "/" filter, type query
+// and commit it, leaving only the matching rows with the cursor on the
+// first one.
+func FilterBy(query string) []tea.Msg {
+	return []tea.Msg{Press("/"), Type(query), Enter()}
 }

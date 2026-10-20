@@ -1,0 +1,171 @@
+package top_test
+
+import (
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views/top"
+)
+
+const (
+	width  = 120
+	height = 30
+)
+
+func mounted(t *testing.T, c *k8s.Client, namespace string) top.Model {
+	t.Helper()
+	m, _ := tuitest.Mount(t, top.New(c, namespace), width, height)
+	return m
+}
+
+func TestPodMetricsSortedByCPU(t *testing.T) {
+	t.Parallel()
+
+	screen := tuitest.Screen(mounted(t, tuitest.NewFakeClient(t), ""))
+	for _, w := range []string{"NAMESPACE", "CPU", "MEMORY", tuitest.PodCoreDNS, "30m", "64Mi"} {
+		if !strings.Contains(screen, w) {
+			t.Errorf("screen lacks %q:\n%s", w, screen)
+		}
+	}
+	busiest := strings.Index(screen, tuitest.PodMulti)
+	idle := strings.Index(screen, tuitest.PodCrash)
+	if busiest < 0 || idle < 0 || busiest > idle {
+		t.Errorf("rows are not sorted by CPU, busiest first:\n%s", screen)
+	}
+}
+
+func TestNamespaceScope(t *testing.T) {
+	t.Parallel()
+
+	m := mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo)
+	screen := tuitest.Screen(m)
+	if strings.Contains(screen, tuitest.PodCoreDNS) || strings.Contains(screen, "NAMESPACE") {
+		t.Errorf("namespace-scoped top shows other namespaces:\n%s", screen)
+	}
+	if got := m.KubectlEquivalent(); got != "kubectl top pods -n demo" {
+		t.Errorf("KubectlEquivalent = %q", got)
+	}
+}
+
+func TestToggleNodes(t *testing.T) {
+	t.Parallel()
+
+	m := mounted(t, tuitest.NewFakeClient(t), "")
+	if got := m.KubectlEquivalent(); got != "kubectl top pods -A" {
+		t.Errorf("pods mode = %q", got)
+	}
+	m, _ = tuitest.Drive(t, m, tuitest.Press("n"))
+	if got := m.KubectlEquivalent(); got != "kubectl top nodes" {
+		t.Errorf("after n = %q", got)
+	}
+	screen := tuitest.Screen(m)
+	if !strings.Contains(screen, tuitest.NodeName) || !strings.Contains(screen, "250m") || strings.Contains(screen, tuitest.PodWeb1) {
+		t.Errorf("nodes mode screen:\n%s", screen)
+	}
+	m, _ = tuitest.Drive(t, m, tuitest.Press("n"))
+	if !strings.Contains(tuitest.Screen(m), tuitest.PodWeb1) {
+		t.Errorf("second n returns to pods:\n%s", tuitest.Screen(m))
+	}
+}
+
+func TestMetricsFailures(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		status   int
+		want     string
+		wantHint bool
+	}{
+		{name: "metrics-server missing", status: http.StatusNotFound, want: "metrics unavailable", wantHint: true},
+		{name: "metrics-server down", status: http.StatusServiceUnavailable, want: "metrics unavailable"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			screen := tuitest.Screen(mounted(t, tuitest.NewFakeClient(t, tuitest.WithMetricsStatus(tc.status)), ""))
+			if !strings.Contains(screen, tc.want) {
+				t.Errorf("screen lacks %q:\n%s", tc.want, screen)
+			}
+			if got := strings.Contains(screen, "install metrics-server"); got != tc.wantHint {
+				t.Errorf("install hint shown = %v, want %v:\n%s", got, tc.wantHint, screen)
+			}
+		})
+	}
+}
+
+func TestPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		m    top.Model
+		want string
+	}{
+		{name: "no kubeconfig", m: top.New(nil, ""), want: "no kubeconfig"},
+		{name: "loading", m: top.New(tuitest.NewFakeClient(t), ""), want: "loading metrics"},
+		{name: "no samples yet", m: mounted(t, tuitest.NewFakeClient(t), "empty-ns"), want: "no metrics yet"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if screen := tuitest.Screen(tc.m); !strings.Contains(screen, tc.want) {
+				t.Errorf("screen = %q, want %q", screen, tc.want)
+			}
+		})
+	}
+}
+
+func TestRefreshRespectsBusy(t *testing.T) {
+	t.Parallel()
+
+	m := mounted(t, tuitest.NewFakeClient(t), "")
+	m, first := tuitest.Step(t, m, tuitest.Press("r"))
+	if len(first) != 1 {
+		t.Fatalf("r should issue one fetch:\n%s", tuitest.Describe(first))
+	}
+	m, second := tuitest.Step(t, m, tuitest.Press("r"))
+	if len(second) != 0 {
+		t.Fatalf("r while busy must not fetch again:\n%s", tuitest.Describe(second))
+	}
+	m, _ = tuitest.Drive(t, m, first...)
+	if _, third := tuitest.Step(t, m, tuitest.Press("r")); len(third) != 1 {
+		t.Errorf("the reply releases busy:\n%s", tuitest.Describe(third))
+	}
+}
+
+func TestStaleRepliesAreDropped(t *testing.T) {
+	t.Parallel()
+
+	c := tuitest.NewFakeClient(t)
+	_, oldReplies := tuitest.Init(t, top.New(c, ""))
+	fresh, _ := tuitest.Drive(t, top.New(c, ""), tuitest.Resize(width, height))
+	fresh, _ = tuitest.Drive(t, fresh, oldReplies...)
+	if !strings.Contains(tuitest.Screen(fresh), "loading metrics") {
+		t.Errorf("a reply addressed to an older view was applied:\n%s", tuitest.Screen(fresh))
+	}
+
+	// A pods reply that lands after the switch to nodes mode is dropped too.
+	m, podReply := tuitest.Step(t, top.New(c, ""), tuitest.Press("r"))
+	m, _ = tuitest.Step(t, m, tuitest.Press("n"))
+	m, _ = tuitest.Drive(t, m, podReply...)
+	if screen := tuitest.Screen(m); strings.Contains(screen, tuitest.PodWeb1) {
+		t.Errorf("pod metrics rendered in nodes mode:\n%s", screen)
+	}
+}
+
+func TestWatchToggleAndContract(t *testing.T) {
+	t.Parallel()
+
+	m := top.New(nil, "")
+	m, out := tuitest.Drive(t, m, tuitest.Press("w"), tuitest.Press("n"))
+	if len(out) != 0 {
+		t.Errorf("toggles without a client emitted:\n%s", tuitest.Describe(out))
+	}
+	if m.Title() != "top" || m.CapturesKeys() || m.Close() != nil || len(m.Help()) != 3 {
+		t.Errorf("contract: title=%q help=%d", m.Title(), len(m.Help()))
+	}
+}
