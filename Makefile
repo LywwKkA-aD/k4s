@@ -5,6 +5,12 @@ PKGS := ./...
 
 KUBECONFIG_PATH := $(CURDIR)/.kube/config
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
+LDFLAGS := -X github.com/LywwKkA-aD/k4s/internal/version.Version=$(VERSION)
+
+# Keep in sync with the goreleaser-action `version` in release.yml.
+GORELEASER_VERSION ?= v2.18.3
+
 # Tool targets run on the toolchain pinned by go.mod (toolchain line, else the
 # go directive): under the default GOTOOLCHAIN=auto a newer local Go wins, and
 # the pinned linter cannot read its export data. make only sees the shell env,
@@ -17,14 +23,14 @@ fmt lint vuln tidy tidy-check ci: export GOTOOLCHAIN ?= $(GO_TOOLCHAIN)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build run test tidy tidy-check tools-go-check fmt lint vuln ci clean k3s-up k3s-down k3s-clean kubeconfig seed seed-down demo gif
+.PHONY: help build run test tidy tidy-check tools-go-check fmt lint vuln ci snapshot clean k3s-up k3s-down k3s-clean kubeconfig seed seed-down demo gif
 
 help: ## show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build: ## build the k4s binary into bin/
+build: ## build bin/k4s, version stamped from git describe
 	@mkdir -p bin
-	$(GO) build -o $(BIN) ./cmd/k4s
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/k4s
 
 run: ## run k4s without producing a build artifact
 	$(GO) run ./cmd/k4s
@@ -68,8 +74,13 @@ ci: ## full quality gate: tidy-check + vet + lint + test + vuln
 	$(TOOL) govulncheck $(PKGS)
 	@echo "all checks passed"
 
+# The tagged release is built in CI on the go.mod toolchain; this uses the local
+# Go. The first run needs network to download GoReleaser.
+snapshot: ## build every release archive into dist/ (GoReleaser, no publish)
+	$(GO) run github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION) release --snapshot --clean
+
 clean: ## remove build artifacts
-	rm -rf bin
+	rm -rf bin dist
 
 k3s-up: ## start local k3s in docker and write .kube/config
 	docker compose up -d
