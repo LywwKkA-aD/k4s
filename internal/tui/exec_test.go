@@ -134,3 +134,25 @@ func TestExecRequestWithoutKubectlShowsFooterError(t *testing.T) {
 		t.Fatal("expected the footer auto-clear timer, got nil cmd")
 	}
 }
+
+func TestWithoutEnvKey(t *testing.T) {
+	t.Parallel()
+
+	base := []string{"PATH=/bin", "KUBECONFIG=/a", "Kubeconfig=/b", "KUBECONFIGX=/c"}
+	cases := []struct {
+		name     string
+		foldCase bool
+		want     []string
+	}{
+		{name: "case-sensitive like unix", want: []string{"PATH=/bin", "Kubeconfig=/b", "KUBECONFIGX=/c"}},
+		{name: "case-insensitive like windows", foldCase: true, want: []string{"PATH=/bin", "KUBECONFIGX=/c"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := withoutEnvKey(base, kubeconfigEV, tc.foldCase); !slices.Equal(got, tc.want) {
+				t.Fatalf("withoutEnvKey = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
