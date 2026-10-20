@@ -1,0 +1,22 @@
+# A LoadBalancer Service in front of the nginx Deployment. On the default
+# k3s profile ServiceLB (klipper-lb) answers it: an svclb-nginx-lb-* DaemonSet
+# appears in kube-system and EXTERNAL-IP becomes the node IP(s). With
+# K3S_PROFILE=minimal, or on kind, EXTERNAL-IP stays <pending>.
+#
+#   kubectl -n k4s-demo get svc nginx-lb
+#   curl -s localhost:18090        # host port K4S_LB_PORT in docker-compose.yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-lb
+  namespace: k4s-demo
+  labels:
+    app: nginx
+spec:
+  type: LoadBalancer
+  selector:
+    app: nginx
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 80

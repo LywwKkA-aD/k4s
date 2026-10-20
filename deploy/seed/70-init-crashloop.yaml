@@ -1,0 +1,46 @@
+# A pod that never leaves its init phase: the first init container succeeds,
+# the second exits 1, so the pod cycles Init:Error -> Init:CrashLoopBackOff
+# and the app container stays Waiting (PodInitializing). The failing init
+# container's logs are the only useful ones:
+#
+#   kubectl -n k4s-broken get pod init-crashloop      # STATUS Init:CrashLoopBackOff, READY 0/1
+#   kubectl -n k4s-broken logs init-crashloop -c migrate
+apiVersion: v1
+kind: Pod
+metadata:
+  name: init-crashloop
+  namespace: k4s-broken
+  labels:
+    app: init-crashloop
+spec:
+  restartPolicy: Always
+  terminationGracePeriodSeconds: 5
+  initContainers:
+    - name: check-config
+      image: busybox:1.37
+      command: ["/bin/sh", "-c"]
+      args:
+        - echo "config present"
+      resources:
+        requests: { cpu: 10m, memory: 8Mi }
+        limits:   { cpu: 50m, memory: 32Mi }
+    - name: migrate
+      image: busybox:1.37
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "running schema migrations..."
+          sleep 3
+          echo "migration failed: database db.k4s-broken.svc:5432 unreachable" >&2
+          exit 1
+      resources:
+        requests: { cpu: 10m, memory: 8Mi }
+        limits:   { cpu: 50m, memory: 32Mi }
+  containers:
+    - name: app
+      image: nginx:1.27-alpine
+      ports:
+        - containerPort: 80
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits:   { cpu: 100m, memory: 64Mi }

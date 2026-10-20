@@ -1,0 +1,72 @@
+# A native sidecar (an init container with restartPolicy: Always, GA since
+# Kubernetes 1.33): log-shipper starts first and keeps running next to the app,
+# setup runs to completion after it, then app starts. The sidecar counts
+# towards READY, so the pod shows 2/2, while it is listed under initContainers
+# rather than containers - the case a container picker can miss:
+#
+#   kubectl -n k4s-demo get pod native-sidecar              # READY 2/2
+#   kubectl -n k4s-demo logs native-sidecar -c log-shipper
+#   kubectl -n k4s-demo logs native-sidecar --all-containers --prefix
+apiVersion: v1
+kind: Pod
+metadata:
+  name: native-sidecar
+  namespace: k4s-demo
+  labels:
+    app: native-sidecar
+spec:
+  terminationGracePeriodSeconds: 5
+  initContainers:
+    - name: log-shipper
+      image: busybox:1.37
+      restartPolicy: Always
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          touch /var/log/app/app.log
+          tail -F /var/log/app/app.log | while read -r line; do
+            echo "[shipper] $line"
+          done
+      startupProbe:
+        exec:
+          command: ["test", "-f", "/var/log/app/app.log"]
+        periodSeconds: 1
+        failureThreshold: 30
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/app
+      resources:
+        requests: { cpu: 10m, memory: 8Mi }
+        limits:   { cpu: 50m, memory: 32Mi }
+    - name: setup
+      image: busybox:1.37
+      command: ["/bin/sh", "-c"]
+      args:
+        - echo "$(date -Iseconds) setup done" | tee -a /var/log/app/app.log
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/app
+      resources:
+        requests: { cpu: 10m, memory: 8Mi }
+        limits:   { cpu: 50m, memory: 32Mi }
+  containers:
+    - name: app
+      image: busybox:1.37
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          i=0
+          while true; do
+            i=$((i+1))
+            echo "$(date -Iseconds) request #$i handled" | tee -a /var/log/app/app.log
+            sleep 2
+          done
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/app
+      resources:
+        requests: { cpu: 10m, memory: 8Mi }
+        limits:   { cpu: 50m, memory: 32Mi }
+  volumes:
+    - name: logs
+      emptyDir: {}
