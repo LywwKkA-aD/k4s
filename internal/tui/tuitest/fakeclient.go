@@ -128,10 +128,10 @@ func logsReactor(body string) k8stesting.ReactionFunc {
 // stock fake returns nil there, and the metrics code calls through it.
 type clientset struct {
 	*fake.Clientset
-	discovery discovery.DiscoveryInterface
+	discovery discovery.DiscoveryInterfaces
 }
 
-func (c *clientset) Discovery() discovery.DiscoveryInterface { return c.discovery }
+func (c *clientset) Discovery() discovery.DiscoveryInterfaces { return c.discovery }
 
 type metricsDiscovery struct {
 	*fakediscovery.FakeDiscovery
