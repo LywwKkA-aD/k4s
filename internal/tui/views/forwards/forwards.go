@@ -10,13 +10,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
@@ -58,6 +59,7 @@ func New(mgr *forwards.Manager) Model {
 		table.WithHeight(10),
 	)
 	t.SetStyles(styles.Table())
+	styles.FitTable(&t)
 	return Model{
 		manager: mgr,
 		table:   t,
@@ -121,7 +123,7 @@ func refreshCmd() tea.Cmd {
 }
 
 // Update handles size, key events and Manager change notifications.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.bodyH = msg.Height
@@ -134,7 +136,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.manager != nil {
 			return m, watchChangesCmd(m.manager, m.done)
 		}
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if cmd, handled := m.handleKey(msg); handled {
 			return m, cmd
 		}
@@ -144,7 +146,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	if m.manager == nil {
 		return nil, false
 	}

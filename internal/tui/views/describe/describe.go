@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
@@ -54,7 +55,10 @@ type contentMsg struct {
 
 // New constructs a describe view for the given resource.
 func New(client *k8s.Client, kind Kind, namespace, name string) Model {
-	vp := viewport.New(80, 20)
+	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
+	// Content is wrapped to the width, so there is nothing to pan to, and
+	// h/l must not pan the text off its first columns.
+	vp.SetHorizontalStep(0)
 	return Model{
 		client:    client,
 		kind:      kind,
@@ -109,18 +113,18 @@ func fetchCmd(c *k8s.Client, kind Kind, ns, name string) tea.Cmd {
 //
 // The incoming WindowSizeMsg.Height has already been adjusted by the root
 // model to be the body area only — no chrome math here.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.viewport.Width = msg.Width
-		m.viewport.Height = max(msg.Height, minViewportHeight)
+		m.viewport.SetWidth(msg.Width)
+		m.viewport.SetHeight(max(msg.Height, minViewportHeight))
 		m.contentWidth = msg.Width
 		// Reflow the cached content for the new width — without this the
 		// viewport keeps the original wrapping and lines clip on shrink.
 		if m.rawContent != "" {
 			m.viewport.SetContent(wrap(m.rawContent, m.contentWidth))
 		}
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if key.Matches(msg, m.refreshKey) && m.client != nil {
 			return m, fetchCmd(m.client, m.kind, m.namespace, m.name)
 		}

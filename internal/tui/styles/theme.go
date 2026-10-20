@@ -6,8 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"github.com/charmbracelet/colorprofile"
 	"golang.org/x/term"
 )
 
@@ -57,7 +56,7 @@ func ParseMode(getenv func(string) string) (Mode, error) {
 }
 
 // Init applies the theme chosen by K4S_THEME and NO_COLOR (see ParseMode)
-// to lipgloss and to every style in this package.
+// to every style in this package.
 //
 // Call it once from main, before building the TUI model and before
 // tea.NewProgram. Auto mode asks the terminal for its background with an
@@ -68,37 +67,47 @@ func Init(getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
-	apply(mode)
+	apply(mode, getenv)
 	return nil
 }
 
-func apply(mode Mode) {
+// forcedProfile is the colour profile mono pins the program to; nil lets
+// Bubble Tea detect it.
+var forcedProfile *colorprofile.Profile
+
+func apply(mode Mode, getenv func(string) string) {
+	forcedProfile = nil
 	switch mode {
 	case ModeDark:
-		lipgloss.SetHasDarkBackground(true)
+		use(colourPalette(true))
 	case ModeLight:
-		lipgloss.SetHasDarkBackground(false)
+		use(colourPalette(false))
 	case ModeMono:
-		// Bubbles components still hold adaptive defaults; a fixed answer
-		// keeps them from querying the terminal mid-session.
-		lipgloss.SetHasDarkBackground(true)
-		// termenv maps NO_COLOR to its Ascii profile, which also strips
-		// bold, underline and reverse and would hide the selected row.
-		// The mono palette has no colour, so plain ANSI is safe.
-		lipgloss.SetColorProfile(monoProfile(stdoutIsTerminal(), os.Getenv("TERM")))
 		use(monoPalette)
-		return
+		p := monoProfile(stdoutIsTerminal(), getenv("TERM"))
+		forcedProfile = &p
 	default:
-		lipgloss.HasDarkBackground()
+		use(colourPalette(detectDark(getenv)))
 	}
-	use(colourPalette)
+}
+
+// ColorProfile returns the colour profile the program must render with, and
+// false when Bubble Tea should detect it from the terminal. main passes it
+// to tea.WithColorProfile.
+func ColorProfile() (colorprofile.Profile, bool) {
+	if forcedProfile == nil {
+		return colorprofile.Unknown, false
+	}
+	return *forcedProfile, true
 }
 
 // monoProfile keeps text attributes on a real terminal and drops every
-// escape code where they would be noise: pipes, files and TERM=dumb.
-func monoProfile(isTerminal bool, termName string) termenv.Profile {
+// escape code where they would be noise: pipes, files and TERM=dumb. The
+// ASCII profile drops colour but keeps bold, underline and reverse, so the
+// selected row stays visible whatever profile NO_COLOR would select.
+func monoProfile(isTerminal bool, termName string) colorprofile.Profile {
 	if !isTerminal || termName == "dumb" {
-		return termenv.Ascii
+		return colorprofile.NoTTY
 	}
-	return termenv.ANSI
+	return colorprofile.ASCII
 }

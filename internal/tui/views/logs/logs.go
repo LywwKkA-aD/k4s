@@ -22,13 +22,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
@@ -94,7 +95,7 @@ type Model struct {
 	// podColors maps each streamed pod to its palette colour. Assigned by
 	// position in pods (not hashed) so neighbouring replicas always land on
 	// maximally distinct hues.
-	podColors map[string]lipgloss.Color
+	podColors map[string]styles.PodColorID
 
 	autoFollow   bool
 	showPodNames bool // false → compact bar; true → "[pod-name]" prefix
@@ -178,7 +179,8 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 	si := textinput.New()
 	si.Prompt = searchInputPrompt
 	si.CharLimit = 128
-	si.Width = 40
+	si.SetWidth(40)
+	si.SetStyles(styles.TextInput())
 
 	return Model{
 		client:      client,
@@ -186,7 +188,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 		pods:        pods,
 		tail:        tail,
 		container:   container,
-		viewport:    viewport.New(80, 20),
+		viewport:    newViewport(),
 		events:      events,
 		cancel:      cancel,
 		podColors:   assignPodColors(pods),
@@ -235,11 +237,19 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 	}
 }
 
+// newViewport returns the log viewport. Panning belongs to the view's own
+// ←/→ hscroll, so the viewport's h/l panning stays off.
+func newViewport() viewport.Model {
+	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
+	vp.SetHorizontalStep(0)
+	return vp
+}
+
 func (m Model) Init() tea.Cmd {
 	return waitOrDrainCmd(m.events)
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return m.onWindowSize(msg)
@@ -247,15 +257,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onLogEventsBatch(msg)
 	case streamsClosedMsg:
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.onKey(msg)
+	case tea.PasteMsg:
+		return m.onPaste(msg)
 	}
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
 }
 
-func (m Model) onWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+func (m Model) onWindowSize(msg tea.WindowSizeMsg) (views.View, tea.Cmd) {
 	m.width = msg.Width
 	m.bodyH = msg.Height
 	m.layoutViewport()
@@ -269,8 +281,8 @@ func (m *Model) layoutViewport() {
 		chrome = statusRowsOpen
 	}
 	h := m.bodyH - chrome
-	m.viewport.Width = m.width
-	m.viewport.Height = max(h, minViewportHeight)
+	m.viewport.SetWidth(m.width)
+	m.viewport.SetHeight(max(h, minViewportHeight))
 }
 
 // Title implements views.View.

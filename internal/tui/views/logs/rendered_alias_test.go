@@ -4,12 +4,13 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 // TestTagsToggleLeavesEarlierModelUntouched pins T-13 for the logs view:
@@ -18,13 +19,13 @@ import (
 func TestTagsToggleLeavesEarlierModelUntouched(t *testing.T) {
 	t.Parallel()
 
-	send := func(m tea.Model, msgs ...tea.Msg) tea.Model {
+	send := func(m views.View, msgs ...tea.Msg) views.View {
 		for _, msg := range msgs {
 			m, _ = m.Update(msg)
 		}
 		return m
 	}
-	screen := func(m tea.Model) string { return ansi.Strip(m.View()) }
+	screen := func(m views.View) string { return ansi.Strip(m.View()) }
 	size := tea.WindowSizeMsg{Width: 80, Height: 10}
 
 	client := &k8s.Client{Clientset: fake.NewClientset()}

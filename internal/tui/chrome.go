@@ -3,7 +3,8 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
@@ -21,12 +22,20 @@ func (m Model) bodyHeight() int {
 	return h
 }
 
-// View composes header / body / footer. The body normally renders the
+// View is the full-screen frame: the composed screen on the alternate
+// screen buffer.
+func (m Model) View() tea.View {
+	v := tea.NewView(m.render())
+	v.AltScreen = true
+	return v
+}
+
+// render composes header / body / footer. The body normally renders the
 // active view, but multi-field prompts (tail lines, container picker) are
 // drawn as centered popups that temporarily cover the view — the single-
 // line ":" command bar stays in the footer because it is one line by
 // design and a popup would feel heavyweight.
-func (m Model) View() string {
+func (m Model) render() string {
 	header := m.renderHeader()
 	footer := m.renderFooter()
 
@@ -59,7 +68,7 @@ func (m Model) renderPromptPopup(width, height int) string {
 			lipgloss.Left,
 			styles.PopupTitle.Render("tail lines"),
 			"",
-			m.cmdBar.View(),
+			m.cmdBarView(),
 			"",
 			styles.Hint.Render("Enter run · Esc cancel · default 100"),
 		)
@@ -103,7 +112,7 @@ func (m Model) renderFooter() string {
 	// Multi-field prompts (tail / container) live in a centred popup
 	// drawn in the body, so the footer stays informative.
 	if m.cmdMode == cmdBarCommand {
-		return styles.Footer.Width(w).Render(m.cmdBar.View())
+		return styles.Footer.Width(w).Render(m.cmdBarView())
 	}
 
 	var top string

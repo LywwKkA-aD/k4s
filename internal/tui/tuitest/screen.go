@@ -1,15 +1,12 @@
 package tuitest
 
 import (
+	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
-
-// Viewer is anything that renders a frame: the root model and every view.
-type Viewer interface {
-	View() string
-}
 
 // Strip removes ANSI escape sequences, so assertions and goldens compare
 // text only and survive colour or renderer changes.
@@ -17,9 +14,22 @@ func Strip(view string) string {
 	return ansi.Strip(view)
 }
 
+// Frame returns what v renders, escape codes included: the body of a view
+// (View() string) or the content of the root model's frame (View()
+// tea.View). Anything else panics: it is a mistake in the test.
+func Frame(v any) string {
+	switch v := v.(type) {
+	case interface{ View() string }:
+		return v.View()
+	case interface{ View() tea.View }:
+		return v.View().Content
+	}
+	panic(fmt.Sprintf("tuitest: %T does not render a frame", v))
+}
+
 // Screen renders v and strips it.
-func Screen(v Viewer) string {
-	return Strip(v.View())
+func Screen(v any) string {
+	return Strip(Frame(v))
 }
 
 // TrimLines strips trailing spaces from every line and drops trailing empty

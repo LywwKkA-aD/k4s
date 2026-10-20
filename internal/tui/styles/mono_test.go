@@ -1,7 +1,7 @@
 package styles
 
 import (
-	"io"
+	"bytes"
 	"os"
 	"regexp"
 	"slices"
@@ -9,54 +9,53 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 )
 
-// colourRenderer returns a renderer that emits colour codes. A test
-// binary's stdout is not a TTY, so lipgloss would otherwise choose the
-// Ascii profile, strip every code and let a "no colour" check pass
-// vacuously. CLICOLOR_FORCE lifts that to the 16-colour profile, which is
-// enough to show any colour a style asks for.
-func colourRenderer(t *testing.T) *lipgloss.Renderer {
+// shown returns s as a terminal with profile p receives it. Style.Render
+// always emits full-colour escape codes and the program downsamples them on
+// output, so every check of what reaches the screen goes through a profile.
+func shown(t *testing.T, p colorprofile.Profile, s string) string {
 	t.Helper()
-	t.Setenv("NO_COLOR", "")
-	t.Setenv("CLICOLOR", "")
-	t.Setenv("CLICOLOR_FORCE", "1")
-	r := lipgloss.NewRenderer(io.Discard)
-	r.SetHasDarkBackground(true)
-	return r
+	var buf bytes.Buffer
+	w := &colorprofile.Writer{Forward: &buf, Profile: p}
+	if _, err := w.WriteString(s); err != nil {
+		t.Fatalf("downsample to %v: %v", p, err)
+	}
+	return buf.String()
 }
 
-// sample renders every style the views use, bound to r.
-func sample(r *lipgloss.Renderer) map[string]string {
+// sample renders every style the views use.
+func sample() map[string]string {
 	tbl := Table()
 	out := map[string]string{
-		"title":        Title.Renderer(r).Render("k4s"),
-		"subtitle":     Subtitle.Renderer(r).Render("sub"),
-		"hint":         Hint.Renderer(r).Render("q quit"),
-		"ok":           OK.Renderer(r).Render("ok"),
-		"warn":         Warn.Renderer(r).Render("warn"),
-		"err":          Err.Renderer(r).Render("err"),
-		"stat":         Stat.Renderer(r).Render("3 pods"),
-		"header":       Header.Renderer(r).Render("header"),
-		"footer":       Footer.Renderer(r).Render("footer"),
-		"kubectl":      KubectlHint.Renderer(r).Render("kubectl get pods"),
-		"highlight":    Highlight.Renderer(r).Render("match"),
-		"popup box":    PopupBox.Renderer(r).Render("popup"),
-		"popup title":  PopupTitle.Renderer(r).Render("title"),
-		"placeholder":  Placeholder.Renderer(r).Render("pods, ns"),
-		"table header": tbl.Header.Renderer(r).Render("NAME"),
-		"table cell":   tbl.Cell.Renderer(r).Render("nginx"),
-		"selected row": tbl.Selected.Renderer(r).Render("nginx"),
+		"title":        Title.Render("k4s"),
+		"subtitle":     Subtitle.Render("sub"),
+		"hint":         Hint.Render("q quit"),
+		"ok":           OK.Render("ok"),
+		"warn":         Warn.Render("warn"),
+		"err":          Err.Render("err"),
+		"stat":         Stat.Render("3 pods"),
+		"header":       Header.Render("header"),
+		"footer":       Footer.Render("footer"),
+		"kubectl":      KubectlHint.Render("kubectl get pods"),
+		"highlight":    Highlight.Render("match"),
+		"popup box":    PopupBox.Render("popup"),
+		"popup title":  PopupTitle.Render("title"),
+		"placeholder":  Placeholder.Render("pods, ns"),
+		"table header": tbl.Header.Render("NAME"),
+		"table cell":   tbl.Cell.Render("nginx"),
+		"selected row": tbl.Selected.Render("nginx"),
 	}
 	for _, id := range PodPalette() {
-		out["pod "+string(id)] = r.NewStyle().Foreground(PodColor(id)).Render("▌")
+		out["pod "+string(id)] = lipgloss.NewStyle().Foreground(PodColor(id)).Render("▌")
 	}
 	return out
 }
 
-var sgrPattern = regexp.MustCompile("\x1b\\[([0-9;]*)m")
+var sgrPattern = regexp.MustCompile("\x1b\\[([0-9;:]*)m")
 
 // sgrCodes returns the SGR parameters in s, folding the arguments of an
 // extended 38/48 colour into the introducer so "38;5;1" does not read as
@@ -113,44 +112,48 @@ func TestSGRCodesParsesExtendedColours(t *testing.T) {
 	}
 }
 
-// Guards against the vacuous pass: the forced renderer must really emit
-// colour for the colour theme, or the mono check below proves nothing.
+// Guards against the vacuous pass: the colour theme must still show colour
+// on every colour profile, or the mono checks below prove nothing.
 func TestColourThemeEmitsColourCodes(t *testing.T) {
-	t.Cleanup(func() { use(colourPalette) })
-	use(colourPalette)
-	r := colourRenderer(t)
-	for name, out := range sample(r) {
-		if name == "header" || name == "footer" || name == "table cell" {
-			continue // border-only or uncoloured on purpose
-		}
-		if len(colourCodes(out)) == 0 {
-			t.Errorf("%s: colour theme rendered no colour: %q", name, out)
+	t.Cleanup(resetTheme)
+	use(colourPalette(true))
+	for _, p := range []colorprofile.Profile{colorprofile.ANSI, colorprofile.ANSI256, colorprofile.TrueColor} {
+		for name, out := range sample() {
+			if name == "header" || name == "footer" || name == "table cell" {
+				continue // border-only or uncoloured on purpose
+			}
+			if len(colourCodes(shown(t, p, out))) == 0 {
+				t.Errorf("%v %s: colour theme rendered no colour: %q", p, name, out)
+			}
 		}
 	}
 }
 
+// TrueColor passes every code through, so a colour here would come from
+// the mono styles themselves.
 func TestMonoEmitsNoColourCodes(t *testing.T) {
-	t.Cleanup(func() { use(colourPalette) })
+	t.Cleanup(resetTheme)
 	use(monoPalette)
-	r := colourRenderer(t)
-	for name, out := range sample(r) {
-		if codes := colourCodes(out); len(codes) > 0 {
-			t.Errorf("%s: mono rendered colour codes %v in %q", name, codes, out)
+	for name, out := range sample() {
+		got := shown(t, colorprofile.TrueColor, out)
+		if codes := colourCodes(got); len(codes) > 0 {
+			t.Errorf("%s: mono rendered colour codes %v in %q", name, codes, got)
 		}
-		if strings.Contains(out, "38;") || strings.Contains(out, "48;") {
-			t.Errorf("%s: mono rendered an extended colour in %q", name, out)
+		if strings.Contains(got, "38;") || strings.Contains(got, "48;") {
+			t.Errorf("%s: mono rendered an extended colour in %q", name, got)
 		}
 	}
 }
 
 // Without colour, state must still show through attributes: reverse for
 // the selected row and search match, bold for warnings, bold and
-// underline for errors.
+// underline for errors. They must survive the profile mono runs under on
+// a terminal.
 func TestMonoKeepsStateVisible(t *testing.T) {
-	t.Cleanup(func() { use(colourPalette) })
+	t.Cleanup(resetTheme)
 	use(monoPalette)
-	r := colourRenderer(t)
-	out := sample(r)
+	profile := monoProfile(true, "xterm-256color")
+	out := sample()
 	cases := []struct {
 		name string
 		want []int
@@ -163,17 +166,18 @@ func TestMonoKeepsStateVisible(t *testing.T) {
 		{name: "title", want: []int{1}},
 	}
 	for _, c := range cases {
-		codes := sgrCodes(out[c.name])
+		got := shown(t, profile, out[c.name])
+		codes := sgrCodes(got)
 		for _, w := range c.want {
 			if !slices.Contains(codes, w) {
-				t.Errorf("%s: want SGR %d in %q", c.name, w, out[c.name])
+				t.Errorf("%s: want SGR %d in %q", c.name, w, got)
 			}
 		}
 	}
-	if slices.Contains(sgrCodes(out["warn"]), 4) {
+	if slices.Contains(sgrCodes(shown(t, profile, out["warn"])), 4) {
 		t.Error("warn must not underline, or it reads as an error")
 	}
-	if slices.Contains(sgrCodes(out["hint"]), 2) {
+	if slices.Contains(sgrCodes(shown(t, profile, out["hint"])), 2) {
 		t.Error("hint must not be faint")
 	}
 }
@@ -185,12 +189,12 @@ func TestMonoProfile(t *testing.T) {
 		name string
 		tty  bool
 		term string
-		want termenv.Profile
+		want colorprofile.Profile
 	}{
-		{name: "terminal keeps attributes", tty: true, term: "xterm-256color", want: termenv.ANSI},
-		{name: "unset TERM on a terminal", tty: true, term: "", want: termenv.ANSI},
-		{name: "dumb terminal", tty: true, term: "dumb", want: termenv.Ascii},
-		{name: "not a terminal", tty: false, term: "xterm-256color", want: termenv.Ascii},
+		{name: "terminal keeps attributes", tty: true, term: "xterm-256color", want: colorprofile.ASCII},
+		{name: "unset TERM on a terminal", tty: true, term: "", want: colorprofile.ASCII},
+		{name: "dumb terminal", tty: true, term: "dumb", want: colorprofile.NoTTY},
+		{name: "not a terminal", tty: false, term: "xterm-256color", want: colorprofile.NoTTY},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -202,34 +206,70 @@ func TestMonoProfile(t *testing.T) {
 	}
 }
 
-// NO_COLOR is how most people reach mono, and termenv maps it to the Ascii
-// profile, which strips reverse, bold and underline along with colour.
-// Changes global lipgloss state, so it does not run in parallel.
+// NO_COLOR is how most people reach mono. Init must pin a profile that
+// drops colour but keeps reverse, bold and underline, and the styles must
+// carry them. Changes package state, so it does not run in parallel.
 func TestNoColorKeepsStateMarkers(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("TERM", "xterm-256color")
-	prevTTY, prevProfile := stdoutIsTerminal, lipgloss.ColorProfile()
+	prevTTY := stdoutIsTerminal
 	stdoutIsTerminal = func() bool { return true }
 	t.Cleanup(func() {
 		stdoutIsTerminal = prevTTY
-		lipgloss.SetColorProfile(prevProfile)
-		use(colourPalette)
+		resetTheme()
 	})
 
 	if err := Init(os.Getenv); err != nil {
 		t.Fatalf("Init: %v", err)
+	}
+	profile, forced := ColorProfile()
+	if !forced || profile != colorprofile.ASCII {
+		t.Fatalf("ColorProfile() = %v, %v; want ASCII, true", profile, forced)
 	}
 	for name, s := range map[string]string{
 		"selected row": Table().Selected.Render("nginx"),
 		"warn":         Warn.Render("warn"),
 		"err":          Err.Render("err"),
 	} {
-		codes := sgrCodes(s)
+		got := shown(t, profile, s)
+		codes := sgrCodes(got)
 		if !slices.ContainsFunc(codes, func(c int) bool { return c == 1 || c == 4 || c == 7 }) {
-			t.Errorf("%s %q has no bold, underline or reverse under NO_COLOR", name, s)
+			t.Errorf("%s %q has no bold, underline or reverse under NO_COLOR", name, got)
 		}
 		if slices.ContainsFunc(codes, func(c int) bool { return c == 38 || c == 48 }) {
-			t.Errorf("%s %q carries a colour code under NO_COLOR", name, s)
+			t.Errorf("%s %q carries a colour code under NO_COLOR", name, got)
+		}
+	}
+}
+
+// The text input styles replace the bubbles defaults, which paint the
+// prompt and cursor in ANSI colours; only the placeholder may be coloured.
+func TestTextInputStyles(t *testing.T) {
+	t.Cleanup(resetTheme)
+	render := func(value string) string {
+		ti := textinput.New()
+		ti.Prompt = ": "
+		ti.Placeholder = "pods"
+		ti.SetWidth(20)
+		ti.SetStyles(TextInput())
+		ti.SetValue(value)
+		ti.Focus()
+		return ti.View()
+	}
+	for _, p := range []palette{monoPalette, colourPalette(true)} {
+		use(p)
+		if codes := colourCodes(render("po")); len(codes) > 0 {
+			t.Errorf("mono=%v: typed input carries colour codes %v", p.mono, codes)
+		}
+		placeholder := colourCodes(render(""))
+		if p.mono && len(placeholder) > 0 {
+			t.Errorf("mono placeholder carries colour codes %v", placeholder)
+		}
+		if !p.mono && len(placeholder) == 0 {
+			t.Error("colour placeholder lost its muted colour")
+		}
+		if !slices.Contains(sgrCodes(render("po")), 7) {
+			t.Errorf("mono=%v: cursor is not a reverse-video block", p.mono)
 		}
 	}
 }

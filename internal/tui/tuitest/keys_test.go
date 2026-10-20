@@ -3,7 +3,7 @@ package tuitest_test
 import (
 	"testing"
 
-	"github.com/charmbracelet/bubbles/key"
+	"charm.land/bubbles/v2/key"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
@@ -31,8 +31,10 @@ func TestPressRoundTripsKeyNames(t *testing.T) {
 		{in: "tab", want: "tab"},
 		{in: "backspace", want: "backspace"},
 		{in: "delete", want: "delete"},
-		{in: "space", want: " "},
-		{in: " ", want: " "},
+		{in: "space", want: "space"},
+		{in: " ", want: "space"},
+		{in: "shift+tab", want: "shift+tab"},
+		{in: "ctrl+alt+c", want: "ctrl+alt+c"},
 		{in: "e", want: "e"},
 		{in: "N", want: "N"},
 		{in: "/", want: "/"},

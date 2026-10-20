@@ -3,9 +3,11 @@ package logs
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 func (m *Model) cancelSearch() {
@@ -20,14 +22,14 @@ func (m *Model) cancelSearch() {
 	}
 }
 
-func (m Model) onSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEsc:
+func (m Model) onSearchKey(msg tea.KeyPressMsg) (views.View, tea.Cmd) {
+	switch {
+	case keys.IsEsc(msg):
 		m.searchOpen = false
 		m.searchInput.Blur()
 		m.layoutViewport()
 		return m, nil
-	case tea.KeyEnter:
+	case keys.IsEnter(msg):
 		m.searchQuery = strings.TrimSpace(m.searchInput.Value())
 		m.searchOpen = false
 		m.searchInput.Blur()
@@ -39,6 +41,17 @@ func (m Model) onSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.autoFollow = false
 		}
 		m.syncViewport()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	return m, cmd
+}
+
+// onPaste types pasted text into the open search prompt. With the prompt
+// closed a paste does nothing, like any key that matches no binding.
+func (m Model) onPaste(msg tea.PasteMsg) (views.View, tea.Cmd) {
+	if !m.searchOpen {
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -73,7 +86,7 @@ func (m *Model) gotoMatch(direction int) {
 }
 
 func (m *Model) scrollToLine(line int) {
-	target := line - m.viewport.Height/2
+	target := line - m.viewport.Height()/2
 	if target < 0 {
 		target = 0
 	}

@@ -5,8 +5,6 @@ import (
 	"math"
 	"strconv"
 	"testing"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // minTextContrast is the WCAG 2.x AA threshold for normal-size text.
@@ -30,8 +28,8 @@ var (
 
 // textTokens lists every token drawn as text on the terminal's own
 // background.
-func textTokens() map[string]lipgloss.AdaptiveColor {
-	out := map[string]lipgloss.AdaptiveColor{
+func textTokens() map[string]token {
+	out := map[string]token{
 		"muted":  tokenMuted,
 		"accent": tokenAccent,
 		"ok":     tokenOK,
@@ -46,8 +44,8 @@ func textTokens() map[string]lipgloss.AdaptiveColor {
 
 // paintedPairs lists text tokens that bring their own background, so only
 // the pair itself has to contrast.
-func paintedPairs() map[string][2]lipgloss.AdaptiveColor {
-	return map[string][2]lipgloss.AdaptiveColor{
+func paintedPairs() map[string][2]token {
+	return map[string][2]token{
 		"selection": {tokenSelectionFg, tokenSelectionBg},
 		"match":     {tokenMatchFg, tokenMatchBg},
 	}

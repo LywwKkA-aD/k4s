@@ -3,11 +3,12 @@ package tuitest_test
 import (
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -36,12 +37,12 @@ func (p probe) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return p, p.react(l)
 }
 
-func (p probe) View() string {
+func (p probe) View() tea.View {
 	parts := make([]string, 0, len(p.seen))
 	for _, l := range p.seen {
 		parts = append(parts, string(l))
 	}
-	return strings.Join(parts, ",")
+	return tea.NewView(strings.Join(parts, ","))
 }
 
 func emit(l label) tea.Cmd { return func() tea.Msg { return l } }
@@ -201,7 +202,7 @@ type shapeShifter struct{}
 
 func (shapeShifter) Init() tea.Cmd                       { return nil }
 func (shapeShifter) Update(tea.Msg) (tea.Model, tea.Cmd) { return probe{}, nil }
-func (shapeShifter) View() string                        { return "" }
+func (shapeShifter) View() tea.View                      { return tea.NewView("") }
 
 func anyContains(list []string, sub string) bool {
 	return slices.ContainsFunc(list, func(s string) bool { return strings.Contains(s, sub) })
@@ -278,8 +279,8 @@ func TestMountSizesThenStarts(t *testing.T) {
 	if got := labels(out); !slices.Equal(got, []label{"init", "ready"}) {
 		t.Errorf("Mount emitted %v", got)
 	}
-	if m.View() != "init,ready" {
-		t.Errorf("model saw %q", m.View())
+	if tuitest.Screen(m) != "init,ready" {
+		t.Errorf("model saw %q", tuitest.Screen(m))
 	}
 	if n := len(tuitest.FilterBy("web")); n != 3 {
 		t.Errorf("FilterBy returned %d keys, want open, text, commit", n)
@@ -295,5 +296,41 @@ func TestIsExec(t *testing.T) {
 	}
 	if tuitest.IsExec(label("x")) || tuitest.IsQuit(label("x")) {
 		t.Error("plain messages are neither exec nor quit")
+	}
+}
+
+// screen is a view-shaped contract: Update returns it rather than
+// tea.Model, the way views.View does.
+type screen interface {
+	Init() tea.Cmd
+	Update(msg tea.Msg) (screen, tea.Cmd)
+	View() string
+}
+
+// counter counts the labels it sees and renders the count as its body.
+type counter struct{ n int }
+
+func (c counter) Init() tea.Cmd { return nil }
+
+func (c counter) Update(msg tea.Msg) (screen, tea.Cmd) {
+	if _, ok := msg.(label); ok {
+		c.n++
+	}
+	return c, nil
+}
+
+func (c counter) View() string { return strconv.Itoa(c.n) }
+
+func TestDriveAcceptsViewShapedModels(t *testing.T) {
+	t.Parallel()
+
+	m, _ := tuitest.Drive(t, counter{}, label("a"), label("b"))
+	if m.n != 2 || tuitest.Screen(m) != "2" {
+		t.Errorf("concrete view: n=%d screen=%q, want 2", m.n, tuitest.Screen(m))
+	}
+	var s screen = counter{}
+	s, _ = tuitest.Drive(t, s, label("a"))
+	if got := tuitest.Screen(s); got != "1" {
+		t.Errorf("view behind its interface: screen=%q, want 1", got)
 	}
 }

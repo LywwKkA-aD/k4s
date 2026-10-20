@@ -4,9 +4,10 @@ import (
 	"bufio"
 	"context"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 func streamOnePod(ctx context.Context, client *k8s.Client, ns, pod string, tail int64, container string, ch chan<- logEvent) {
@@ -88,7 +89,7 @@ func waitOrDrainCmd(ch <-chan logEvent) tea.Cmd {
 // at the end. This is the heart of the slow-tail fix: instead of N²
 // formatRawLine calls and N viewport.SetContent invocations, we do one of
 // each per drain tick.
-func (m Model) onLogEventsBatch(msg logEventsBatch) (tea.Model, tea.Cmd) {
+func (m Model) onLogEventsBatch(msg logEventsBatch) (views.View, tea.Cmd) {
 	for _, ev := range msg.events {
 		switch {
 		case ev.Err != nil:

@@ -1,12 +1,16 @@
 package styles
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 // podColors tell replicas apart in multi-pod logs. Neighbours sit far apart
 // on the colour wheel, because pods are dealt colours by list position and
 // the pods compared side by side should never share a hue family. Light
 // variants are darker shades of the same hue.
-var podColors = []lipgloss.AdaptiveColor{
+var podColors = []token{
 	{Light: "#6639BA", Dark: "#A78BFA"}, // purple
 	{Light: "#1A7F37", Dark: "#04B575"}, // green
 	{Light: "#9A4A00", Dark: "#F2A65A"}, // orange
@@ -19,28 +23,31 @@ var podColors = []lipgloss.AdaptiveColor{
 	{Light: "#8E3BA6", Dark: "#C678DD"}, // magenta
 }
 
+// PodColorID names one pod colour. Render it through PodColor so light and
+// mono themes get their own variant.
+type PodColorID string
+
 // PodPalette returns one ID per pod colour, in the order they should be
-// dealt. An ID is the colour's dark-theme hex; render it through PodColor
-// so light and mono themes get their own variant.
-func PodPalette() []lipgloss.Color {
-	ids := make([]lipgloss.Color, len(podColors))
+// dealt. An ID is the colour's dark-theme hex.
+func PodPalette() []PodColorID {
+	ids := make([]PodColorID, len(podColors))
 	for i, c := range podColors {
-		ids[i] = lipgloss.Color(c.Dark)
+		ids[i] = PodColorID(c.Dark)
 	}
 	return ids
 }
 
 // PodColor returns the colour for a PodPalette ID under the active theme:
-// its adaptive pair, or no colour at all in mono. Any other colour is
-// returned unchanged outside mono.
-func PodColor(id lipgloss.Color) lipgloss.TerminalColor {
+// its light or dark variant, or no colour at all in mono. Any other ID is
+// read as a colour and returned unchanged outside mono.
+func PodColor(id PodColorID) color.Color {
 	if active.mono {
 		return lipgloss.NoColor{}
 	}
 	for _, c := range podColors {
-		if lipgloss.Color(c.Dark) == id {
-			return c
+		if PodColorID(c.Dark) == id {
+			return c.on(active.dark)
 		}
 	}
-	return id
+	return lipgloss.Color(string(id))
 }

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
@@ -28,7 +28,7 @@ func TestEscOnEarlierModelIgnoresLaterNavigation(t *testing.T) {
 		return send(m, tuitest.Press(":"), tuitest.Type(name), tuitest.Enter())
 	}
 	header := func(m tea.Model) string {
-		lines := strings.Split(ansi.Strip(m.View()), "\n")
+		lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 		return lines[0]
 	}
 

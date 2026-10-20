@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 const (
@@ -24,6 +24,14 @@ const (
 	// hanging it.
 	DefaultMaxMsgs = 1000
 )
+
+// Model is what the driver feeds: the root model, whose Update returns a
+// tea.Model, and every view, whose Update returns a views.View. R is that
+// result type; the driver asserts each result back to the caller's M.
+type Model[R any] interface {
+	Init() tea.Cmd
+	Update(msg tea.Msg) (R, tea.Cmd)
+}
 
 // Driver feeds messages through a model the way tea.Program does: every
 // returned Cmd runs, tea.Batch children run concurrently, tea.Sequence
@@ -57,18 +65,18 @@ func (d Driver) maxMsgs() int {
 // before the next one goes in, like a user typing slowly. It returns the
 // final model and every message the Cmds produced, in delivery order. A
 // tea.QuitMsg is recorded and stops the drive, as it stops a program.
-func Drive[M tea.Model](t testing.TB, m M, msgs ...tea.Msg) (M, []tea.Msg) {
+func Drive[M Model[R], R any](t testing.TB, m M, msgs ...tea.Msg) (M, []tea.Msg) {
 	t.Helper()
 	return DriveWith(t, Driver{}, m, msgs...)
 }
 
 // DriveWith is Drive with an explicit Driver.
-func DriveWith[M tea.Model](t testing.TB, d Driver, m M, msgs ...tea.Msg) (M, []tea.Msg) {
+func DriveWith[M Model[R], R any](t testing.TB, d Driver, m M, msgs ...tea.Msg) (M, []tea.Msg) {
 	t.Helper()
 	r := runner{t: t, d: d}
 	var emitted []tea.Msg
 	for _, in := range msgs {
-		next, out, quit := settle(r, m, []tea.Msg{in})
+		next, out, quit := settle[M, R](r, m, []tea.Msg{in})
 		m = next
 		emitted = append(emitted, out...)
 		if quit {
@@ -80,24 +88,24 @@ func DriveWith[M tea.Model](t testing.TB, d Driver, m M, msgs ...tea.Msg) (M, []
 
 // Init runs m.Init() and drives the messages it produces, the way a program
 // starts a model. It returns the settled model and every produced message.
-func Init[M tea.Model](t testing.TB, m M) (M, []tea.Msg) {
+func Init[M Model[R], R any](t testing.TB, m M) (M, []tea.Msg) {
 	t.Helper()
 	return InitWith(t, Driver{}, m)
 }
 
 // InitWith is Init with an explicit Driver.
-func InitWith[M tea.Model](t testing.TB, d Driver, m M) (M, []tea.Msg) {
+func InitWith[M Model[R], R any](t testing.TB, d Driver, m M) (M, []tea.Msg) {
 	t.Helper()
 	r := runner{t: t, d: d}
 	first := r.collect(m.Init())
-	next, out, _ := settle(r, m, first)
+	next, out, _ := settle[M, R](r, m, first)
 	return next, slices.Concat(first, out)
 }
 
 // Step delivers one message and runs the returned Cmd, but does not feed the
 // produced messages back. Use it to look at what a single Update asked for,
 // for example a fetch that must not be issued twice while one is in flight.
-func Step[M tea.Model](t testing.TB, m M, msg tea.Msg) (M, []tea.Msg) {
+func Step[M Model[R], R any](t testing.TB, m M, msg tea.Msg) (M, []tea.Msg) {
 	t.Helper()
 	r := runner{t: t}
 	next := update(t, m, msg)
@@ -114,7 +122,7 @@ func Collect(t testing.TB, cmd tea.Cmd) []tea.Msg {
 // settle feeds pending through m, then everything the resulting Cmds
 // produce, until nothing is left. The bool reports that a tea.QuitMsg was
 // reached.
-func settle[M tea.Model](r runner, m M, pending []tea.Msg) (M, []tea.Msg, bool) {
+func settle[M Model[R], R any](r runner, m M, pending []tea.Msg) (M, []tea.Msg, bool) {
 	r.t.Helper()
 	queue := slices.Clone(pending)
 	var emitted []tea.Msg
@@ -135,17 +143,17 @@ func settle[M tea.Model](r runner, m M, pending []tea.Msg) (M, []tea.Msg, bool) 
 	return m, emitted, false
 }
 
-type updated[M tea.Model] struct {
+type updated[M any] struct {
 	model M
 	cmd   tea.Cmd
 }
 
 // update calls m.Update and asserts the result keeps the caller's type, so
 // tests get their concrete model (or interface) back without assertions.
-func update[M tea.Model](t testing.TB, m M, msg tea.Msg) updated[M] {
+func update[M Model[R], R any](t testing.TB, m M, msg tea.Msg) updated[M] {
 	t.Helper()
 	next, cmd := m.Update(msg)
-	typed, ok := next.(M)
+	typed, ok := any(next).(M)
 	if !ok {
 		t.Fatalf("tuitest: Update(%T) returned %T, want %T", msg, next, m)
 	}
@@ -262,7 +270,7 @@ func IsQuit(msg tea.Msg) bool {
 
 // Mount sizes m to width x height, then starts it with Init, the way the
 // root brings up a view after a switch. It returns every produced message.
-func Mount[M tea.Model](t testing.TB, m M, width, height int) (M, []tea.Msg) {
+func Mount[M Model[R], R any](t testing.TB, m M, width, height int) (M, []tea.Msg) {
 	t.Helper()
 	sized, resized := Drive(t, m, Resize(width, height))
 	started, initial := Init(t, sized)

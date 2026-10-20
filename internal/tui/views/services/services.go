@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
@@ -93,6 +93,7 @@ func New(client *k8s.Client, namespace string) Model {
 		table.WithHeight(20),
 	)
 	t.SetStyles(styles.Table())
+	styles.FitTable(&t)
 
 	return Model{
 		client:       client,
@@ -166,7 +167,7 @@ func fetchCmd(gen int64, c *k8s.Client, namespace string) tea.Cmd {
 }
 
 // Update routes refresh / select and forwards navigation to the table.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.bodyH = msg.Height
@@ -182,15 +183,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, fetchCmd(m.gen, m.client, m.namespace))
 		}
 		return m, tea.Batch(cmds...)
-	case tea.KeyMsg:
-		if m.filter.IsOpen() {
-			var cmd tea.Cmd
-			var consumed bool
-			m.filter, cmd, consumed = m.filter.Update(msg)
-			if consumed {
-				m.applyFilter()
-				return m, cmd
-			}
+	case tea.PasteMsg:
+		cmd, _ := m.feedFilter(msg)
+		return m, cmd
+	case tea.KeyPressMsg:
+		if cmd, consumed := m.feedFilter(msg); consumed {
+			return m, cmd
 		}
 		if key.Matches(msg, m.watchKey) {
 			m.watchEnabled = !m.watchEnabled
@@ -278,6 +276,21 @@ func (m Model) tableHeight() int {
 	return m.bodyH
 }
 
+// feedFilter hands a key press or a paste to the open filter and refilters
+// the rows. It reports false when the filter is closed or let the key pass.
+func (m *Model) feedFilter(msg tea.Msg) (tea.Cmd, bool) {
+	if !m.filter.IsOpen() {
+		return nil, false
+	}
+	var cmd tea.Cmd
+	var consumed bool
+	m.filter, cmd, consumed = m.filter.Update(msg)
+	if consumed {
+		m.applyFilter()
+	}
+	return cmd, consumed
+}
+
 func (m *Model) applyFilter() {
 	items := m.raw
 	if m.filter.Active() {
@@ -292,7 +305,7 @@ func (m *Model) applyFilter() {
 	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 }
 
-func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.filterKey):
 		return m.openFilter(), true

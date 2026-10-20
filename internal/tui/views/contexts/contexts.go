@@ -8,9 +8,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -58,6 +58,7 @@ func New(currentContext string) Model {
 		table.WithHeight(20),
 	)
 	t.SetStyles(styles.Table())
+	styles.FitTable(&t)
 	return Model{
 		table:          t,
 		currentContext: currentContext,
@@ -83,7 +84,7 @@ func fetchCmd() tea.Cmd {
 }
 
 // Update handles size, refresh, and selection.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.table.SetHeight(max(msg.Height, minTableRows))
@@ -94,7 +95,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.table.SetRows(m.toRows(msg.items))
 		}
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.refreshKey):
 			return m, fetchCmd()

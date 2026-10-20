@@ -547,7 +547,7 @@ func TestHScrollMovesByConstantStep(t *testing.T) {
 	m := New(nil, "ns", []string{"foo"}, 100, "")
 	// Stage a long line so the max is non-zero.
 	m.appendOne("foo", strings.Repeat("x", 500), lineLog)
-	m.viewport.Width = 80
+	m.viewport.SetWidth(80)
 	m.xOffset = 0
 	m.hscroll(+1)
 	if m.xOffset == 0 {
