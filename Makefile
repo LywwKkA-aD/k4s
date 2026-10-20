@@ -114,13 +114,12 @@ snapshot: ## build every release archive into dist/ (GoReleaser, no publish)
 clean: ## remove build artifacts
 	rm -rf bin dist
 
+K3S_CONTAINER  := k4s-k3s
+K3S_KUBECONFIG := .k3s/output/kubeconfig.yaml
+
 k3s-up: ## start local k3s in docker and write .kube/config
+	@mkdir -p $(dir $(K3S_KUBECONFIG))
 	docker compose up -d
-	@echo "waiting for k3s kubeconfig..."
-	@for i in $$(seq 1 60); do \
-		[ -f .k3s/output/kubeconfig.yaml ] && break; \
-		sleep 1; \
-	done
 	@$(MAKE) --no-print-directory kubeconfig
 
 k3s-down: ## stop local k3s (preserves volume)
@@ -131,17 +130,11 @@ k3s-clean: ## stop k3s, drop the persistent volume, and forget kubeconfig
 	rm -rf .k3s .kube
 	@echo "k3s container + volume + local kubeconfig wiped"
 
-kubeconfig: ## rewrite the k3s kubeconfig with localhost server URL
-	@mkdir -p .kube
-	@sed 's#server: https://[^:]*:6443#server: https://127.0.0.1:6443#g' \
-		.k3s/output/kubeconfig.yaml > .kube/config
-	@chmod 600 .kube/config
-	@echo "kubeconfig written to .kube/config"
-	@echo "  export KUBECONFIG=$(KUBECONFIG_PATH)"
+kubeconfig: ## write .kube/config once k3s has a fresh kubeconfig and a live API
+	@deploy/dev/k3s-wait.sh $(K3S_CONTAINER) $(K3S_KUBECONFIG) $(KUBECONFIG_PATH)
 
 seed: ## apply demo workloads to the local k3s
-	@command -v kubectl >/dev/null || { echo "kubectl not on PATH"; exit 1; }
-	@KUBECONFIG=$(KUBECONFIG_PATH) kubectl apply -f deploy/seed/
+	@deploy/dev/seed.sh $(KUBECONFIG_PATH) deploy/seed
 
 seed-down: ## remove demo workloads
 	@KUBECONFIG=$(KUBECONFIG_PATH) kubectl delete -f deploy/seed/ --ignore-not-found
