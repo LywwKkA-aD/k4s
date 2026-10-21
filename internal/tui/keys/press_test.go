@@ -64,3 +64,37 @@ func TestPressPredicates(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeModifiedEnterAndEsc(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   tea.KeyPressMsg
+		want string
+	}{
+		{name: "shift+enter is enter", in: tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}, want: "enter"},
+		{name: "ctrl+enter is enter", in: tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl}, want: "enter"},
+		{name: "keypad enter is enter", in: tea.KeyPressMsg{Code: tea.KeyKpEnter}, want: "enter"},
+		{name: "shift+esc is esc", in: tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModShift}, want: "esc"},
+		{name: "caps lock does not matter", in: tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCapsLock}, want: "enter"},
+		{name: "alt+enter stays distinct as in v1", in: tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt}, want: "alt+enter"},
+		{name: "other keys untouched", in: tea.KeyPressMsg{Code: 'e', Text: "e"}, want: "e"},
+		{name: "ctrl+c untouched", in: tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, want: "ctrl+c"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := keys.Normalize(tc.in).(tea.KeyPressMsg)
+			if !ok {
+				t.Fatalf("Normalize returned %T", keys.Normalize(tc.in))
+			}
+			if got.String() != tc.want {
+				t.Fatalf("Normalize(%q) = %q, want %q", tc.in.String(), got.String(), tc.want)
+			}
+		})
+	}
+	if _, ok := keys.Normalize(tea.WindowSizeMsg{}).(tea.WindowSizeMsg); !ok {
+		t.Fatal("non-key messages must pass through unchanged")
+	}
+}

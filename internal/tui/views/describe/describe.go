@@ -68,7 +68,7 @@ func New(client *k8s.Client, kind Kind, namespace, name string) Model {
 		// Display-only binding so the footer surfaces scroll affordance —
 		// the actual j/k/pgup/pgdn handling lives inside viewport.Update.
 		scrollKey: key.NewBinding(
-			key.WithKeys("up", "down", "j", "k", "pgup", "pgdn"),
+			key.WithKeys("up", "down", "j", "k", "pgup", "pgdown"),
 			key.WithHelp("↑↓/pgup/pgdn", "scroll"),
 		),
 		refreshKey: key.NewBinding(

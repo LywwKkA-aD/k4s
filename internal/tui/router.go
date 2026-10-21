@@ -18,6 +18,7 @@ import (
 // Update is the message router. Heavy lifting is split into per-message
 // helpers so each one stays testable and gocyclo-friendly.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	msg = keys.Normalize(msg)
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return m.onWindowResize(msg)

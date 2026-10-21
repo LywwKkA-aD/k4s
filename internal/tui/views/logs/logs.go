@@ -231,7 +231,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 			key.WithHelp("c", "clear"),
 		),
 		scrollKey: key.NewBinding(
-			key.WithKeys("up", "down", "pgup", "pgdn"),
+			key.WithKeys("up", "down", "pgup", "pgdown"),
 			key.WithHelp("↑↓/pgup/pgdn", "scroll"),
 		),
 	}
