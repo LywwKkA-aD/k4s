@@ -1,9 +1,12 @@
 // Package namespaces is the namespace list view; selecting a row emits a
 // NamespaceSelectedMsg the root model handles to switch the active namespace.
+// When RBAC forbids listing namespaces, the view offers a prompt to type
+// one instead, over the namespaces the session is known to use.
 package namespaces
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -44,6 +47,10 @@ type Model struct {
 	filter filter.Model
 	// pending is the row a Restore asked for, held until the first list.
 	pending pendingRow
+	// prompt is up while RBAC forbids listing namespaces; recent are the
+	// namespaces it offers besides the client's own.
+	prompt prompt
+	recent []string
 
 	selectKey  key.Binding
 	watchKey   key.Binding
@@ -55,7 +62,8 @@ type Model struct {
 type Option func(options) options
 
 type options struct {
-	clock async.Clock
+	clock  async.Clock
+	recent []string
 }
 
 // WithClock arms the refresh ticks on clock instead of real timers; tests
@@ -63,6 +71,16 @@ type options struct {
 func WithClock(clock async.Clock) Option {
 	return func(o options) options {
 		o.clock = clock
+		return o
+	}
+}
+
+// WithRecent names the namespaces this session has used, most recent
+// first. When RBAC forbids listing namespaces the view offers them, after
+// the kubeconfig context's, under a prompt to type any other.
+func WithRecent(names ...string) Option {
+	return func(o options) options {
+		o.recent = append(slices.Clone(o.recent), names...)
 		return o
 	}
 }
@@ -100,6 +118,7 @@ func New(client *k8s.Client, opts ...Option) Model {
 		poll:       poll,
 		table:      t,
 		filter:     filter.New(),
+		recent:     o.recent,
 		selectKey:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
 		watchKey:   key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "watch")),
 		refreshKey: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
@@ -140,9 +159,15 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	case async.Result[[]k8s.Namespace]:
 		return m.onList(msg)
 	case tea.PasteMsg:
+		if next, cmd, consumed := m.feedPrompt(msg); consumed {
+			return next, cmd
+		}
 		next, cmd, _ := m.feedFilter(msg)
 		return next, cmd
 	case tea.KeyPressMsg:
+		if next, cmd, consumed := m.feedPrompt(msg); consumed {
+			return next, cmd
+		}
 		if next, cmd, consumed := m.feedFilter(msg); consumed {
 			return next, cmd
 		}
@@ -166,10 +191,13 @@ func (m Model) onList(msg async.Result[[]k8s.Namespace]) (views.View, tea.Cmd) {
 	m.poll, next = m.poll.Done(msg.Token, msg.Err)
 	m.health, said = m.health.Fold(msg.Err)
 	m.loaded = true
-	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	if msg.Err != nil {
+		m = m.enterPrompt(msg.Err)
+		m.table.SetHeight(max(m.tableHeight(), minTableRows))
 		return m, tea.Batch(next, said)
 	}
+	m.prompt = prompt{}
+	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	m.raw = msg.Value
 	m, gone := m.withRows().landPending()
 	return m, tea.Batch(next, said, gone)
@@ -219,13 +247,17 @@ func (m Model) Command() kubectl.Cmd {
 
 // Help implements views.View. The w hint is the refresh cadence.
 func (m Model) Help() []key.Binding {
+	if m.prompt.on {
+		return m.promptHelp()
+	}
 	watch := m.watchKey
 	watch.SetHelp("w", m.poll.Hint())
 	return []key.Binding{m.selectKey, m.filterKey, watch, m.refreshKey}
 }
 
-// CapturesKeys implements views.View.
-func (m Model) CapturesKeys() bool { return m.filter.IsOpen() }
+// CapturesKeys implements views.View: the open filter and the namespace
+// prompt take every key.
+func (m Model) CapturesKeys() bool { return m.filter.IsOpen() || m.prompt.focused() }
 
 // Close implements views.View. No streaming resources held.
 func (m Model) Close() error { return nil }

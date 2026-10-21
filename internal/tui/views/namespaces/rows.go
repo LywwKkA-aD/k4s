@@ -19,6 +19,9 @@ func (m Model) tableHeight() int {
 	if m.health.Stale() {
 		h--
 	}
+	if m.prompt.on {
+		h -= 2 // the refusal and the prompt
+	}
 	return h
 }
 
@@ -76,6 +79,9 @@ func (m Model) View() string {
 	}
 	if !m.loaded {
 		return styles.Hint.Render("loading namespaces…")
+	}
+	if m.prompt.on {
+		return m.promptView()
 	}
 	if m.health.Failed() {
 		return styles.Warn.Render("namespaces unavailable: " + m.health.Text())
