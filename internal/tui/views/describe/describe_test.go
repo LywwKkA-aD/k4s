@@ -58,6 +58,32 @@ func TestDescribeRendersEachKind(t *testing.T) {
 	}
 }
 
+// TestDescribeCommandScope: a cluster-scoped object (a node, from :nodes
+// or an event about it) is described without -n, which kubectl would
+// reject empty.
+func TestDescribeCommandScope(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		kind      describe.Kind
+		namespace string
+		name      string
+		want      string
+	}{
+		{kind: "node", name: "node-1", want: "kubectl describe node node-1"},
+		{kind: "replicaset", namespace: "demo", name: "web-7d4b9c", want: "kubectl describe replicaset web-7d4b9c -n demo"},
+		{kind: "helmchart.helm.cattle.io", namespace: "kube-system", name: "traefik", want: "kubectl describe helmchart.helm.cattle.io traefik -n kube-system"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
+			if got := describe.New(nil, tc.kind, tc.namespace, tc.name).Command().String(); got != tc.want {
+				t.Errorf("Command = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDescribeFailures(t *testing.T) {
 	t.Parallel()
 

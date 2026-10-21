@@ -277,7 +277,12 @@ func (m Model) Command() kubectl.Cmd {
 	return c
 }
 
+// command is `kubectl describe <kind> <name> -n <ns>`, without -n for a
+// cluster-scoped object such as a node.
 func (m Model) command() kubectl.Cmd {
+	if m.namespace == "" {
+		return kubectl.New("describe", string(m.kind), m.name)
+	}
 	return kubectl.New("describe", string(m.kind), m.name, "-n", m.namespace)
 }
 
