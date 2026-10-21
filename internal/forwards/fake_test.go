@@ -33,7 +33,9 @@ type fakeSession struct {
 	stderr   string
 }
 
-func newFakeSession(pod string) *fakeSession {
+// newFakeSession returns a session that winds down once stopped, or, when
+// stuck, one that ignores StopCh until the test calls finish.
+func newFakeSession(pod string, stuck bool) *fakeSession {
 	s := &fakeSession{}
 	s.PortForwardSession = &k8s.PortForwardSession{
 		StopCh: make(chan struct{}),
@@ -43,6 +45,9 @@ func newFakeSession(pod string) *fakeSession {
 		Pod:    pod,
 		Stderr: s.stderrText,
 		Stdout: func() string { return "" },
+	}
+	if stuck {
+		return s
 	}
 	go func() {
 		select {
@@ -102,6 +107,9 @@ type startCall struct {
 type fakeTunneler struct {
 	sessions chan *fakeSession
 	startErr error
+	// stuck makes every session ignore StopCh, like a forwarder whose
+	// connection hangs on close.
+	stuck bool
 	// resolveDeployment replaces the default "<name>-pod" answer.
 	resolveDeployment func(ctx context.Context, name string) (string, error)
 
@@ -127,7 +135,7 @@ func (f *fakeTunneler) StartPodPortForward(_ context.Context, namespace, podName
 	if f.startErr != nil {
 		return nil, f.startErr
 	}
-	s := newFakeSession(podName)
+	s := newFakeSession(podName, f.stuck)
 	f.mu.Lock()
 	f.calls = append(f.calls, startCall{namespace: namespace, pod: podName, local: localPort, remote: remotePort})
 	f.all = append(f.all, s)

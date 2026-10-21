@@ -275,7 +275,16 @@ func TestRemoveWhenSaveFails(t *testing.T) {
 	mustRegister(t, m, f)
 	setWritable(t, dir, false)
 
+	changed := m.Changes()
 	assertErrContains(t, m.Remove("f1"), "save state")
+	select {
+	case <-changed:
+	default:
+		t.Error("a Remove whose save failed did not signal a change")
+	}
+	if _, ok := find(m.List(), "f1"); ok {
+		t.Error("a Remove whose save failed still lists the forward")
+	}
 	onDisk, err := loadFrom(path)
 	if err != nil {
 		t.Fatalf("loadFrom: %v", err)

@@ -13,8 +13,13 @@ import (
 // Start opens the SPDY tunnel for the given ID. Resolves Service or
 // Deployment to a backing Pod when needed. The forward runs in a
 // goroutine; Start returns once Ready fires or an error surfaces. A
-// returned error is the same one the forward's status shows.
+// returned error is the same one the forward's status shows, except
+// ErrStopping while the Manager is Blocked, which leaves the forward as it
+// was.
 func (m *Manager) Start(ctx context.Context, id string) error {
+	if err := m.Blocked(); err != nil {
+		return err
+	}
 	fwd, attempt, err := m.beginAttempt(id)
 	if err != nil {
 		return err
@@ -45,7 +50,7 @@ func (m *Manager) beginAttempt(id string) (Forward, uint64, error) {
 	defer m.mu.Unlock()
 	a, ok := m.active[id]
 	if !ok {
-		return Forward{}, 0, fmt.Errorf("forward %q not found", id)
+		return Forward{}, 0, notFound(id)
 	}
 	if a.Status == StatusRunning || a.Status == StatusStarting {
 		return Forward{}, 0, errors.New("already running")
