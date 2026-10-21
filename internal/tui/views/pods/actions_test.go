@@ -126,6 +126,69 @@ func TestDetachedWhenTheCursorMoved(t *testing.T) {
 	}
 }
 
+// initPod is a pod with one app container after a plain init container,
+// and a native sidecar before it when sidecar is set.
+func initPod(name string, sidecar bool) *corev1.Pod {
+	p := tuitest.Pod(demo, name, nil, "app")
+	p.Spec.InitContainers = []corev1.Container{{Name: "migrate"}}
+	if sidecar {
+		always := corev1.ContainerRestartPolicyAlways
+		p.Spec.InitContainers = []corev1.Container{{Name: "log-shipper", RestartPolicy: &always}, {Name: "migrate"}}
+	}
+	return p
+}
+
+// TestLookupOffersContainersByAction: l offers every container, the init
+// containers labelled, since a pod stuck in Init says why in their logs;
+// e offers the containers a shell runs in, the app containers and native
+// sidecars, and goes straight in when there is one.
+func TestLookupOffersContainersByAction(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		pod  *corev1.Pod
+		key  string
+		want tea.Msg
+	}{
+		{
+			name: "logs of a pod with init containers", pod: initPod("init-0", true), key: "l",
+			want: views.ContainerPromptRequestMsg{
+				Namespace: demo, Pods: []string{"init-0"}, NextKind: "logs", Target: podRef(demo, "init-0"),
+				Containers: []string{"app", "log-shipper", "migrate"}, Init: []string{"log-shipper", "migrate"},
+			},
+		},
+		{
+			name: "exec offers the app container and the sidecar", pod: initPod("init-0", true), key: "e",
+			want: views.ContainerPromptRequestMsg{
+				Namespace: demo, Pods: []string{"init-0"}, NextKind: "exec", Target: podRef(demo, "init-0"),
+				Containers: []string{"app", "log-shipper"}, Init: []string{"log-shipper"},
+			},
+		},
+		{
+			name: "logs of one app container behind an init container ask which", pod: initPod("migrating-0", false), key: "l",
+			want: views.ContainerPromptRequestMsg{
+				Namespace: demo, Pods: []string{"migrating-0"}, NextKind: "logs", Target: podRef(demo, "migrating-0"),
+				Containers: []string{"app", "migrate"}, Init: []string{"migrate"},
+			},
+		},
+		{
+			name: "exec goes straight into the one app container", pod: initPod("migrating-0", false), key: "e",
+			want: views.ExecRequestMsg{Namespace: demo, Pod: "migrating-0", Container: "app"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := tuitest.NewFakeClient(t, tuitest.WithObjects(tuitest.Namespace(demo), tc.pod))
+			_, out := tuitest.Drive(t, mounted(t, c, demo), tuitest.Press(tc.key))
+			if reqs := tuitest.Requests(out); len(reqs) != 1 || !tuitest.Contains(reqs, tc.want) {
+				t.Fatalf("want %+v, got:\n%s", tc.want, tuitest.Describe(reqs))
+			}
+		})
+	}
+}
+
 // TestExecAndForwardFirstWins: a second e or f while the first resolves
 // emits nothing, so one key press opens one shell or one prompt.
 func TestExecAndForwardFirstWins(t *testing.T) {

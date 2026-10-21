@@ -3,6 +3,7 @@ package pods
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -117,7 +118,7 @@ func (m Model) startAction(a action) (Model, tea.Cmd) {
 	}
 	m.tok, m.acts = tok, acts
 	m.asked[a] = target
-	return m, tea.Batch(m.resolve(tok, target), m.noticeAfter(tok, a))
+	return m, tea.Batch(m.resolve(tok, target, a), m.noticeAfter(tok, a))
 }
 
 func (m Model) begin(a action, t podTarget, tok async.Token) (async.InFlight, bool) {
@@ -141,11 +142,59 @@ func (m Model) resolving() bool {
 	return false
 }
 
-func (m Model) resolve(tok async.Token, t podTarget) tea.Cmd {
+// resolve looks the pod up for a with one GET. The reply is what a offers
+// (offered).
+func (m Model) resolve(tok async.Token, t podTarget, a action) tea.Cmd {
 	c := m.client
 	return async.Run(tok, async.DefaultTimeout, func(ctx context.Context) ([]string, error) {
-		return c.ContainersForPod(ctx, t.namespace, t.name)
+		cs, err := c.PodContainers(ctx, t.namespace, t.name)
+		if err != nil {
+			return nil, err
+		}
+		return offered(a, cs), nil
 	})
+}
+
+// initMark heads an init container's or native sidecar's label, as the
+// container picker shows it. A container name is a DNS label, which has no
+// colon, so a label reads back as one name only.
+const initMark = "init:"
+
+// offered labels the containers a offers, in picker order: logs offer
+// every container, since a pod stuck in Init says why in its init
+// containers' logs; exec offers the ones a shell runs in, the app
+// containers and native sidecars; port-forward needs none.
+func offered(a action, cs k8s.Containers) []string {
+	switch a {
+	case actLogs:
+	case actExec:
+		cs = cs.ForExec()
+	default:
+		return nil
+	}
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		if c.Init {
+			out = append(out, initMark+c.Name)
+			continue
+		}
+		out = append(out, c.Name)
+	}
+	return out
+}
+
+// unmark reads offered's labels back: every container's name, in order,
+// and the names of those marked init.
+func unmark(labels []string) (names, init []string) {
+	names = make([]string, 0, len(labels))
+	for _, l := range labels {
+		name, marked := strings.CutPrefix(l, initMark)
+		names = append(names, name)
+		if marked {
+			init = append(init, name)
+		}
+	}
+	return names, init
 }
 
 func (m Model) noticeAfter(tok async.Token, a action) tea.Cmd {
@@ -188,7 +237,7 @@ func (m Model) dispatch(a action, t podTarget, res async.Result[[]string]) tea.C
 	if a == actForward {
 		return send(views.ForwardRequestMsg{Kind: "pod", Namespace: t.namespace, Name: t.name})
 	}
-	containers := res.Value
+	containers, init := unmark(res.Value)
 	if len(containers) == 0 {
 		return statusCmd(status.Warn, "pod "+t.name+" has no containers")
 	}
@@ -198,7 +247,7 @@ func (m Model) dispatch(a action, t podTarget, res async.Result[[]string]) tea.C
 	switch {
 	case len(containers) > 1:
 		return send(views.ContainerPromptRequestMsg{
-			Namespace: t.namespace, Pods: pods, Containers: containers, NextKind: a.key(),
+			Namespace: t.namespace, Pods: pods, Containers: containers, Init: init, NextKind: a.key(),
 			Target: t.ref(), Detached: detached,
 		})
 	case a == actLogs:

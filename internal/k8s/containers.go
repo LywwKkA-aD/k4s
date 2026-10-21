@@ -48,6 +48,19 @@ func (cs Containers) InitNames() []string {
 	return out
 }
 
+// ForExec returns the containers a shell can be opened in, in order: the
+// app containers and native sidecars, which run as long as the pod does.
+// A plain init container has exited before the app starts.
+func (cs Containers) ForExec() Containers {
+	out := make(Containers, 0, len(cs))
+	for _, c := range cs {
+		if !c.Init || c.Sidecar {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // PodContainers returns the containers of the named pod in picker order.
 func (c *Client) PodContainers(ctx context.Context, namespace, name string) (Containers, error) {
 	pod, err := c.Clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})

@@ -47,14 +47,18 @@ func (c *Client) ListPods(ctx context.Context, namespace string, opts ...ListOpt
 	return out, nil
 }
 
-// ContainersForPod returns the names of the pod's containers in picker
-// order: the app containers, then the init containers and native
-// sidecars, whose logs are where a pod stuck in Init: says why. The TUI
-// prompts for a container when there is more than one.
+// ContainersForPod returns the names of the pod's app containers, in spec
+// order. PodContainers adds its init containers and native sidecars.
 func (c *Client) ContainersForPod(ctx context.Context, namespace, name string) ([]string, error) {
 	cs, err := c.PodContainers(ctx, namespace, name)
 	if err != nil {
 		return nil, err
 	}
-	return cs.Names(), nil
+	var out []string
+	for _, ct := range cs {
+		if !ct.Init {
+			out = append(out, ct.Name)
+		}
+	}
+	return out, nil
 }

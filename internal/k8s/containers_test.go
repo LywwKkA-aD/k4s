@@ -56,7 +56,7 @@ func TestPodContainersListsAppThenInitContainers(t *testing.T) {
 	}
 }
 
-func TestContainersForPodIncludesInitContainers(t *testing.T) {
+func TestContainersForPodListsAppContainers(t *testing.T) {
 	t.Parallel()
 
 	c, _ := k8stest.NewFakeClient(crashPod())
@@ -64,8 +64,27 @@ func TestContainersForPodIncludesInitContainers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ContainersForPod: %v", err)
 	}
-	if want := []string{"app", "metrics", "log-shipper", "check-config", "migrate"}; !slices.Equal(got, want) {
+	if want := []string{"app", "metrics"}; !slices.Equal(got, want) {
 		t.Fatalf("ContainersForPod = %v, want %v", got, want)
+	}
+}
+
+// A shell runs in the containers that run beside the app: the app
+// containers and native sidecars, not an init container that has exited.
+func TestContainersForExec(t *testing.T) {
+	t.Parallel()
+
+	c, _ := k8stest.NewFakeClient(crashPod())
+	cs, err := c.PodContainers(context.Background(), "k4s-broken", "init-crashloop")
+	if err != nil {
+		t.Fatalf("PodContainers: %v", err)
+	}
+	want := k8s.Containers{{Name: "app"}, {Name: "metrics"}, {Name: "log-shipper", Init: true, Sidecar: true}}
+	if got := cs.ForExec(); !slices.Equal(got, want) {
+		t.Fatalf("ForExec = %+v\nwant      %+v", got, want)
+	}
+	if got := (k8s.Containers{}).ForExec(); len(got) != 0 {
+		t.Errorf("ForExec of no containers = %+v", got)
 	}
 }
 
