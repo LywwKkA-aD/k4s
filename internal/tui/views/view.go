@@ -71,9 +71,10 @@ type NamespaceSelectedMsg struct {
 
 // ContextSelectedMsg is emitted by the contexts view when the user picks a
 // kubeconfig context. The root model rebuilds k8s.Client against that
-// context, drops navigation history (it referenced resources that may not
-// exist in the new cluster), resets the active namespace and lands the
-// user on the dashboard.
+// context from the same kubeconfig, drops navigation history and every
+// saved State (they referenced resources that may not exist in the new
+// cluster), moves to the context's own namespace and lands the user on the
+// dashboard.
 type ContextSelectedMsg struct {
 	Name string
 }
@@ -136,7 +137,7 @@ type LogsRequestMsg struct {
 // than one container). Once the user picks one, the root dispatches the
 // next msg according to NextKind:
 //
-//	"logs"  → views.TailPromptRequestMsg{Namespace, Pods, Container, Target}
+//	"logs"  → views.TailPromptRequestMsg{Namespace, Pods, Container, Target, Logs}
 //	"exec"  → views.ExecRequestMsg{Namespace, Pod: Pods[0], Container}
 //
 // list views with only one container should bypass this message entirely
