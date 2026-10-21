@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
 	"net/url"
 	"path"
 	"strconv"
@@ -17,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/portforward"
-	"k8s.io/client-go/transport/spdy"
 )
 
 // tryListen abstracts the listener creation so port-availability checks
@@ -94,37 +92,41 @@ func (s *PortForwardSession) Close() {
 }
 
 // StartPodPortForward opens a local TCP listener on localPort and tunnels
-// traffic to remotePort inside the named pod via SPDY. Returns a session
-// the caller controls; do not call StartPodPortForward.ForwardPorts —
-// that is what the background goroutine does.
+// traffic to remotePort inside the named pod. Returns a session the caller
+// controls; the forwarder itself runs on a goroutine.
 //
 // The forward dies when StopCh is closed *or* when the k4s process exits.
 // State persistence lives a layer above (forwards.Manager).
 //
-// ctx is accepted for symmetry with the rest of the k8s package but is
-// **not** wired to the session lifetime. Manager.Start uses ctx for the
-// startup phase only — once Ready fires, the SPDY tunnel is governed by
-// StopCh alone. (Earlier versions did bind ctx to stopCh; that killed
-// forwards as soon as the caller's short-lived startup context expired.)
+// ctx is accepted for symmetry with the rest of the k8s package but is not
+// wired to the session: callers pass a short "startup" context that ends
+// once Start returns, and a session bound to it would die right after it
+// came up. The dial has its own bound, portForwardStartup, which StopCh
+// cuts short.
 func (c *Client) StartPodPortForward(ctx context.Context, namespace, podName string, localPort, remotePort uint16) (*PortForwardSession, error) {
 	_ = ctx
+	return c.startPodPortForward(namespace, podName, localPort, remotePort, portForwardStartup)
+}
+
+// startPodPortForward is StartPodPortForward with the dial bounded by
+// startup instead of portForwardStartup.
+func (c *Client) startPodPortForward(namespace, podName string, localPort, remotePort uint16, startup time.Duration) (*PortForwardSession, error) {
 	if c.RestConfig == nil {
 		return nil, fmt.Errorf("client built without rest config; port-forward is unavailable")
 	}
-
-	transport, upgrader, err := spdy.RoundTripperFor(c.RestConfig)
-	if err != nil {
-		return nil, fmt.Errorf("build SPDY transport: %w", err)
-	}
-
 	serverURL, err := parsePortForwardURL(c.RestConfig.Host, namespace, podName)
 	if err != nil {
 		return nil, fmt.Errorf("build portforward URL: %w", err)
 	}
 
-	dialer := spdy.NewDialer(upgrader, spdyHTTPClient(transport), http.MethodPost, serverURL)
-
 	stopCh := make(chan struct{})
+	startCtx, cancel := startupContext(stopCh, startup)
+	dialer, err := newPortForwardDialer(withStartupContext(startCtx, c.RestConfig), serverURL)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
 	readyCh := make(chan struct{})
 	errCh := make(chan error, 1)
 	doneCh := make(chan struct{})
@@ -138,13 +140,15 @@ func (c *Client) StartPodPortForward(ctx context.Context, namespace, podName str
 	// ("bind: permission denied" on stderr).
 	stdout := &captureWriter{}
 	stderr := &captureWriter{}
-	fw, err := portforward.New(dialer, ports, stopCh, readyCh, stdout, stderr)
+	fw, err := portforward.NewForStreaming(dialer, ports, stopCh, readyCh, stdout, stderr)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("build forwarder: %w", err)
 	}
 
 	go func() {
 		defer close(doneCh)
+		defer cancel()
 		// ForwardPorts blocks until stopCh closes or the connection
 		// dies. Either way we surface the result on Err (non-blocking
 		// because Err is buffered size 1) so the supervisor can record
@@ -157,15 +161,6 @@ func (c *Client) StartPodPortForward(ctx context.Context, namespace, podName str
 		}
 	}()
 
-	// NOTE: we used to spawn a watcher that closed stopCh on
-	// ctx.Done(). That tied the session's lifetime to the caller's
-	// context — and callers typically pass a short-lived "startup"
-	// context that gets cancelled the moment Manager.Start returns
-	// (after Ready fires). The result was a forward that came up
-	// healthy and was killed milliseconds later. Now the session
-	// outlives ctx: Manager.Stop owns stopCh; ctx is only relevant
-	// up to Ready/Err in Manager.Start's own select.
-
 	return &PortForwardSession{
 		StopCh: stopCh,
 		Ready:  readyCh,
@@ -175,31 +170,6 @@ func (c *Client) StartPodPortForward(ctx context.Context, namespace, podName str
 		Stdout: stdout.String,
 		Stderr: stderr.String,
 	}, nil
-}
-
-// spdyUpgradeTimeout bounds how long we wait for the API server (or the
-// proxy in front of it) to answer the SPDY upgrade request with response
-// headers. Without it a stuck server leaves the dial goroutine parked
-// forever. The timeout stops applying the moment headers arrive, so an
-// established long-lived tunnel is unaffected — which is exactly why we
-// set ResponseHeaderTimeout on the transport instead of Timeout on the
-// http.Client (the latter would kill healthy tunnels mid-stream).
-const spdyUpgradeTimeout = 15 * time.Second
-
-// spdyHTTPClient returns the http.Client used for the SPDY upgrade. When the
-// transport is a plain *http.Transport we clone it and bound the header wait
-// so a stuck API server fails fast instead of leaking the goroutine; the
-// timeout stops applying once the upgrade response arrives, so established
-// tunnels are unaffected. Non-*http.Transport round trippers (wrappers,
-// test doubles) are passed through untouched — we can't clone what we
-// don't know.
-func spdyHTTPClient(transport http.RoundTripper) *http.Client {
-	if t, ok := transport.(*http.Transport); ok {
-		clone := t.Clone()
-		clone.ResponseHeaderTimeout = spdyUpgradeTimeout
-		return &http.Client{Transport: clone}
-	}
-	return &http.Client{Transport: transport}
 }
 
 // parsePortForwardURL parses RestConfig.Host into a URL that preserves any

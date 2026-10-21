@@ -3,7 +3,6 @@ package k8s
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 	"testing"
 
@@ -294,37 +293,3 @@ func TestResolveDeploymentToPodMatchExpressionsSelector(t *testing.T) {
 		t.Errorf("pod = %q, want demo-1", pod)
 	}
 }
-
-func TestSPDYHTTPClientBoundsHeaderWait(t *testing.T) {
-	t.Parallel()
-	orig := &http.Transport{}
-	client := spdyHTTPClient(orig)
-	got, ok := client.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("transport = %T, want *http.Transport", client.Transport)
-	}
-	if got.ResponseHeaderTimeout != spdyUpgradeTimeout {
-		t.Errorf("ResponseHeaderTimeout = %v, want %v", got.ResponseHeaderTimeout, spdyUpgradeTimeout)
-	}
-	if got == orig {
-		t.Error("client must wrap a clone; mutating the caller's transport would leak the timeout elsewhere")
-	}
-	if orig.ResponseHeaderTimeout != 0 {
-		t.Errorf("original transport mutated: ResponseHeaderTimeout = %v, want 0", orig.ResponseHeaderTimeout)
-	}
-}
-
-func TestSPDYHTTPClientPassesThroughNonTransport(t *testing.T) {
-	t.Parallel()
-	// Round trippers we don't recognise (wrappers, test doubles) can't be
-	// cloned safely — the helper must fall back without panicking.
-	stub := stubRoundTripper{}
-	client := spdyHTTPClient(stub)
-	if client.Transport != stub {
-		t.Errorf("transport = %T, want the stub passed through", client.Transport)
-	}
-}
-
-type stubRoundTripper struct{}
-
-func (stubRoundTripper) RoundTrip(*http.Request) (*http.Response, error) { return nil, nil }
