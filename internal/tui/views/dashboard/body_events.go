@@ -1,0 +1,146 @@
+package dashboard
+
+import (
+	"fmt"
+	"slices"
+
+	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
+	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/viz"
+)
+
+const (
+	// eventsInfo is panel 5's top border note: what kubectl events lists.
+	eventsInfo = "type=Warning · 1h"
+	// minMessageW is the narrowest MESSAGE column worth drawing.
+	minMessageW = 24
+)
+
+// eventCols is one step of the column drop order: MESSAGE, then COUNT,
+// then the namespace after the object.
+type eventCols struct {
+	message, count, ns bool
+}
+
+var eventSteps = []eventCols{
+	{message: true, count: true, ns: true},
+	{count: true, ns: true},
+	{ns: true},
+	{},
+}
+
+// eventsBody draws panel 5: the last hour as a strip, then the newest
+// warnings.
+func eventsBody(f frame, w, h int) panelBody {
+	e := f.snap.Events
+	body := panelBody{info: eventsInfo}
+	switch {
+	case e.Avail.State == dash.StateForbidden:
+		body.lines = []string{
+			" " + f.paint(markUnknown) + " events forbidden",
+			"   " + f.command(e.Avail.CanI),
+		}
+		return body
+	case !readable(e.Avail):
+		body.lines = []string{" " + f.unreadable("events", e.Avail)}
+		return body
+	case len(e.Rows) == 0:
+		body.lines = []string{
+			" " + f.paint(markOK) + " no warnings in the last hour",
+			"   " + f.muted("events live about an hour, so older trouble is not listed"),
+		}
+		return body
+	}
+	items := eventItems(f.snap)
+	strip := []string{" " + eventsStrip(f, w-2)}
+	head := fitHead(h, min(len(items), minListRows)+1, slices.Concat(strip, []string{""}), strip)
+	table, hidden := eventTable(f, w, items, h-len(head))
+	body.lines = slices.Concat(head, table)
+	listed := fmt.Sprintf("newest first · %d of %d", len(items), e.Total)
+	if e.Truncated {
+		listed = fmt.Sprintf("newest first · %d of ≥%d", len(items), e.Total)
+	}
+	body.footer = f.listFooter(dash.PanelEvents, len(items), hidden, listed)
+	return body
+}
+
+// eventsStrip is the ≈ count of warnings over the last hour, one cell per
+// two minutes, and the totals.
+func eventsStrip(f frame, w int) string {
+	e := f.snap.Events
+	vals := make([]float64, len(e.LastHour))
+	for i, n := range e.LastHour {
+		vals[i] = float64(n)
+	}
+	text := f.ds.Approx.Render(styles.GlyphApprox) + " last hour " + viz.Spark(f.th, len(vals), vals, 0) +
+		"   " + warningsCount(e) + " · " + plural(e.Reasons, "reason", "reasons") + " · " + plural(e.Objects, "object", "objects")
+	return cutText(text, w)
+}
+
+// eventTable is the header and the warnings that fit in room lines, the
+// cursor's row kept on screen; hidden counts the rows left out.
+func eventTable(f frame, w int, items []eventItem, room int) (lines []string, hidden int) {
+	avail := w - 4
+	c, head, cells := fitEvents(items, avail)
+	lines = []string{f.muted("   " + c.join(head))}
+	rows := make([]row, 0, len(items))
+	for _, it := range items {
+		rows = append(rows, it.row)
+	}
+	sel := f.selectedIn(dash.PanelEvents, rows)
+	room = max(room-1, 0)
+	start := window(len(items), room, sel)
+	for i := start; i < min(len(items), start+room); i++ {
+		text := f.paint(eventMark(items[i].e)) + " " + cutText(c.join(cells[i]), avail)
+		lines = append(lines, f.listLine(text, i == sel))
+	}
+	return lines, len(items) - (len(lines) - 1)
+}
+
+// fitEvents picks the widest column step that fits in avail, the last one
+// when none does. The message is the last column and is cut at the edge,
+// so it fits when it keeps minMessageW columns.
+func fitEvents(items []eventItem, avail int) (cols, []string, [][]string) {
+	var head []string
+	var cells [][]string
+	var c cols
+	for _, step := range eventSteps {
+		head, cells = eventCells(items, step)
+		c = measure(head, cells, nil, nil)
+		need := c.width()
+		if step.message {
+			need += minMessageW - c.widths[len(c.widths)-1]
+		}
+		if need <= avail {
+			break
+		}
+	}
+	return c, head, cells
+}
+
+func eventCells(items []eventItem, c eventCols) ([]string, [][]string) {
+	head := []string{"LAST SEEN", "REASON", "OBJECT"}
+	if c.count {
+		head = append(head, "COUNT")
+	}
+	if c.message {
+		head = append(head, "MESSAGE")
+	}
+	out := make([][]string, 0, len(items))
+	for _, it := range items {
+		e := it.e
+		object := clean(e.Object.Kind + "/" + e.Object.Name)
+		if c.ns && e.Object.Namespace != "" {
+			object += " · " + clean(e.Object.Namespace)
+		}
+		cells := []string{ago(e.Ago), clean(e.Reason), object}
+		if c.count {
+			cells = append(cells, fmt.Sprintf("×%d", e.Count))
+		}
+		if c.message {
+			cells = append(cells, clean(e.Message))
+		}
+		out = append(out, cells)
+	}
+	return head, out
+}

@@ -226,9 +226,10 @@ func hiddenText(p dash.Panel, sh shown) string {
 	return name + " is hidden at this size: widen the terminal"
 }
 
-// onEnter opens what the focused row stands for: describe for a pod. On
-// the banner it focuses the panel of the most severe finding. Anything
-// else has no k4s view yet, and y copies its command.
+// onEnter opens what the focused row stands for: describe for a pod, a
+// deployment or a service. On the banner it focuses the panel of the most
+// severe finding. Anything else has no k4s view yet, and y copies its
+// command.
 func (m Model) onEnter() (views.View, tea.Cmd) {
 	if m.client == nil {
 		return m, nil
@@ -237,9 +238,8 @@ func (m Model) onEnter() (views.View, tea.Cmd) {
 	if f.panel == dash.PanelOverview && m.mem.snap.Verdict.Focus != dash.PanelOverview {
 		return m.jump(m.mem.snap.Verdict.Focus)
 	}
-	r, ok := f.selected(m.rows(f.panel))
-	if ok && r.target.Kind == "pod" && r.placed {
-		req := views.DescribeRequestMsg{Kind: "pod", Namespace: r.target.Namespace, Name: r.target.Name}
+	if r, ok := f.selected(m.rows(f.panel)); ok && describable(r) {
+		req := views.DescribeRequestMsg{Kind: r.target.Kind, Namespace: r.target.Namespace, Name: r.target.Name}
 		return m, func() tea.Msg { return req }
 	}
 	return m, statusCmd(status.Info, "no k4s view · y copies the command")
@@ -255,7 +255,7 @@ func (m Model) enterHint() string {
 		}
 		return "go to " + panelNames[to]
 	}
-	if r, ok := f.selected(m.rows(f.panel)); ok && r.target.Kind == "pod" && r.placed {
+	if r, ok := f.selected(m.rows(f.panel)); ok && describable(r) {
 		return "describe"
 	}
 	return ""

@@ -60,21 +60,8 @@ func busyK3s() dash.Snapshot {
 	s.Cluster = busyCluster()
 	s.Nodes = busyNodes()
 	s.Pods = busyPods()
-	s.Workloads = dash.WorkloadsPanel{
-		Cmd:    kc("get", "deploy,sts,ds", "-A"),
-		Deploy: dash.KindSummary{Avail: ok(), Ready: 49, Total: 52},
-		STS:    dash.KindSummary{Avail: ok(), Ready: 7, Total: 8},
-		DS:     dash.KindSummary{Avail: ok(), Ready: 5, Total: 5},
-		Jobs:   dash.JobsSummary{Avail: ok(), FailedRecent: 1, Active: 2},
-		Cron:   dash.CronSummary{Avail: ok(), Total: 14, Suspended: 1},
-		Rows: []dash.WorkloadRow{
-			{Key: dash.ObjectKey{Kind: "deployment", Namespace: "shop", Name: "payments-worker"}, Resolved: true, Desired: 2, Sev: dash.SevFailing},
-		},
-	}
-	s.Events = dash.EventsPanel{
-		Avail: ok(), Cmd: kc("events", "-A", "--types=Warning"), Total: 9, Reasons: 5, Objects: 6, Counted: 1,
-		Rows: []dash.EventRow{{Reason: "BackOff"}, {Reason: "BackOff"}, {Reason: "FailedScheduling"}, {Reason: "Unhealthy"}},
-	}
+	s.Workloads = busyWorkloads()
+	s.Events = busyEvents()
 	s.K3s = dash.K3sPanel{
 		Shown: true, Cmd: kc("get", "deploy,ds", "-n", "kube-system"),
 		Components: []dash.Component{{Present: true, Ready: 1, Desired: 1}, {Present: true, Ready: 1, Desired: 1}, {Present: true, Ready: 1, Desired: 1}, {Present: true, Ready: 1, Desired: 1}},

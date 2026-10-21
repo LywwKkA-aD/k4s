@@ -22,13 +22,13 @@
 │ ▲ monitoring   loki-backend-0                   1/2    CrashLoopBackOff  12 (<1m ago)  5d   k3s-cp-1                 │
 │ ▲ staging      api-7f6d9c4b8-2mzqt              0/1    ImagePullBackOff  0             22m  k3s-agent-1              │
 ╰─────────────────────────────────────────────────────────────────────────────── +5 · 6 need attention · 2 restarting ─╯
-╭─┤ 4 workloads ├──────────────────────────────────────────╮╭─┤ 5 events ├─────────────────────────────────────────────╮
-│ ▲ 61/65 ready · ▲ 1 job failed · ○ 1 cronjob suspended   ││ △ 9 warnings in 1h · BackOff · FailedScheduling · Unheal…│
+╭─┤ 4 workloads ├──────────────────────────── 61/65 ready ─╮╭─┤ 5 events ├───────────────────────── type=Warning · 1h ─╮
+│ deploy 49/52 · sts 7/8 · ds 5/5 · jobs ▲1 · cron ○1      ││ ≈ last hour ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂▃▂▁▁▂▃▆▇▆▅▆▇█▇█   10 warning… │
 │                                                          ││                                                          │
-│                                                          ││                                                          │
-│                                                          ││                                                          │
-│                                                          ││                                                          │
-│                                                          ││                                                          │
-│                                                          ││                                                          │
-│                                                          ││                                                          │
-╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
+│   KIND    NAMESPACE/NAME            READY                ││   LAST SEEN  REASON                OBJECT                │
+│ ▲ deploy  shop/payments-worker      0/2                  ││ ◇ <1m        BackOff               pod/loki-backend-0    │
+│ ▲ deploy  staging/api               0/1                  ││ ◇ 2m         BackOff               pod/payments-worker-… │
+│ ▲ deploy  monitoring/grafana        0/1                  ││ ◇ 2m         BackOff               pod/payments-worker-… │
+│ ▲ sts     monitoring/loki-backend   0/1                  ││ △ 4m         FailedMount           pod/backup-7d9f8c6b5… │
+│ ▲ job     ci/nightly-e2e-28741000   failed 41m           ││ ◇ 6m         FailedScheduling      pod/runner-build-881… │
+╰────────────────────────────────── +1 · 5 need attention ─╯╰─────────────────────────── +5 · newest first · 10 of 10 ─╯
