@@ -1,0 +1,19 @@
+ k4s  ·  ctx: fake  ·  ns: ALL  ·  view: dashboard
+──────────────────────────────────────────────────────────
+
+
+      ╭──────────────────────────────────────────────╮
+      │                                              │
+      │   tail lines                                 │
+      │                                              │
+      │   tail lines: 100                            │
+      │                                              │
+      │   Enter run · Esc cancel · default 100       │
+      │                                              │
+      ╰──────────────────────────────────────────────╯
+
+
+──────────────────────────────────────────────────────────
+ q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help
+ ·  r refresh  ·  w watch
+ ≈ kubectl get all -A --watch

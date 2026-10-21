@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/cellbuf"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
@@ -49,13 +50,20 @@ func (m Model) render() string {
 		content = m.renderPromptPopup(bodyWidth, bodyHeight)
 	}
 
-	body := lipgloss.NewStyle().
-		Width(bodyWidth).
-		Height(bodyHeight).
-		MaxHeight(bodyHeight).
-		Render(content)
+	body := fit(lipgloss.NewStyle().Height(bodyHeight).MaxHeight(bodyHeight), bodyWidth, content)
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+}
+
+// fit renders s with st at width w. Lines wider than the space inside the
+// padding are wrapped with x/cellbuf first, as the chrome has always been:
+// lipgloss's own wrap breaks styled lines elsewhere, which moves the
+// selected row of a table that is wider than the terminal.
+func fit(st lipgloss.Style, w int, s string) string {
+	if wrapAt := w - st.GetHorizontalPadding(); wrapAt > 0 {
+		s = cellbuf.Wrap(s, wrapAt, "")
+	}
+	return st.Width(w).Render(s)
 }
 
 // renderPromptPopup renders the active prompt as a centred bordered card.
@@ -102,7 +110,7 @@ func (m Model) renderHeader() string {
 	)
 
 	w := max(m.width-2, 0)
-	return styles.Header.Width(w).Render(strings.Join(parts, "  ·  "))
+	return fit(styles.Header, w, strings.Join(parts, "  ·  "))
 }
 
 func (m Model) renderFooter() string {
@@ -112,7 +120,7 @@ func (m Model) renderFooter() string {
 	// Multi-field prompts (tail / container) live in a centred popup
 	// drawn in the body, so the footer stays informative.
 	if m.cmdMode == cmdBarCommand {
-		return styles.Footer.Width(w).Render(m.cmdBarView())
+		return fit(styles.Footer, w, m.cmdBarView())
 	}
 
 	var top string
@@ -128,9 +136,9 @@ func (m Model) renderFooter() string {
 	}
 
 	if bottom == "" {
-		return styles.Footer.Width(w).Render(top)
+		return fit(styles.Footer, w, top)
 	}
-	return styles.Footer.Width(w).Render(lipgloss.JoinVertical(lipgloss.Left, top, bottom))
+	return fit(styles.Footer, w, lipgloss.JoinVertical(lipgloss.Left, top, bottom))
 }
 
 func (m Model) footerBindings() []string {

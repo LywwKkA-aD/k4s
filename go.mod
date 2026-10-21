@@ -8,6 +8,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.9
+	github.com/charmbracelet/x/cellbuf v0.0.15
 	golang.org/x/term v0.47.0
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
