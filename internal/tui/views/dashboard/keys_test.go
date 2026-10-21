@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
@@ -149,6 +150,24 @@ func TestHintsFollowTheFocus(t *testing.T) {
 	m, _ = press(t, m, "3", "down")
 	if hint(m, "enter") != "describe" {
 		t.Fatalf("enter hint on a pod row = %q, want describe", hint(m, "enter"))
+	}
+}
+
+// TestEnterHintOnTheBannerNeedsItsPanel: Enter on the banner goes to the
+// most severe panel, so the hint is left out where that panel is hidden.
+func TestEnterHintOnTheBannerNeedsItsPanel(t *testing.T) {
+	t.Parallel()
+
+	base := func() dash.Snapshot {
+		s := busyK3s()
+		s.Verdict.Focus = dash.PanelTopPods
+		return s
+	}
+	if got := hint(mount(t, newFeed(base), wideW, wideH), "enter"); got != "go to top pods" {
+		t.Fatalf("enter hint with top pods on screen = %q", got)
+	}
+	if got := hint(mount(t, newFeed(base), 120, 34), "enter"); got != "" {
+		t.Fatalf("enter hint with top pods hidden = %q, want none", got)
 	}
 }
 
