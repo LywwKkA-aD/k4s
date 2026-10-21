@@ -2,10 +2,7 @@ package k8s
 
 import (
 	"context"
-	"fmt"
 	"time"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Pod is the presentation-friendly snapshot of a Kubernetes Pod. Ready,
@@ -50,17 +47,14 @@ func (c *Client) ListPods(ctx context.Context, namespace string, opts ...ListOpt
 	return out, nil
 }
 
-// ContainersForPod returns the names of every container in the pod's spec.
-// Used by the TUI to decide whether to prompt for a container before opening
-// logs or exec.
+// ContainersForPod returns the names of the pod's containers in picker
+// order: the app containers, then the init containers and native
+// sidecars, whose logs are where a pod stuck in Init: says why. The TUI
+// prompts for a container when there is more than one.
 func (c *Client) ContainersForPod(ctx context.Context, namespace, name string) ([]string, error) {
-	pod, err := c.Clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	cs, err := c.PodContainers(ctx, namespace, name)
 	if err != nil {
-		return nil, fmt.Errorf("get pod: %w", err)
+		return nil, err
 	}
-	out := make([]string, 0, len(pod.Spec.Containers))
-	for _, ct := range pod.Spec.Containers {
-		out = append(out, ct.Name)
-	}
-	return out, nil
+	return cs.Names(), nil
 }
