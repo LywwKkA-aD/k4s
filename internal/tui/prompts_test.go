@@ -184,7 +184,7 @@ func TestHelpPopup(t *testing.T) {
 	}{
 		{
 			name: "dashboard",
-			want: []string{"help", "global", "force quit", "command bar", "commands", ":pods", "po, pod", ":forwards", "? / Esc close", "view: dashboard"},
+			want: []string{"help", "global", "force quit", "command bar", "commands", ":pods", "po, pod", ":forwards", ":ns <name>", "? / Esc close", "view: dashboard"},
 		},
 		{
 			name:  "pods view lists its own keys",

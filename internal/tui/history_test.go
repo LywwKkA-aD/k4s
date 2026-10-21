@@ -200,6 +200,30 @@ func viewsOf(h []historyEntry) []string {
 	return out
 }
 
+// TestNamespaceCommandKeepsTheFilter: `:ns` reloads a list in the new
+// namespace with its filter and watch, but not its row; from a view that
+// lists no namespace it opens fresh pods.
+func TestNamespaceCommandKeepsTheFilter(t *testing.T) {
+	t.Parallel()
+
+	st := views.State{Filter: "web", Selected: "demo/web-1", Cursor: 3, Offset: 1, Paused: true}
+	m := stubbed().switchTo(viewDeployments).withState(st)
+	next, _ := m.execCmd("ns shop")
+	v := next.current.(stubView)
+	want := views.State{Filter: "web", Paused: true}
+	if v.title != viewDeployments || next.namespace != "shop" || v.restored == nil || *v.restored != want {
+		t.Fatalf(":ns shop on deployments = %+v in %q, want deployments restored with %+v", v, next.namespace, want)
+	}
+	if top := next.history[len(next.history)-1]; top.state != st || top.namespace != "" {
+		t.Fatalf("history top = %+v, want the old namespace with its full state", top)
+	}
+
+	next, _ = stubbed().withState(st).execCmd("ns shop")
+	if v := next.current.(stubView); v.title != viewPods || v.restored != nil {
+		t.Fatalf(":ns shop on the dashboard = %+v, want fresh pods", v)
+	}
+}
+
 // TestContextSwitchDropsSavedStates: a new cluster starts without history.
 func TestContextSwitchDropsSavedStates(t *testing.T) {
 	t.Parallel()
