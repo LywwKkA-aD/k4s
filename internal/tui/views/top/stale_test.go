@@ -10,7 +10,7 @@ import (
 )
 
 // metricsDown is what the metrics outage says in the status row.
-const metricsDown = "metrics unavailable: metrics request: the server is currently unable to handle the request"
+const metricsDown = "metrics unavailable: metrics-server is not ready (503)"
 
 // TestFailedRefreshKeepsTheRowsAndSaysSo: the last good rows stay under a
 // stale banner, the failure is a status once per text, and recovery drops

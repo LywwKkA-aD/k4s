@@ -174,17 +174,19 @@ func TestMetricsServerMissingHint(t *testing.T) {
 	cases := []struct {
 		name     string
 		status   int
+		want     string
 		wantHint bool
 	}{
-		{name: "metrics-server missing", status: http.StatusNotFound, wantHint: true},
-		{name: "metrics-server down", status: http.StatusServiceUnavailable},
+		{name: "metrics-server missing", status: http.StatusNotFound, want: "metrics unavailable: metrics-server is not installed", wantHint: true},
+		{name: "metrics-server down", status: http.StatusServiceUnavailable, want: "metrics unavailable: metrics-server is not ready (503)"},
+		{name: "forbidden", status: http.StatusForbidden, want: "kubectl auth can-i list pods.metrics.k8s.io -A"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			screen := tuitest.Screen(mounted(t, tuitest.NewFakeClient(t, tuitest.WithMetricsStatus(tc.status)), ""))
-			if !strings.Contains(screen, "metrics unavailable") {
-				t.Errorf("screen lacks the failure:\n%s", screen)
+			if !strings.Contains(strings.Join(strings.Fields(screen), " "), tc.want) {
+				t.Errorf("screen lacks %q:\n%s", tc.want, screen)
 			}
 			if got := strings.Contains(screen, "install metrics-server"); got != tc.wantHint {
 				t.Errorf("install hint shown = %v, want %v:\n%s", got, tc.wantHint, screen)

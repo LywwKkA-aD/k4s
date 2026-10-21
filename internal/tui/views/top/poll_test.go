@@ -155,11 +155,11 @@ func TestMetricsFailuresAnswerWithAStatus(t *testing.T) {
 		},
 		{
 			name: "forbidden", status: http.StatusForbidden,
-			want: views.StatusMsg{Level: status.Error, Text: "metrics forbidden: metrics request: unknown"},
+			want: views.StatusMsg{Level: status.Error, Text: "forbidden: list pods.metrics.k8s.io in all namespaces · kubectl auth can-i list pods.metrics.k8s.io -A"},
 		},
 		{
 			name: "metrics-server down", status: http.StatusServiceUnavailable,
-			want: views.StatusMsg{Level: status.Warn, Text: "metrics unavailable: metrics request: the server is currently unable to handle the request"},
+			want: views.StatusMsg{Level: status.Warn, Text: "metrics unavailable: metrics-server is not ready (503)"},
 		},
 	}
 	for _, tc := range cases {

@@ -2,8 +2,8 @@ package top
 
 import (
 	"cmp"
+	"errors"
 	"slices"
-	"strings"
 
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
@@ -138,6 +138,9 @@ func (m Model) usages() []usage {
 	return out
 }
 
+// installHint is how a cluster without metrics-server gets one.
+const installHint = "hint: install metrics-server (kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml)"
+
 // View renders the table or a placeholder. Metrics-server can be missing
 // (common in fresh k3s without --metrics-server enabled), so when the
 // fetch fails we hint at the cause rather than show a raw error.
@@ -149,14 +152,11 @@ func (m Model) View() string {
 		return styles.Hint.Render("loading metrics…")
 	}
 	if m.health.Failed() {
-		err := m.health.Err()
-		hint := "metrics unavailable: " + err.Error()
-		if isMetricsServerMissing(err) {
-			hint += "\n\n" + styles.Hint.Render(
-				"hint: install metrics-server (kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml)",
-			)
+		f := failureOf(m.health.Err())
+		if f.missing {
+			return styles.Warn.Render(f.text) + "\n\n" + styles.Hint.Render(installHint)
 		}
-		return styles.Warn.Render(hint)
+		return styles.Warn.Render(f.text)
 	}
 	if len(m.table.Rows()) == 0 {
 		return styles.Hint.Render("no metrics yet (give metrics-server a few seconds)")
@@ -185,26 +185,32 @@ func (m Model) report(err error) tea.Cmd {
 	if last := m.health.Err(); !m.asked && last != nil && last.Error() == err.Error() {
 		return nil
 	}
-	msg := views.StatusMsg{Level: status.Warn, Text: "metrics unavailable: " + err.Error()}
-	switch {
-	case apierrors.IsForbidden(err):
-		msg = views.StatusMsg{Level: status.Error, Text: "metrics forbidden: " + err.Error()}
-	case isMetricsServerMissing(err):
-		msg.Text = "metrics unavailable: metrics-server is not installed"
-	}
+	f := failureOf(err)
+	msg := views.StatusMsg{Level: f.level, Text: f.text}
 	return func() tea.Msg { return msg }
 }
 
-// isMetricsServerMissing returns true when the error reads like the API
-// group simply isn't registered. We cannot type-assert here because the
-// error is wrapped via fmt.Errorf("metrics request: %w", ...), so a string
-// match is the pragmatic choice.
-func isMetricsServerMissing(err error) bool {
-	if err == nil {
-		return false
+// failure is how a failed fetch reads in the status row and the body.
+type failure struct {
+	text  string
+	level status.Level
+	// missing is a cluster without metrics-server, which the body follows
+	// with the install hint.
+	missing bool
+}
+
+// failureOf words err. RBAC refusing metrics is an error with its can-i;
+// a metrics API that is absent or not ready, or any other failure, is a
+// warning: the rest of k4s works without metrics.
+func failureOf(err error) failure {
+	d := k8s.Classify(err)
+	switch {
+	case d.Kind == k8s.KindForbidden:
+		return failure{text: d.Text(), level: status.Error}
+	case !errors.Is(err, k8s.ErrMetricsUnavailable):
+		return failure{text: "metrics unavailable: " + d.Text(), level: status.Warn}
+	case apierrors.IsServiceUnavailable(err):
+		return failure{text: "metrics unavailable: metrics-server is not ready (503)", level: status.Warn}
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "could not find the requested resource") ||
-		strings.Contains(msg, "the server could not find") ||
-		strings.Contains(msg, "no matches for kind")
+	return failure{text: "metrics unavailable: metrics-server is not installed", level: status.Warn, missing: true}
 }

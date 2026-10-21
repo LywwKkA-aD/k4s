@@ -113,49 +113,51 @@ func TestListNodeMetricsOverREST(t *testing.T) {
 type metricsCall struct {
 	name   string
 	decode string // prefix of the error when the body is not JSON
+	prefix string // the CallError the failure is wrapped in
 	call   func(context.Context, *k8s.Client) error
 }
 
 func metricsCalls() []metricsCall {
 	return []metricsCall{
-		{name: "pods", decode: "decode pod metrics: ", call: func(ctx context.Context, c *k8s.Client) error {
+		{name: "pods", decode: "decode pod metrics: ", prefix: "list pods.metrics.k8s.io: ", call: func(ctx context.Context, c *k8s.Client) error {
 			_, err := c.ListPodMetrics(ctx, "")
 			return err
 		}},
-		{name: "pods in namespace", decode: "decode pod metrics: ", call: func(ctx context.Context, c *k8s.Client) error {
+		{name: "pods in namespace", decode: "decode pod metrics: ", prefix: "list pods.metrics.k8s.io: ", call: func(ctx context.Context, c *k8s.Client) error {
 			_, err := c.ListPodMetrics(ctx, "demo")
 			return err
 		}},
-		{name: "nodes", decode: "decode node metrics: ", call: func(ctx context.Context, c *k8s.Client) error {
+		{name: "nodes", decode: "decode node metrics: ", prefix: "list nodes.metrics.k8s.io: ", call: func(ctx context.Context, c *k8s.Client) error {
 			_, err := c.ListNodeMetrics(ctx)
 			return err
 		}},
 	}
 }
 
-// TestMetricsErrorsOverREST pins how the raw REST path reports each failure
-// today. DoRaw never decodes a Status body, so the reason survives but a
-// JSON message does not: a 403 reads "unknown".
+// TestMetricsErrorsOverREST: a cluster without a serving metrics API (404,
+// 503) is ErrMetricsUnavailable; RBAC denying metrics is a Forbidden that
+// keeps the apiserver's wording, so the classifier can name the can-i.
 func TestMetricsErrorsOverREST(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name    string
-		handler http.Handler
-		is      func(error) bool
-		wantMsg string
+		name        string
+		handler     http.Handler
+		is          func(error) bool
+		unavailable bool
+		wantMsg     string
 	}{
 		{
-			name: "metrics-server not installed (404)", handler: k8stest.NotFound(), is: apierrors.IsNotFound,
-			wantMsg: "metrics request: the server could not find the requested resource",
+			name: "metrics-server not installed (404)", handler: k8stest.NotFound(), is: apierrors.IsNotFound, unavailable: true,
+			wantMsg: "metrics API unavailable: the server could not find the requested resource",
 		},
 		{
-			name: "metrics-server not ready (503)", handler: k8stest.ServiceUnavailable(), is: apierrors.IsServiceUnavailable,
-			wantMsg: "metrics request: the server is currently unable to handle the request",
+			name: "metrics-server not ready (503)", handler: k8stest.ServiceUnavailable(), is: apierrors.IsServiceUnavailable, unavailable: true,
+			wantMsg: "metrics API unavailable: the server is currently unable to handle the request",
 		},
 		{
 			name: "RBAC denies metrics (403)", handler: k8stest.Forbidden(), is: apierrors.IsForbidden,
-			wantMsg: "metrics request: unknown",
+			wantMsg: "is forbidden: User \"" + k8stest.User + "\" cannot list resource",
 		},
 	}
 	for _, tc := range cases {
@@ -168,11 +170,68 @@ func TestMetricsErrorsOverREST(t *testing.T) {
 				if !tc.is(err) {
 					t.Fatalf("err = %v (reason %q), want it classified by %s", err, apierrors.ReasonForError(err), tc.name)
 				}
-				if err.Error() != tc.wantMsg {
-					t.Fatalf("err = %q, want %q", err, tc.wantMsg)
+				if got := errors.Is(err, k8s.ErrMetricsUnavailable); got != tc.unavailable {
+					t.Fatalf("errors.Is(%v, ErrMetricsUnavailable) = %v, want %v", err, got, tc.unavailable)
+				}
+				if !strings.HasPrefix(err.Error(), mc.prefix) || !strings.Contains(err.Error(), tc.wantMsg) {
+					t.Fatalf("err = %q, want %q then %q", err, mc.prefix, tc.wantMsg)
 				}
 			})
 		}
+	}
+}
+
+// TestMetricsForbiddenNamesTheCanI: the 403 classifies with the scope the
+// view asked for.
+func TestMetricsForbiddenNamesTheCanI(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]string{
+		"pods":              "kubectl auth can-i list pods.metrics.k8s.io -A",
+		"pods in namespace": "kubectl auth can-i list pods.metrics.k8s.io -n demo",
+		"nodes":             "kubectl auth can-i list nodes.metrics.k8s.io",
+	}
+	for _, mc := range metricsCalls() {
+		t.Run(mc.name, func(t *testing.T) {
+			t.Parallel()
+			c := k8stest.NewServerClient(t, k8stest.Forbidden())
+			d := k8s.Classify(mc.call(context.Background(), c))
+			if d.Kind != k8s.KindForbidden || d.Hint != want[mc.name] {
+				t.Fatalf("Classify = %v %q, want forbidden with %q", d.Kind, d.Hint, want[mc.name])
+			}
+		})
+	}
+}
+
+// TestMetricsWithoutDiscovery: a client whose discovery has no REST client
+// (a fake clientset) reports metrics as unavailable instead of panicking.
+func TestMetricsWithoutDiscovery(t *testing.T) {
+	t.Parallel()
+
+	for _, mc := range metricsCalls() {
+		t.Run(mc.name, func(t *testing.T) {
+			t.Parallel()
+			c, _ := k8stest.NewFakeClient()
+			if err := mc.call(context.Background(), c); !errors.Is(err, k8s.ErrMetricsUnavailable) {
+				t.Fatalf("err = %v, want ErrMetricsUnavailable", err)
+			}
+		})
+	}
+}
+
+// TestPodMetricsRejectsABadNamespace: the namespace is a path segment, so a
+// name that is not one never reaches the server.
+func TestPodMetricsRejectsABadNamespace(t *testing.T) {
+	t.Parallel()
+
+	rec := &pathRecorder{next: metricsServer()}
+	c := k8stest.NewServerClient(t, rec)
+	_, err := c.ListPodMetrics(context.Background(), "../nodes")
+	if !errors.Is(err, k8s.ErrInvalidNamespace) {
+		t.Fatalf("err = %v, want ErrInvalidNamespace", err)
+	}
+	if paths := rec.seen(); len(paths) != 0 {
+		t.Fatalf("requested %v for an invalid namespace", paths)
 	}
 }
 
@@ -191,8 +250,8 @@ func TestMetricsHonourTheCallerDeadline(t *testing.T) {
 			if !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("err = %v, want context.DeadlineExceeded", err)
 			}
-			if !strings.HasPrefix(err.Error(), "metrics request: ") {
-				t.Fatalf("err = %q, want prefix %q", err, "metrics request: ")
+			if !strings.HasPrefix(err.Error(), mc.prefix) {
+				t.Fatalf("err = %q, want prefix %q", err, mc.prefix)
 			}
 			if elapsed := time.Since(start); elapsed > 5*time.Second {
 				t.Fatalf("metrics call outlived its deadline: %v", elapsed)

@@ -3,8 +3,11 @@ package k8s
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -59,18 +62,30 @@ type nodeMetricsList struct {
 	Items []nodeMetricsItem `json:"items"`
 }
 
+// ErrMetricsUnavailable is wrapped by a metrics query when the cluster
+// serves no metrics API: metrics-server is not installed (404), not ready
+// (503), or the client has no discovery REST client to ask. RBAC refusing
+// metrics is not this error but a Forbidden.
+var ErrMetricsUnavailable = errors.New("metrics API unavailable")
+
+// metricsAPI is the metrics.k8s.io/v1beta1 path, as AbsPath segments.
+var metricsAPI = []string{"/apis", "metrics.k8s.io", "v1beta1"}
+
 // ListPodMetrics queries the metrics-server for per-pod CPU/memory in the
-// given namespace ("" = all). Returns a typed error when metrics-server is
-// not installed so the TUI can render a friendly hint instead of a stack
-// trace.
+// given namespace ("" = all). A cluster without a serving metrics API gives
+// ErrMetricsUnavailable; every failure is a *CallError for
+// pods.metrics.k8s.io.
 func (c *Client) ListPodMetrics(ctx context.Context, namespace string) ([]PodMetric, error) {
-	path := "/apis/metrics.k8s.io/v1beta1/pods"
+	segs := slices.Clone(metricsAPI)
 	if namespace != "" {
-		path = "/apis/metrics.k8s.io/v1beta1/namespaces/" + namespace + "/pods"
+		if err := ValidateNamespace(namespace); err != nil {
+			return nil, listError("pods.metrics.k8s.io", namespace, err)
+		}
+		segs = append(segs, "namespaces", namespace)
 	}
-	data, err := c.Clientset.Discovery().RESTClient().Get().AbsPath(path).DoRaw(ctx)
+	data, err := c.metricsGet(ctx, append(segs, "pods"))
 	if err != nil {
-		return nil, fmt.Errorf("metrics request: %w", err)
+		return nil, listError("pods.metrics.k8s.io", namespace, err)
 	}
 	var list podMetricsList
 	if err := json.Unmarshal(data, &list); err != nil {
@@ -93,12 +108,12 @@ func (c *Client) ListPodMetrics(ctx context.Context, namespace string) ([]PodMet
 	return out, nil
 }
 
-// ListNodeMetrics queries the metrics-server for per-node CPU/memory.
+// ListNodeMetrics queries the metrics-server for per-node CPU/memory, with
+// the errors of ListPodMetrics for nodes.metrics.k8s.io.
 func (c *Client) ListNodeMetrics(ctx context.Context) ([]NodeMetric, error) {
-	const path = "/apis/metrics.k8s.io/v1beta1/nodes"
-	data, err := c.Clientset.Discovery().RESTClient().Get().AbsPath(path).DoRaw(ctx)
+	data, err := c.metricsGet(ctx, append(slices.Clone(metricsAPI), "nodes"))
 	if err != nil {
-		return nil, fmt.Errorf("metrics request: %w", err)
+		return nil, &CallError{Verb: "list", Resource: "nodes.metrics.k8s.io", ClusterScoped: true, Err: err}
 	}
 	var list nodeMetricsList
 	if err := json.Unmarshal(data, &list); err != nil {
@@ -113,6 +128,25 @@ func (c *Client) ListNodeMetrics(ctx context.Context) ([]NodeMetric, error) {
 		})
 	}
 	return out, nil
+}
+
+// metricsGet GETs the metrics API path segs. Result.Error decodes a Status
+// body, which DoRaw never does, so a 403 keeps the apiserver's wording of
+// what was denied.
+func (c *Client) metricsGet(ctx context.Context, segs []string) ([]byte, error) {
+	rc := c.Clientset.Discovery().RESTClient()
+	if rc == nil {
+		return nil, ErrMetricsUnavailable
+	}
+	res := rc.Get().AbsPath(segs...).Do(ctx)
+	data, err := res.Raw()
+	if err != nil {
+		err = res.Error()
+	}
+	if apierrors.IsNotFound(err) || apierrors.IsServiceUnavailable(err) {
+		return nil, fmt.Errorf("%w: %w", ErrMetricsUnavailable, err)
+	}
+	return data, err
 }
 
 // parseCPUMilli converts a Kubernetes CPU quantity ("10m", "0.25", "2") to
