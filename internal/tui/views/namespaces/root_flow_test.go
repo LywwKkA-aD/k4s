@@ -136,3 +136,22 @@ func TestEscAfterTheRowWasDeleted(t *testing.T) {
 		t.Errorf("the cursor should land on the nearest row %s: header %q", payDB, h)
 	}
 }
+
+// TestEscClearsTheFilterFirst: the first Esc clears a committed filter
+// and stays; the next one leaves.
+func TestEscClearsTheFilterFirst(t *testing.T) {
+	t.Parallel()
+
+	m, _ := tuitest.Mount(t, tui.New(payClient(t), nil), 160, 40)
+	m, _ = tuitest.Drive(t, m, slices.Concat(colon("ns"), tuitest.FilterBy("pay"), []tea.Msg{tuitest.Esc()})...)
+	if h := header(m); !strings.Contains(h, "view: namespaces") {
+		t.Fatalf("the first Esc left: header %q", h)
+	}
+	if screen := tuitest.Screen(m); strings.Contains(screen, "/ pay") || !strings.Contains(screen, "shop") {
+		t.Errorf("the first Esc kept the filter:\n%s", screen)
+	}
+	m, _ = tuitest.Drive(t, m, tuitest.Esc())
+	if h := header(m); !strings.Contains(h, "view: dashboard") {
+		t.Errorf("the second Esc: header %q", h)
+	}
+}
