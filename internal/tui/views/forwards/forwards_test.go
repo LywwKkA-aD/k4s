@@ -11,8 +11,12 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	forwardsview "github.com/LywwKkA-aD/k4s/internal/tui/views/forwards"
 )
 
@@ -27,7 +31,14 @@ const (
 func newManager(t *testing.T, fwds ...forwards.Forward) *forwards.Manager {
 	t.Helper()
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	mgr, err := forwards.NewManager(nil)
+	return managerWith(t, nil, fwds...)
+}
+
+// managerWith builds a Manager on the state directory the test already
+// set, with opts.
+func managerWith(t *testing.T, opts []forwards.Option, fwds ...forwards.Forward) *forwards.Manager {
+	t.Helper()
+	mgr, err := forwards.NewManager(nil, opts...)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
@@ -61,11 +72,31 @@ func noWatchers(t *testing.T) {
 		"a change watcher from an earlier test is still running")
 }
 
-// rebuilt resizes m, which re-reads the manager's list.
-func rebuilt(t *testing.T, m forwardsview.Model) string {
+// statusOf returns the one status message in out.
+func statusOf(t *testing.T, out []tea.Msg) views.StatusMsg {
 	t.Helper()
-	m, _ = tuitest.Drive(t, m, tuitest.Resize(width, height))
-	return tuitest.Screen(m)
+	all := tuitest.All[views.StatusMsg](out)
+	if len(all) != 1 {
+		t.Fatalf("want one status message, got:\n%s", tuitest.Describe(out))
+	}
+	return all[0]
+}
+
+func requireStatus(t *testing.T, out []tea.Msg, level status.Level, text string) {
+	t.Helper()
+	got := statusOf(t, out)
+	if got.Level != level || got.Text != text {
+		t.Errorf("status = %v %q, want %v %q", got.Level, got.Text, level, text)
+	}
+}
+
+func names(mgr *forwards.Manager) []string {
+	list := mgr.List()
+	out := make([]string, 0, len(list))
+	for _, a := range list {
+		out = append(out, a.Forward.Name)
+	}
+	return out
 }
 
 func TestWithoutManager(t *testing.T) {
@@ -73,9 +104,13 @@ func TestWithoutManager(t *testing.T) {
 	if m.Init() != nil {
 		t.Error("Init without a manager should not watch anything")
 	}
-	m, out := tuitest.Drive(t, m, tuitest.Resize(width, height), tuitest.Enter(), tuitest.Press("d"))
-	if len(out) != 0 {
-		t.Errorf("keys without a manager emitted:\n%s", tuitest.Describe(out))
+	m, _ = tuitest.Drive(t, m, tuitest.Resize(width, height))
+	for _, k := range []string{"enter", "s", "r", "d"} {
+		_, out := tuitest.Drive(t, m, tuitest.Press(k))
+		requireStatus(t, out, status.Warn, "port-forward subsystem unavailable")
+	}
+	if _, out := tuitest.Drive(t, m, tuitest.Press("ctrl+r")); len(out) != 0 {
+		t.Errorf("ctrl+r without a manager emitted:\n%s", tuitest.Describe(out))
 	}
 	if !strings.Contains(tuitest.Screen(m), "port-forward subsystem unavailable") || !m.Command().IsZero() {
 		t.Errorf("screen=%q kubectl=%q", tuitest.Screen(m), m.Command().String())
@@ -91,8 +126,9 @@ func TestEmptyList(t *testing.T) {
 	if got := m.Command(); !got.IsZero() {
 		t.Errorf("Command = %q, want none without a row", got.String())
 	}
-	if _, out := tuitest.Drive(t, m, tuitest.Keys("enter", "s", "r", "d")...); len(out) != 0 {
-		t.Errorf("keys on an empty list emitted:\n%s", tuitest.Describe(out))
+	for _, k := range []string{"enter", "s", "r", "d"} {
+		_, out := tuitest.Drive(t, m, tuitest.Press(k))
+		requireStatus(t, out, status.Warn, "no port-forward selected")
 	}
 }
 
@@ -109,41 +145,94 @@ func TestRowsAndCommand(t *testing.T) {
 		}
 	}
 	// Rows sort by namespace, kind, name: the pod comes before the service.
-	if got := m.Command().String(); got != "kubectl port-forward -n demo pod/web-1 18081:8080" {
-		t.Errorf("first row = %q", got)
+	if got := m.Command(); got.String() != "kubectl port-forward -n demo pod/web-1 18081:8080" || got.Approx {
+		t.Errorf("first row = %q (approx %v)", got.String(), got.Approx)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Press("down"))
-	if got := m.Command().String(); got != "kubectl port-forward -n demo service/web 18080:80" {
-		t.Errorf("second row = %q", got)
+	if got := m.Command(); got.String() != "kubectl port-forward -n demo service/web 18080:80" || got.Approx {
+		t.Errorf("second row = %q (approx %v)", got.String(), got.Approx)
 	}
 }
 
-func TestRowKeys(t *testing.T) {
-	mgr := newManager(t, forward("service", tuitest.ServiceWeb, 18080, 80))
+func TestCommandSkipsNamesKubectlWouldReject(t *testing.T) {
+	bad := forward("pod", "Not_A_Pod", 18081, 80)
+	m := mounted(t, newManager(t, bad))
+	if got := m.Command(); !got.IsZero() {
+		t.Errorf("Command = %q, want none for a name kubectl rejects", got.String())
+	}
+}
+
+// The cursor, the keys and the footer read the rows on screen, never a
+// fresh list: a forward registered behind the view's back sorts first here,
+// and must not take the place of the row the user is on.
+func TestKeysActOnTheRowShown(t *testing.T) {
+	mgr := newManager(t, forward("pod", "bravo", 18082, 80), forward("pod", "charlie", 18083, 80))
+	m := mounted(t, mgr)
+	if err := mgr.Register(forward("pod", "alpha", 18081, 80)); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Command().String(); got != "kubectl port-forward -n demo pod/bravo 18082:80" {
+		t.Errorf("Command = %q, want the row on screen", got)
+	}
+
+	m, out := tuitest.Drive(t, m, tuitest.Press("d"))
+	requireStatus(t, out, status.OK, "removed pod/bravo (18082 → 80)")
+	if got := strings.Join(names(mgr), ","); got != "alpha,charlie" {
+		t.Errorf("forwards left = %s, want alpha,charlie", got)
+	}
+	screen := tuitest.Screen(m)
+	if strings.Contains(screen, "bravo") || !strings.Contains(screen, "alpha") {
+		t.Errorf("rows were not rebuilt right after the remove:\n%s", screen)
+	}
+}
+
+func TestDeleteTwiceDeletesTheRowsShown(t *testing.T) {
+	mgr := newManager(t,
+		forward("pod", "alpha", 18081, 80),
+		forward("pod", "bravo", 18082, 80),
+		forward("pod", "charlie", 18083, 80),
+	)
 	m := mounted(t, mgr)
 
-	// Without a cluster client, start fails at once and the row says why.
-	m, _ = tuitest.Drive(t, m, tuitest.Enter())
-	if screen := rebuilt(t, m); !strings.Contains(screen, "error") || !strings.Contains(screen, "no kubernetes client") {
-		t.Errorf("after enter:\n%s", screen)
+	removed := make([]string, 0, 2)
+	for range 2 {
+		cmd := m.Command().String()
+		var out []tea.Msg
+		m, out = tuitest.Drive(t, m, tuitest.Press("d"))
+		text := statusOf(t, out).Text
+		removed = append(removed, text)
+		if !strings.Contains(cmd, strings.Fields(text)[1]) {
+			t.Errorf("d on %q reported %q", cmd, text)
+		}
 	}
+	if got := strings.Join(names(mgr), ","); got != "charlie" {
+		t.Errorf("forwards left = %s after %q, want charlie", got, removed)
+	}
+	screen := tuitest.Screen(m)
+	if strings.Contains(screen, "alpha") || strings.Contains(screen, "bravo") || !strings.Contains(screen, "charlie") {
+		t.Errorf("screen after two deletes:\n%s", screen)
+	}
+}
 
-	m, _ = tuitest.Drive(t, m, tuitest.Press("s"))
-	if screen := rebuilt(t, m); !strings.Contains(screen, "stopped") || strings.Contains(screen, "no kubernetes client") {
-		t.Errorf("s stops and clears the error:\n%s", screen)
+func TestCtrlRRefreshes(t *testing.T) {
+	mgr := newManager(t, forward("pod", "bravo", 18082, 80))
+	m := mounted(t, mgr)
+	if err := mgr.Register(forward("pod", "alpha", 18081, 80)); err != nil {
+		t.Fatal(err)
 	}
-
-	m, _ = tuitest.Drive(t, m, tuitest.Press("r"))
-	if screen := rebuilt(t, m); !strings.Contains(screen, "no kubernetes client") {
-		t.Errorf("r restarts:\n%s", screen)
+	if strings.Contains(tuitest.Screen(m), "alpha") {
+		t.Fatal("the change reached the view without a watcher")
 	}
-
-	m, _ = tuitest.Drive(t, m, tuitest.Press("d"))
-	if screen := rebuilt(t, m); !strings.Contains(screen, "no port-forwards yet") {
-		t.Errorf("d removes the forward:\n%s", screen)
+	m, out := tuitest.Drive(t, m, tuitest.Press("ctrl+r"))
+	if len(out) != 0 {
+		t.Errorf("ctrl+r emitted:\n%s", tuitest.Describe(out))
 	}
-	if n := len(mgr.State().Forwards); n != 0 {
-		t.Errorf("d left %d forwards in the saved state", n)
+	if !strings.Contains(tuitest.Screen(m), "alpha") {
+		t.Errorf("ctrl+r did not refresh:\n%s", tuitest.Screen(m))
+	}
+	// The cursor stays on the forward it was on.
+	if got := m.Command().String(); got != "kubectl port-forward -n demo pod/bravo 18082:80" {
+		t.Errorf("Command after the refresh = %q", got)
 	}
 }
 
@@ -212,16 +301,16 @@ func TestClosedViewStartsNoWatcher(t *testing.T) {
 	if err := m.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	_, out := tuitest.Init(t, m)
-	if len(out) != 1 {
-		t.Errorf("a closed view should only refresh once:\n%s", tuitest.Describe(out))
+	if _, out := tuitest.Init(t, m); len(out) != 0 {
+		t.Errorf("a closed view emitted:\n%s", tuitest.Describe(out))
 	}
 	tuitest.WaitGoroutines(t, base, 5*time.Second, viewPkg)
 }
 
 func TestStaticContract(t *testing.T) {
 	m := forwardsview.New(nil)
-	if m.Title() != "forwards" || m.CapturesKeys() || len(m.Help()) != 4 {
-		t.Errorf("Title=%q help=%d", m.Title(), len(m.Help()))
+	want := []string{"enter", "s", "r", "d", "ctrl+r"}
+	if got := tuitest.HelpKeys(m); m.Title() != "forwards" || m.CapturesKeys() || strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("Title=%q help=%v", m.Title(), got)
 	}
 }
