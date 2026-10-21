@@ -2,6 +2,7 @@ package styles
 
 import (
 	"fmt"
+	"image/color"
 	"math"
 	"strconv"
 	"testing"
@@ -19,6 +20,7 @@ var (
 		"campbell":       "#0C0C0C",
 		"vscode dark":    "#1E1E1E",
 		"dracula":        "#282A36",
+		"gruvbox dark":   "#282828",
 	}
 	lightBackgrounds = map[string]string{
 		"solarized light": "#FDF6E3",
@@ -30,11 +32,12 @@ var (
 // background.
 func textTokens() map[string]token {
 	out := map[string]token{
-		"muted":  tokenMuted,
-		"accent": tokenAccent,
-		"ok":     tokenOK,
-		"warn":   tokenWarn,
-		"err":    tokenErr,
+		"muted":   tokenMuted,
+		"accent":  tokenAccent,
+		"accent2": tokenAccent2,
+		"ok":      tokenOK,
+		"warn":    tokenWarn,
+		"err":     tokenErr,
 	}
 	for i, c := range podColors {
 		out[fmt.Sprintf("pod %d", i)] = c
@@ -71,6 +74,33 @@ func TestTextTokensContrastOnLightBackgrounds(t *testing.T) {
 				t.Parallel()
 				assertContrast(t, tok.Light, bg)
 			})
+		}
+	}
+}
+
+// The gradient paints text (the focused border, the verdict word, the
+// wordmark) in every stop, so each stop is held to the text threshold.
+func TestGradientStopsContrast(t *testing.T) {
+	t.Parallel()
+	for _, theme := range []struct {
+		name string
+		dark bool
+		bgs  map[string]string
+	}{
+		{name: "dark", dark: true, bgs: darkBackgrounds},
+		{name: "light", dark: false, bgs: lightBackgrounds},
+	} {
+		stops := blendStops(colourPalette(theme.dark))
+		if len(stops) != GradientSteps {
+			t.Fatalf("%s: got %d stops, want %d", theme.name, len(stops), GradientSteps)
+		}
+		for i, stop := range stops {
+			for bgName, bg := range theme.bgs {
+				t.Run(fmt.Sprintf("%s stop %d on %s", theme.name, i, bgName), func(t *testing.T) {
+					t.Parallel()
+					assertContrast(t, hexOf(stop), bg)
+				})
+			}
 		}
 	}
 }
@@ -149,6 +179,13 @@ func assertContrast(t *testing.T, fg, bg string) {
 	if got < minTextContrast {
 		t.Errorf("%s on %s = %.2f:1, want >= %.1f:1", fg, bg, got, minTextContrast)
 	}
+}
+
+// hexOf returns c as #RRGGBB the way a truecolor terminal receives it: the
+// top byte of each 16-bit channel.
+func hexOf(c color.Color) string {
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("#%02X%02X%02X", r>>8, g>>8, b>>8)
 }
 
 // contrastRatio is the WCAG 2.x contrast ratio of two #RRGGBB colours.

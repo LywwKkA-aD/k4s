@@ -21,13 +21,18 @@ func (t token) on(dark bool) color.Color {
 }
 
 // Semantic colour tokens. contrast_test.go holds every text token to WCAG
-// AA (4.5:1) on Solarized, Campbell, Dracula, black and white.
+// AA (4.5:1) on Solarized, Campbell, VS Code, Dracula, Gruvbox, black and
+// white.
 var (
 	tokenMuted  = token{Light: "#5C5C5C", Dark: "#A8A8A8"}
 	tokenAccent = token{Light: "#5B3CC4", Dark: "#A78BFA"}
-	tokenOK     = token{Light: "#1A7F37", Dark: "#04B575"}
-	tokenWarn   = token{Light: "#8A5A00", Dark: "#F2A65A"}
-	tokenErr    = token{Light: "#CF222E", Dark: "#FF7B72"}
+	// tokenAccent2 reuses a pod colour instead of adding a hex value, so the
+	// dashboard's charts and gradient end bring no colour the contrast
+	// tests do not already hold.
+	tokenAccent2 = podColors[accent2PodColor]
+	tokenOK      = token{Light: "#1A7F37", Dark: "#04B575"}
+	tokenWarn    = token{Light: "#8A5A00", Dark: "#F2A65A"}
+	tokenErr     = token{Light: "#CF222E", Dark: "#FF7B72"}
 
 	// The selected row and search matches paint their own background, so
 	// one pair serves both themes.
@@ -41,11 +46,12 @@ var (
 // background. In mono every colour is NoColor and the styles carry state
 // through bold, underline and reverse.
 type palette struct {
-	muted, accent, ok, warn, err color.Color
-	selectionFg, selectionBg     color.Color
-	matchFg, matchBg             color.Color
-	dark                         bool
-	mono                         bool
+	muted, accent, accent2   color.Color
+	ok, warn, err            color.Color
+	selectionFg, selectionBg color.Color
+	matchFg, matchBg         color.Color
+	dark                     bool
+	mono                     bool
 }
 
 // colourPalette resolves every token for a dark or a light background.
@@ -53,6 +59,7 @@ func colourPalette(dark bool) palette {
 	return palette{
 		muted:       tokenMuted.on(dark),
 		accent:      tokenAccent.on(dark),
+		accent2:     tokenAccent2.on(dark),
 		ok:          tokenOK.on(dark),
 		warn:        tokenWarn.on(dark),
 		err:         tokenErr.on(dark),
@@ -69,6 +76,7 @@ func colourPalette(dark bool) palette {
 var monoPalette = palette{
 	muted:       lipgloss.NoColor{},
 	accent:      lipgloss.NoColor{},
+	accent2:     lipgloss.NoColor{},
 	ok:          lipgloss.NoColor{},
 	warn:        lipgloss.NoColor{},
 	err:         lipgloss.NoColor{},
