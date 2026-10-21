@@ -25,8 +25,8 @@ func TestSecondContextSwitchKeepsTheGateClosedUntilTheFirstStopEnds(t *testing.T
 	next, firstCmd := m.Update(views.ContextSelectedMsg{Name: testContextBeta})
 	begin := time.Now()
 	next, secondCmd := next.(Model).Update(views.ContextSelectedMsg{Name: testContextAlpha})
-	if took := time.Since(begin); took >= 10*time.Millisecond {
-		t.Errorf("the second Update took %v, want under 10ms", took)
+	if took := time.Since(begin); took >= switchBudget {
+		t.Errorf("the second Update took %v, want under %v", took, switchBudget)
 	}
 	m = next.(Model)
 
