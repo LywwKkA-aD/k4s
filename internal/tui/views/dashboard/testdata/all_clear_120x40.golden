@@ -1,0 +1,34 @@
+›● all clear since 14:02  3/3 nodes Ready · 185 pods · 65/65 workloads · 2 warnings in 1h       ◆ 14:02:00 · watch 5s ⣽ 
+ ▸ command of the day  kubectl get pods -A '--field-selector=status.phase!=Running,status.phase!=Succeeded'   which pod…
+   6 k3s        ● coredns 1/1  ● traefik 1/1  ● metrics-server 1/1  ● local-path 1/1  ○ servicelb off  ● helm 2/2  ◆ et…
+╭─┤ 1 cluster ├──────────────────────────────────── ◆ k3s ─╮╭─┤ 2 nodes ├────────────────────────────────── 3/3 Ready ─╮
+│ ● api      ready · 8/8 checks · etcd ok                  ││   NODE         STATUS  CPU          MEMORY          PODS │
+│ ◆ version  v1.36.3+k3s1 · embedded etcd                  ││ ● k3s-cp-1     Ready   ██▎···  38%  ████▎·  70%  112/250 │
+│ ● you      devops-friend                                 ││ ● k3s-agent-1  Ready   ███▏··  52%  ███▊··  62%   41/110 │
+│   age      212d (namespace kube-system)                  ││ ● k3s-agent-2  Ready   ▉·····  14%  ██▎···  37%   32/110 │
+│   ns       33 · 0 terminating                            ││                                                          │
+│ ● storage  26/26 pvc Bound                               ││   cpu ≈30m                            ▄  35% of 36 cores │
+│ ● network  102 svc · 2 LoadBalancers                     ││   mem ≈30m                            ▆  68% of 192 GiB  │
+│   server   https://10.0.0.5:6443                         ││   ≈ history from kubectl top nodes · △ ≥ 85%             │
+╰─────────────────────────────────────────────── ctx fake ─╯╰─────────────────────────────────── kubelet v1.36.3+k3s1 ─╯
+╭─┤ 3 pods ├───────────────────────────────────────────────────────────────────────────────────────────── 185 · 33 ns ─╮
+│ ███████████████████████████████████████████████████████████████████████████████████████████████████████████▓▓▓▓  185 │
+│ █ Running 178   ▓ Completed 7                                                                                        │
+│ ● nothing needs attention                                                                                            │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─┤ 4 workloads ├──────────────────────────── 65/65 ready ─╮╭─┤ 5 events ├───────────────────────── type=Warning · 1h ─╮
+│ deploy  █████████████████████████████████████████  52/52 ││ ◇ 38m  Unhealthy         pod/coredns-ccb96694c-8xq2z     │
+│ sts     █████████████████████████████████████████    8/8 ││     Readiness probe failed: HTTP probe failed with stat… │
+│ ds      █████████████████████████████████████████    5/5 ││ ◇ 51m  DNSConfigForming  pod/svclb-traefik-4f9d2-hx7kq   │
+│ jobs    ● none failed in 1h · 0 active                   ││     Nameserver limits were exceeded, some nameservers h… │
+│ cron    14 · last schedule 3m                            ││                                                          │
+│                                                          ││                                                          │
+│ ● all 65 ready                                           ││                                                          │
+│                                                          ││                                                          │
+╰──────────────────────────────────────────────────────────╯╰────────────────────────────────── newest first · 2 of 2 ─╯

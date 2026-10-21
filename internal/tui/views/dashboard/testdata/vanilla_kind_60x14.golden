@@ -1,0 +1,8 @@
+›△ 1 workload                                  ◆ 14:02:00 ⣽ 
+ ▸ next  kubectl describe deployment web -n default         
+   1 cluster    ● api ready · 6 ns · ○ no pvc               
+   2 nodes      ● 3/3 Ready                                 
+   3 pods       △ 1 need attention · 20 pods                
+   4 workloads  △ 5/6 ready                                 
+   5 events     ● no warnings in the last hour              
+                                                            

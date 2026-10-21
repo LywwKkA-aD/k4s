@@ -1,0 +1,18 @@
+›△ 1 workload                                                      ◆ 14:02:00 ⣽ 
+ ▸ next  kubectl describe deployment web -n default                             
+   1 cluster    ● api ready · 6 ns · ○ no pvc                                   
+   2 nodes      ● 3/3 Ready                                                     
+╭─┤ 3 pods ├─────────────────────────────────────────────────────── 20 · 6 ns ─╮
+│ ████████████████████████████████████████████████████████████████░░░  █19 ░1  │
+│   NAMESPACE  NAME                 READY  STATUS             RESTARTS  AGE    │
+│ △ default    web-5d4f8b7c9-q8x2m  0/1    ContainerCreating  0         <1m    │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰─────────────────────────────────────────────────────────── 1 need attention ─╯
+   4 workloads  △ 5/6 ready                                                     
+   5 events     ● no warnings in the last hour                                  

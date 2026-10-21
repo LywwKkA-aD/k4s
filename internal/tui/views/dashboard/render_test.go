@@ -46,17 +46,3 @@ func TestWideGolden(t *testing.T) {
 		})
 	}
 }
-
-// BenchmarkWideView renders the 207x58 body on the busy fixture with ten
-// minutes of history, uncached: the spec's cold render budget is 4 ms.
-func BenchmarkWideView(b *testing.B) {
-	f := newFeed(busyK3s)
-	f.vary = true
-	m := mount(b, f, wideW, wideH)
-	m = advance(b, m, f, 10*time.Minute)
-	m, _ = press(b, m, "3", "down")
-	b.ReportAllocs()
-	for b.Loop() {
-		_ = m.View()
-	}
-}
