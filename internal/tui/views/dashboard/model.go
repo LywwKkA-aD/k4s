@@ -74,6 +74,9 @@ type Model struct {
 	frames  async.Clock
 	profile colorprofile.Profile
 	perf    *renderClock
+	// memo is the last frame drawn, handed back while nothing it is drawn
+	// from changes.
+	memo *renderMemo
 }
 
 // New builds the dashboard for client, or the disconnected screen
@@ -111,6 +114,7 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 		frames:  cfg.frames,
 		profile: cfg.profile,
 		perf:    &renderClock{},
+		memo:    &renderMemo{},
 	}
 	m.poll = async.NewPoller(async.New(), async.Config{
 		Enabled: fetch != nil && !mem.paused,

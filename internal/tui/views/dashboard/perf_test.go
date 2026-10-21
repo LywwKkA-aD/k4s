@@ -43,6 +43,25 @@ func TestRenderClockMedian(t *testing.T) {
 	}
 }
 
+// TestUnchangedFrameIsNotRedrawn: a frame asked for again with nothing it
+// is drawn from changed comes back as it was, without a render; a key
+// that moves the focus draws anew.
+func TestUnchangedFrameIsNotRedrawn(t *testing.T) {
+	t.Parallel()
+
+	frames := asynctest.NewClock(time.Date(2026, 10, 21, 14, 2, 0, 0, time.UTC))
+	fetch := func(_ context.Context, _ dash.Plan, prev dash.Snapshot) dash.Snapshot { return prev }
+	m, _ := tuitest.Mount(t, New(tuitest.NewFakeClient(t), nil, WithFetch(fetch), WithFrames(frames)), 207, 52)
+	first, drawn := m.View(), m.perf.n
+	if again := m.View(); again != first || m.perf.n != drawn {
+		t.Fatalf("an unchanged frame was drawn again (%d renders, then %d)", drawn, m.perf.n)
+	}
+	moved, _ := tuitest.Drive(t, m, tuitest.Press("tab"))
+	if moved.View() == first || m.perf.n != drawn+1 {
+		t.Fatalf("a focus move did not draw a new frame (%d renders)", m.perf.n)
+	}
+}
+
 func repeat(n int, d time.Duration) []time.Duration {
 	out := make([]time.Duration, n)
 	for i := range out {
