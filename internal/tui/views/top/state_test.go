@@ -123,3 +123,35 @@ func TestDefaultsRestoreAsPodsByCPU(t *testing.T) {
 		t.Errorf("Command = %q", got)
 	}
 }
+
+func TestRestoreOfAGoneNode(t *testing.T) {
+	t.Parallel()
+
+	_, out, _ := restored(t, views.State{Selected: "node-9", Mode: "nodes", Sort: "cpu"})
+	want := views.StatusMsg{Level: status.Info, Text: "node node-9 is gone"}
+	if !tuitest.Contains(out, want) {
+		t.Errorf("want %+v, got:\n%s", want, tuitest.Describe(out))
+	}
+}
+
+// TestRestoreWithoutARowKeepsTheIndex: what :ns hands over, the row
+// dropped, lands quietly on the saved index.
+func TestRestoreWithoutARowKeepsTheIndex(t *testing.T) {
+	t.Parallel()
+
+	m, out, _ := restored(t, views.State{Cursor: 2, Mode: "pods", Sort: "cpu"})
+	if got := tuitest.All[views.StatusMsg](out); len(got) != 0 {
+		t.Errorf("no saved row, yet a status: %+v", got)
+	}
+	if got := m.State(); got.Selected != keyWeb2 {
+		t.Errorf("State = %+v, want row 2, %s", got, keyWeb2)
+	}
+}
+
+func TestNoClientStartsNothing(t *testing.T) {
+	t.Parallel()
+
+	if cmd := top.New(nil, "").Init(); cmd != nil {
+		t.Error("Init without a client returned a Cmd")
+	}
+}

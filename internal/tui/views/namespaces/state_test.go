@@ -117,6 +117,40 @@ func TestRestoreOfAGoneRow(t *testing.T) {
 	}
 }
 
+func TestRestoreWithoutARowKeepsTheIndex(t *testing.T) {
+	t.Parallel()
+
+	m, out, _ := restored(t, views.State{Cursor: 2})
+	if len(tuitest.All[views.StatusMsg](out)) != 0 {
+		t.Errorf("no saved row, yet a status:\n%s", tuitest.Describe(out))
+	}
+	if got := selectedOn(t, m); got != tuitest.NamespaceDemo {
+		t.Errorf("cursor on %q, want row 2, %q", got, tuitest.NamespaceDemo)
+	}
+}
+
+// TestRestoreAfterTheList: a view that already has its rows lands at once.
+func TestRestoreAfterTheList(t *testing.T) {
+	t.Parallel()
+
+	v, cmd := mounted(t, tuitest.NewFakeClient(t)).Restore(views.State{Selected: tuitest.NamespaceSystem})
+	if out := tuitest.Collect(t, cmd); len(out) != 0 {
+		t.Errorf("Restore emitted:\n%s", tuitest.Describe(out))
+	}
+	if got := selectedOn(t, v.(namespaces.Model)); got != tuitest.NamespaceSystem {
+		t.Errorf("cursor on %q, want %q", got, tuitest.NamespaceSystem)
+	}
+}
+
+func TestPasteIntoTheFilter(t *testing.T) {
+	t.Parallel()
+
+	m, _ := tuitest.Drive(t, mounted(t, tuitest.NewFakeClient(t)), tuitest.Press("/"), tuitest.Paste("kube"), tuitest.Enter())
+	if st := m.State(); st.Filter != "kube" {
+		t.Errorf("State after a pasted filter = %+v", st)
+	}
+}
+
 func TestRestorePaused(t *testing.T) {
 	t.Parallel()
 
