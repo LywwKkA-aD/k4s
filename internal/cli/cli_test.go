@@ -133,6 +133,31 @@ func TestParseOptions(t *testing.T) {
 			args: []string{"pods", "--context", "dev", "--", "-A"},
 			want: Options{Context: "dev"},
 		},
+		{
+			name: "-- as a flag value is not the terminator",
+			args: []string{"--kubeconfig", "--", "pods", "-n", "web"},
+			want: Options{Kubeconfig: "--", Namespace: "web"},
+		},
+		{
+			name: "-- as the context is not the terminator",
+			args: []string{"--context", "--", "pods", "-A"},
+			want: Options{Context: "--", AllNamespaces: true},
+		},
+		{
+			name: "-- after a value-taking flag with = is the terminator",
+			args: []string{"--context=dev", "--", "-A"},
+			want: Options{Context: "dev"},
+		},
+		{
+			name: "-- after a bool flag is the terminator",
+			args: []string{"--no-preflight", "--", "-A"},
+			want: Options{NoPreflight: true},
+		},
+		{
+			name: "a -- value then the real terminator",
+			args: []string{"--kubeconfig", "--", "--", "-A"},
+			want: Options{Kubeconfig: "--"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
