@@ -19,6 +19,12 @@ const MaxFrames = 8
 // room to spare, and still eases rather than jumps.
 const SpringOmega = 17.0
 
+// SettleWidth is the widest width the 8-frame budget holds for: the stop
+// rule gets stricter as 1/(8·width), so a 120-cell phase bar chasing 1/960
+// would run well past MaxFrames. Callers settle on
+// Settled(min(width, SettleWidth)).
+const SettleWidth = 12
+
 // Spring is a critically damped spring (ζ = 1): it eases from Pos to
 // Target without overshooting when it starts at rest. Retarget it by
 // setting Target; the velocity carries over, so a new event joins a
@@ -50,6 +56,7 @@ func (s Spring) Step() Spring {
 // Settled reports whether the spring is close enough to Target that a
 // widget width cells wide, drawn in eighth blocks, no longer changes:
 // |Pos − Target| < 1/(8·width). Positions are fractions of the full bar.
+// The MaxFrames guarantee is for width 12: pass min(width, SettleWidth).
 func (s Spring) Settled(width int) bool {
 	return math.Abs(s.Pos-s.Target) < 1/(8*float64(max(width, 1)))
 }

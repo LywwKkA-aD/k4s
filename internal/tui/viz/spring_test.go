@@ -130,3 +130,16 @@ func TestFrameIntervalIsTwentyFPS(t *testing.T) {
 		t.Errorf("FrameInterval = %v, want 50ms", viz.FrameInterval)
 	}
 }
+
+// The 8-frame guarantee holds at width 12. A wider bar is settled on
+// min(width, SettleWidth), or a 120-cell bar would chase 1/960 for ages.
+func TestSpringWidePhaseBarSettlesWhenCappedAtTwelve(t *testing.T) {
+	t.Parallel()
+	const width = 120
+	if viz.SettleWidth != 12 {
+		t.Fatalf("SettleWidth = %d, want 12", viz.SettleWidth)
+	}
+	if n := framesToSettle(viz.NewSpring(0, 1), min(width, viz.SettleWidth), 100); n > viz.MaxFrames {
+		t.Errorf("capped 120-cell bar settled in %d frames, want <= %d", n, viz.MaxFrames)
+	}
+}

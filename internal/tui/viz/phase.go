@@ -100,7 +100,7 @@ func PhaseBar(th Theme, width int, counts []PhaseCount, progress float64) string
 // columns: "█ Running 171   ▚ CrashLoopBackOff 3 · ImagePullBackOff 1".
 // When that does not fit it tightens the gaps, then falls back to glyphs
 // and totals ("█171 ▚4"), then drops whole entries from the end behind an
-// ellipsis. A count is never cut, so no number reads smaller than it is.
+// ellipsis, or without it where it would not fit. A count is never cut, so no number reads smaller than it is.
 func PhaseLegend(th Theme, width int, counts []PhaseCount) string {
 	if width <= 0 {
 		return ""
@@ -171,7 +171,9 @@ func legendTotals(th Theme, groups [phaseCount][]PhaseCount) []string {
 }
 
 // fitEntries joins parts with spaces, keeping as many whole parts from the
-// front as fit in width followed by an ellipsis.
+// front as fit in width followed by an ellipsis. Where not even one part
+// and the ellipsis fit, the parts that fit stand without it, and a lone
+// ellipsis is the last resort.
 func fitEntries(parts []string, width int) string {
 	for n := len(parts); n > 0; n-- {
 		s := strings.Join(parts[:n], " ")
@@ -179,6 +181,11 @@ func fitEntries(parts []string, width int) string {
 			s += " " + ellipsis
 		}
 		if ansi.StringWidth(s) <= width {
+			return s
+		}
+	}
+	for n := len(parts) - 1; n > 0; n-- {
+		if s := strings.Join(parts[:n], " "); ansi.StringWidth(s) <= width {
 			return s
 		}
 	}
