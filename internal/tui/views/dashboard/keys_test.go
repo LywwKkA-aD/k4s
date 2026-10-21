@@ -56,6 +56,28 @@ func TestFocusKeys(t *testing.T) {
 	}
 }
 
+// TestChartRowOnlyWhereDrawn: the history chart is a cursor stop only
+// where the nodes panel has room to draw it. Too short, down stays on the
+// last node; shrinking the terminal under the cursor moves it there.
+func TestChartRowOnlyWhereDrawn(t *testing.T) {
+	t.Parallel()
+
+	const lastNode = "kubectl describe node k3s-agent-2"
+	short, _ := press(t, mount(t, newFeed(busyK3s), 80, 15), "2", "down", "down", "down", "down", "down")
+	if got := command(short); got != lastNode {
+		t.Fatalf("down past the last node of a short panel = %q, want %q", got, lastNode)
+	}
+
+	wide, _ := press(t, mount(t, newFeed(busyK3s), wideW, wideH), "2", "down", "down", "down", "down")
+	if got := command(wide); got != "≈ kubectl top nodes" {
+		t.Fatalf("down onto the drawn chart = %q", got)
+	}
+	shrunk, _ := tuitest.Drive(t, wide, tuitest.Resize(80, 15))
+	if got := command(shrunk); got != lastNode {
+		t.Fatalf("after the chart left the screen = %q, want %q", got, lastNode)
+	}
+}
+
 // TestEscSteps backs out one level per Esc: row, panel, banner; on the
 // banner Esc is the root's.
 func TestEscSteps(t *testing.T) {

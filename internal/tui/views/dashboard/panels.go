@@ -47,9 +47,10 @@ func panelCmd(p dash.Panel, s dash.Snapshot) dash.Cmd {
 	return s.Verdict.Cmd
 }
 
-// rowsOf lists the rows the cursor can stand on in panel p, in drawing
-// order. Panels 4 to 7 have none yet: they are focused as a whole.
-func rowsOf(p dash.Panel, s dash.Snapshot) []row {
+// rowsOf lists the rows the cursor can stand on in panel p as layout l
+// draws it, in drawing order. Panels 4 to 7 have none yet: they are
+// focused as a whole.
+func rowsOf(p dash.Panel, s dash.Snapshot, l layout) []row {
 	switch p {
 	case dash.PanelCluster:
 		items := clusterItems(s)
@@ -59,7 +60,7 @@ func rowsOf(p dash.Panel, s dash.Snapshot) []row {
 		}
 		return out
 	case dash.PanelNodes:
-		return nodeRows(s)
+		return nodeRows(s, l.drawsChart(s))
 	case dash.PanelPods:
 		items := podItems(s)
 		out := make([]row, 0, len(items))

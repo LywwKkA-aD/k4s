@@ -16,16 +16,27 @@ const (
 )
 
 // nodeRows are panel 2's rows: one per node, then the history chart when
-// there are metrics to chart.
-func nodeRows(s dash.Snapshot) []row {
+// it is drawn.
+func nodeRows(s dash.Snapshot, chart bool) []row {
 	out := make([]row, 0, len(s.Nodes.Rows)+1)
 	for _, n := range s.Nodes.Rows {
 		out = append(out, row{key: n.Key.String(), cmd: n.Cmd, target: n.Key, placed: true})
 	}
-	if hasMetrics(s) {
+	if chart {
 		out = append(out, row{key: chartKey, cmd: s.Nodes.TopCmd})
 	}
 	return out
+}
+
+// drawsChart reports whether panel 2 has room in l for the history chart
+// of s, the condition for the chart's row: a box tall enough to keep
+// three node rows under it.
+func (l layout) drawsChart(s dash.Snapshot) bool {
+	pl, ok := l.placeOf(dash.PanelNodes)
+	if !ok || pl.line || !hasMetrics(s) {
+		return false
+	}
+	return chartSize(s, len(s.Nodes.Rows), pl.h-2) > 0
 }
 
 // hasMetrics reports node metrics to draw: the API answers and there are
