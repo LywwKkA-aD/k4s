@@ -1,37 +1,20 @@
 package services_test
 
 import (
-	"context"
 	"errors"
 	"slices"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/services"
 )
-
-const (
-	width  = 160
-	height = 30
-)
-
-func mounted(t *testing.T, c *k8s.Client, namespace string) services.Model {
-	t.Helper()
-	m, _ := tuitest.Mount(t, services.New(c, namespace), width, height)
-	return m
-}
-
-func on(name string, more ...tea.Msg) []tea.Msg {
-	return slices.Concat(tuitest.FilterBy(name), more)
-}
 
 func TestRowActionsEmitRequests(t *testing.T) {
 	t.Parallel()
@@ -54,23 +37,6 @@ func TestRowActionsEmitRequests(t *testing.T) {
 			namespace: "",
 			keys:      on(tuitest.ServiceMulti, tuitest.Enter()),
 			want:      views.DescribeRequestMsg{Kind: "service", Namespace: demo, Name: tuitest.ServiceMulti},
-		},
-		{
-			name:      "l tails every pod behind a single-container service",
-			namespace: demo,
-			keys:      on(tuitest.ServiceWeb, tuitest.Press("l")),
-			want: views.TailPromptRequestMsg{
-				Namespace: demo, Pods: []string{tuitest.PodWeb1, tuitest.PodWeb2}, Container: tuitest.ContainerNginx,
-			},
-		},
-		{
-			name:      "l behind multi-container pods asks for the container",
-			namespace: demo,
-			keys:      on(tuitest.ServiceMulti, tuitest.Press("l")),
-			want: views.ContainerPromptRequestMsg{
-				Namespace: demo, Pods: []string{tuitest.PodMulti},
-				Containers: []string{tuitest.ContainerApp, tuitest.ContainerSidecar}, NextKind: "logs",
-			},
 		},
 		{
 			name:      "f suggests the first service port",
@@ -96,29 +62,50 @@ func TestRowActionsEmitRequests(t *testing.T) {
 	}
 }
 
-func TestKeysWithoutAnAction(t *testing.T) {
+// TestKeysThatCannotActSaySo: a row key without a row to act on answers
+// with a status, never silently; e is not a services key at all.
+func TestKeysThatCannotActSaySo(t *testing.T) {
 	t.Parallel()
 
-	headless := tuitest.Service(tuitest.NamespaceDemo, "external", 443, nil)
-	selectorless := tuitest.NewFakeClient(t, tuitest.WithObjects(headless))
+	loading, _ := clocked(tuitest.NewFakeClient(t), tuitest.NamespaceDemo)
 	cases := []struct {
 		name string
 		m    services.Model
 		keys []tea.Msg
+		want []views.StatusMsg
 	}{
 		{name: "e is not bound", m: mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo), keys: tuitest.Keys("e")},
-		{name: "rows not loaded", m: services.New(tuitest.NewFakeClient(t), tuitest.NamespaceDemo), keys: tuitest.Keys("enter", "l", "f")},
-		{name: "no kubeconfig", m: services.New(nil, ""), keys: tuitest.Keys("enter", "l", "f", "r")},
-		{name: "l on a service without a selector", m: mounted(t, selectorless, tuitest.NamespaceDemo), keys: tuitest.Keys("l")},
+		{
+			name: "rows not loaded", m: loading, keys: tuitest.Keys("enter", "l", "f"),
+			want: repeatStatus(3, status.Info, "services are still loading"),
+		},
+		{
+			name: "no kubeconfig", m: services.New(nil, ""), keys: tuitest.Keys("enter", "l", "f", "r"),
+			want: repeatStatus(4, status.Warn, "no kubeconfig"),
+		},
+		{
+			name: "no row under the cursor", m: mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo),
+			keys: on("zzz", tuitest.Keys("enter", "l", "f")...),
+			want: repeatStatus(3, status.Warn, "no service selected"),
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if _, out := tuitest.Drive(t, tc.m, tc.keys...); len(tuitest.Requests(out)) != 0 {
-				t.Errorf("emitted:\n%s", tuitest.Describe(out))
+			_, out := tuitest.Drive(t, tc.m, tc.keys...)
+			if got := tuitest.Requests(out); !slices.Equal(statuses(got), tc.want) || len(got) != len(tc.want) {
+				t.Errorf("emitted:\n%s\nwant %+v", tuitest.Describe(got), tc.want)
 			}
 		})
 	}
+}
+
+func repeatStatus(n int, level status.Level, text string) []views.StatusMsg {
+	out := make([]views.StatusMsg, 0, n)
+	for range n {
+		out = append(out, views.StatusMsg{Level: level, Text: text})
+	}
+	return out
 }
 
 func TestViewStates(t *testing.T) {
@@ -247,9 +234,7 @@ func TestRefreshRespectsBusy(t *testing.T) {
 	if len(second) != 0 {
 		t.Fatalf("r while busy must not fetch again:\n%s", tuitest.Describe(second))
 	}
-	if err := c.Clientset.CoreV1().Services(tuitest.NamespaceDemo).Delete(context.Background(), tuitest.ServiceMulti, metav1.DeleteOptions{}); err != nil {
-		t.Fatalf("delete service: %v", err)
-	}
+	deleteService(t, c, tuitest.NamespaceDemo, tuitest.ServiceMulti)
 	m, _ = tuitest.Drive(t, m, first...)
 	m, third := tuitest.Step(t, m, tuitest.Press("r"))
 	if len(third) != 1 {
@@ -261,13 +246,15 @@ func TestRefreshRespectsBusy(t *testing.T) {
 	}
 }
 
-func TestStaleGenerationReplyIsDropped(t *testing.T) {
+// TestAnotherViewsReplyIsDropped: replies carry the token of the view
+// that asked, so a rebuilt view ignores its predecessor's.
+func TestAnotherViewsReplyIsDropped(t *testing.T) {
 	t.Parallel()
 
 	c := tuitest.NewFakeClient(t)
 	_, oldReplies := tuitest.Init(t, services.New(c, tuitest.NamespaceDemo))
 	fresh, _ := tuitest.Drive(t, services.New(c, tuitest.NamespaceDemo), tuitest.Resize(width, height))
-	fresh, inFlight := tuitest.Step(t, fresh, tuitest.Press("r"))
+	inFlight := tuitest.Collect(t, fresh.Init())
 	fresh, _ = tuitest.Drive(t, fresh, oldReplies...)
 
 	if !strings.Contains(tuitest.Screen(fresh), "loading services") {
