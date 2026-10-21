@@ -7,6 +7,15 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
 
 ## [Unreleased]
 
+### Changed
+
+- Built on Bubble Tea, Lip Gloss and Bubbles v2. Screens and keys are unchanged; small differences:
+  - Truecolor terminals get the exact palette colours (v1 was one step off in some channels), and inside tmux `COLORTERM=truecolor` is honoured.
+  - Pasting into the command bar, filters and the logs search works through bracketed paste.
+  - With the kitty keyboard protocol (Alacritty, kitty, WezTerm, ghostty), shift+Enter and ctrl+Enter still act as Enter.
+  - Under `CI=1` or `TERM=screen` the palette is shown instead of no styling, and East Asian ambiguous-width locales truncate and box consistently.
+  - Without a terminal (ssh without `-t`, cron) the error reads `no terminal: open /dev/tty: …`.
+
 ## [1.1.5] - 2026-10-20
 
 ### Fixed
