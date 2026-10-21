@@ -82,6 +82,7 @@ func (m *Manager) BeginStopAll() *Stopping {
 		a.Status = StatusStopped
 		a.session = nil
 		a.Err = nil
+		a.ended = k8s.TunnelError{}
 	}
 	m.notify()
 	m.mu.Unlock()
@@ -129,6 +130,7 @@ func (m *Manager) Stop(id string) error {
 	a.Status = StatusStopped
 	a.session = nil
 	a.Err = nil
+	a.ended = k8s.TunnelError{}
 	m.notify()
 	m.mu.Unlock()
 	if sess == nil {

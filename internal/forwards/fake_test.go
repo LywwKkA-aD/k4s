@@ -29,21 +29,25 @@ const (
 type fakeSession struct {
 	*k8s.PortForwardSession
 	doneOnce sync.Once
+	errs     chan struct{}
 	mu       sync.Mutex
 	stderr   string
+	tunnel   k8s.TunnelError
 }
 
 // newFakeSession returns a session that winds down once stopped, or, when
 // stuck, one that ignores StopCh until the test calls finish.
 func newFakeSession(pod string, stuck bool) *fakeSession {
-	s := &fakeSession{}
+	s := &fakeSession{errs: make(chan struct{}, 1)}
 	s.PortForwardSession = &k8s.PortForwardSession{
-		StopCh: make(chan struct{}),
-		Ready:  make(chan struct{}),
-		Err:    make(chan error, 1),
-		Done:   make(chan struct{}),
-		Pod:    pod,
-		Stderr: s.stderrText,
+		StopCh:    make(chan struct{}),
+		Ready:     make(chan struct{}),
+		Err:       make(chan error, 1),
+		Done:      make(chan struct{}),
+		Pod:       pod,
+		Stderr:    s.stderrText,
+		LastError: s.lastError,
+		Errors:    s.errs,
 	}
 	if stuck {
 		return s
@@ -67,6 +71,24 @@ func (s *fakeSession) writeStderr(text string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stderr += text
+}
+
+// failConnection records a failure on one of the session's connections,
+// the way the kubelet's error stream reports one.
+func (s *fakeSession) failConnection(msg string, at time.Time) {
+	s.mu.Lock()
+	s.tunnel = k8s.TunnelError{Message: msg, At: at}
+	s.mu.Unlock()
+	select {
+	case s.errs <- struct{}{}:
+	default:
+	}
+}
+
+func (s *fakeSession) lastError() k8s.TunnelError {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tunnel
 }
 
 func (s *fakeSession) stderrText() string {

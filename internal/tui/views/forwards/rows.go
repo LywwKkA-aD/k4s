@@ -2,8 +2,10 @@ package forwards
 
 import (
 	"fmt"
+	"time"
 
 	"charm.land/bubbles/v2/table"
+	"k8s.io/apimachinery/pkg/util/duration"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
@@ -17,7 +19,7 @@ func columns() []table.Column {
 		{Title: "NAMESPACE", Width: 16},
 		{Title: "NAME", Width: 26},
 		{Title: "LOCAL → REMOTE", Width: 18},
-		{Title: "DETAIL", Width: 30},
+		{Title: "DETAIL", Width: 42},
 	}
 }
 
@@ -27,8 +29,9 @@ func (m *Model) show(list []forwards.Active) {
 	prev, _ := m.selected()
 	rows := make([]table.Row, 0, len(list))
 	cursor := m.table.Cursor()
+	now := m.now()
 	for i, a := range list {
-		rows = append(rows, rowFor(a))
+		rows = append(rows, rowFor(a, now))
 		if prev.Forward.ID != "" && a.Forward.ID == prev.Forward.ID {
 			cursor = i
 		}
@@ -48,23 +51,28 @@ func (m Model) selected() (forwards.Active, bool) {
 	return m.shown[i], true
 }
 
-// rowFor lays out one forward. Names come from the state file and errors
-// from the cluster, so every cell is sanitized.
-func rowFor(a forwards.Active) table.Row {
+// rowFor lays out one forward as of now. Names come from the state file and
+// errors from the cluster, so every cell is sanitized.
+func rowFor(a forwards.Active, now time.Time) table.Row {
 	return table.Row{
 		a.Status.String(),
 		sanitize.Line(a.Forward.Kind),
 		sanitize.Line(a.Forward.Namespace),
 		sanitize.Line(a.Forward.Name),
 		ports(a.Forward),
-		detail(a),
+		detail(a, now),
 	}
 }
 
-// detail is the error a failed forward hit, or asks the user to confirm a
-// forward saved before k4s recorded which cluster it was for.
-func detail(a forwards.Active) string {
+// detail is the latest connection failure of a forward and how long ago it
+// was, else the error a failed forward hit, or asks the user to confirm a
+// forward saved before k4s recorded which cluster it was for. A failure
+// the kubelet reports ends the session as "lost connection to pod", so
+// the connection's own reason is the one worth the cell.
+func detail(a forwards.Active, now time.Time) string {
 	switch {
+	case a.TunnelErr != "":
+		return fmt.Sprintf("last error: %s · %s ago", sanitize.Line(a.TunnelErr), duration.HumanDuration(now.Sub(a.TunnelErrAt)))
 	case a.Err != nil:
 		return sanitize.Line(a.Err.Error())
 	case a.Unbound:

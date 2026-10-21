@@ -39,6 +39,35 @@ func condense(s string) string {
 	return s
 }
 
+// knownCauses are the endings of tunnel errors worth a DETAIL cell on
+// their own, from the kubelet's dial inside the pod or the connection to
+// it.
+var knownCauses = []string{
+	"connection refused",
+	"connection reset by peer",
+	"no route to host",
+	"network is unreachable",
+	"i/o timeout",
+	"broken pipe",
+}
+
+// tunnelCause sums up a failure on one of a forward's connections. The
+// kubelet's message runs to a few hundred bytes ("error forwarding port 80
+// to pod …: failed to connect to localhost:80 inside namespace …: connect:
+// connection refused"); its cause is the part a user acts on.
+func tunnelCause(msg string) string {
+	for _, c := range knownCauses {
+		if strings.Contains(msg, c) {
+			return c
+		}
+	}
+	msg = strings.TrimSpace(msg)
+	if i := strings.LastIndex(msg, ": "); i >= 0 {
+		return msg[i+2:]
+	}
+	return msg
+}
+
 // unprivilegedOffset moves a privileged port into the user range the way
 // people tend to by hand: 80 becomes 8080 and 443 becomes 8443.
 const unprivilegedOffset = 8000

@@ -61,6 +61,7 @@ func (m *Manager) beginAttempt(id string) (Forward, uint64, error) {
 	}
 	a.Status = StatusStarting
 	a.Err = nil
+	a.ended = k8s.TunnelError{}
 	m.attempts++
 	a.attempt = m.attempts
 	m.notify()
@@ -158,13 +159,9 @@ func (m *Manager) supervise(id string, attempt uint64, sess *k8s.PortForwardSess
 	// signals failure by both writing to Err *and* closing Done, so Go's
 	// random select tie-breaking can drop us into either case — that's why
 	// the rest of this function handles both paths.
-	select {
-	case <-sess.Done:
-	case err, ok := <-sess.Err:
-		if ok && err != nil {
-			m.markError(id, attempt, sess, decorateError(err, sess.Stderr))
-			return
-		}
+	if err := m.awaitEnd(id, attempt, sess); err != nil {
+		m.markError(id, attempt, sess, decorateError(err, sess.Stderr))
+		return
 	}
 
 	// Done landed first. Drain a pending Err if it's already queued so
@@ -199,6 +196,27 @@ func (m *Manager) supervise(id string, attempt uint64, sess *k8s.PortForwardSess
 	}
 }
 
+// awaitEnd blocks until the session ends and returns the error it
+// reported, if it reported one first. A failure on one of its connections
+// in the meantime refreshes the list, which shows it while the forward
+// keeps running.
+func (m *Manager) awaitEnd(id string, attempt uint64, sess *k8s.PortForwardSession) error {
+	for {
+		select {
+		case <-sess.Done:
+			return nil
+		case err := <-sess.Err:
+			return err
+		case <-sess.Errors:
+			m.mu.Lock()
+			if cur, ok := m.owned(id, attempt); ok && cur.session == sess {
+				m.notify()
+			}
+			m.mu.Unlock()
+		}
+	}
+}
+
 // markError flips the forward to StatusError unless the report is stale:
 // it comes from an older Start attempt, from a session the forward no
 // longer holds (sess is nil before a session exists), or the user has
@@ -219,6 +237,7 @@ func (m *Manager) markError(id string, attempt uint64, sess *k8s.PortForwardSess
 	cur.Status = StatusError
 	cur.Err = err
 	if sess != nil {
+		cur.ended = lastTunnelError(sess)
 		cur.session = nil
 	}
 	m.notify()

@@ -56,7 +56,16 @@ type Active struct {
 	// context's name or none. It may belong to another cluster, so it is
 	// started only through Revive, which binds it to this one.
 	Unbound bool
-	session *k8s.PortForwardSession
+	// TunnelErr sums up the latest failure on one of the forward's
+	// connections ("connection refused"), and TunnelErrAt says when it
+	// happened: while it runs, or, once such a failure ended the session,
+	// until the forward is started again. Both are zero when nothing
+	// failed.
+	TunnelErr   string
+	TunnelErrAt time.Time
+	session     *k8s.PortForwardSession
+	// ended is the failure the last session reported before it ended.
+	ended k8s.TunnelError
 	// attempt numbers the Start calls for this forward. A Start that is
 	// still resolving when the user stops and restarts the forward must
 	// not report into the newer attempt.
@@ -180,7 +189,7 @@ func (m *Manager) List() []Active {
 		if rel == otherCluster {
 			continue
 		}
-		out = append(out, Active{Forward: a.Forward, Status: a.Status, Err: a.Err, Unbound: rel == unboundCluster})
+		out = append(out, a.snapshot(rel))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		ai, aj := out[i].Forward, out[j].Forward
@@ -214,6 +223,27 @@ func (m *Manager) State() State {
 		out = append(out, f)
 	}
 	return State{Forwards: out}
+}
+
+// snapshot is the copy of a that List hands out. The caller holds m.mu.
+func (a *Active) snapshot(rel relation) Active {
+	out := Active{Forward: a.Forward, Status: a.Status, Err: a.Err, Unbound: rel == unboundCluster}
+	te := a.ended
+	if a.Status == StatusRunning {
+		te = lastTunnelError(a.session)
+	}
+	if te.Message != "" {
+		out.TunnelErr, out.TunnelErrAt = tunnelCause(te.Message), te.At
+	}
+	return out
+}
+
+// lastTunnelError is sess's latest connection failure; sess may be nil.
+func lastTunnelError(sess *k8s.PortForwardSession) k8s.TunnelError {
+	if sess == nil || sess.LastError == nil {
+		return k8s.TunnelError{}
+	}
+	return sess.LastError()
 }
 
 // Where names the cluster this Manager serves, "ctx · host".

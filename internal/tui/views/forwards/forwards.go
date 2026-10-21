@@ -7,6 +7,8 @@
 package forwards
 
 import (
+	"time"
+
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
@@ -25,6 +27,23 @@ const minTableRows = 5
 // changedMsg is delivered by the watcher once the Manager has mutated. It
 // carries the Token of the view that armed the watcher.
 type changedMsg struct{ tok async.Token }
+
+// ageTickMsg redraws the rows so the age of a tunnel error keeps counting.
+// tok tells the view's current tick chain from one it replaced.
+type ageTickMsg struct{ tok async.Token }
+
+// ageEvery is how often a tunnel error's age is redrawn: its first two
+// minutes count in seconds.
+const ageEvery = time.Second
+
+// Option changes how New builds the view.
+type Option func(*Model)
+
+// WithClock makes the view read the time from now, which ages the tunnel
+// errors it shows.
+func WithClock(now func() time.Time) Option {
+	return func(m *Model) { m.now = now }
+}
 
 // Model is the forwards view.
 type Model struct {
@@ -46,16 +65,20 @@ type Model struct {
 	// forwards, put on the status line by Init.
 	notice string
 	// tok tells this view's watcher from one a replaced view left behind.
-	tok   async.Token
-	bodyH int
-	done  chan struct{}
-	keys  keyMap
+	tok async.Token
+	// ageTok names the live chain of age ticks; starting a chain moves it
+	// on, so at most one chain keeps ticking.
+	ageTok async.Token
+	now    func() time.Time
+	bodyH  int
+	done   chan struct{}
+	keys   keyMap
 }
 
 // New constructs the view. Caller passes the singleton Manager. nil is
 // allowed for tests and for the (rare) case where Manager construction
 // itself failed at startup.
-func New(mgr *forwards.Manager) Model {
+func New(mgr *forwards.Manager, opts ...Option) Model {
 	t := table.New(
 		table.WithColumns(columns()),
 		table.WithFocused(true),
@@ -67,8 +90,13 @@ func New(mgr *forwards.Manager) Model {
 		manager: mgr,
 		table:   t,
 		tok:     async.New(),
+		ageTok:  async.New(),
+		now:     time.Now,
 		done:    make(chan struct{}),
 		keys:    newKeyMap(),
+	}
+	for _, opt := range opts {
+		opt(&m)
 	}
 	if mgr == nil {
 		return m
@@ -79,16 +107,17 @@ func New(mgr *forwards.Manager) Model {
 	return m
 }
 
-// Init waits for the Manager's next change, and says what went wrong
-// loading the saved forwards if anything did.
+// Init waits for the Manager's next change, ages the tunnel errors shown,
+// and says what went wrong loading the saved forwards if anything did.
 func (m Model) Init() tea.Cmd {
 	if m.manager == nil {
 		return nil
 	}
-	if m.notice == "" {
-		return m.wait(m.changes)
+	var notice tea.Cmd
+	if m.notice != "" {
+		notice = statusCmd(views.StatusMsg{Level: status.Warn, Text: m.notice})
 	}
-	return tea.Batch(m.wait(m.changes), statusCmd(views.StatusMsg{Level: status.Warn, Text: m.notice}))
+	return tea.Batch(m.wait(m.changes), m.ageAfter(m.ageTok), notice)
 }
 
 // wait blocks on the manager's one-shot change channel until it fires or
@@ -121,11 +150,21 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		// channel the next wait blocks on.
 		changes := m.manager.Changes()
 		m.show(m.manager.List())
-		return m, m.wait(changes)
+		var age tea.Cmd
+		m, age = m.restartAging()
+		return m, tea.Batch(m.wait(changes), age)
+	case ageTickMsg:
+		if !m.ageTok.Accept(msg.tok) || m.manager == nil {
+			return m, nil
+		}
+		m.refresh()
+		return m, m.ageAfter(m.ageTok)
 	case forwardOpResultMsg:
 		m.busy = without(m.busy, msg.fwd.ID)
 		m.refresh()
-		return m, statusCmd(msg.status())
+		var age tea.Cmd
+		m, age = m.restartAging()
+		return m, tea.Batch(statusCmd(msg.status()), age)
 	case tea.KeyPressMsg:
 		if next, cmd, handled := m.handleKey(msg); handled {
 			return next, cmd
@@ -134,6 +173,24 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
+}
+
+// restartAging starts a new chain of age ticks if a row shows a tunnel
+// error. The chain it replaces stops at its next tick.
+func (m Model) restartAging() (Model, tea.Cmd) {
+	m.ageTok = m.ageTok.Next()
+	return m, m.ageAfter(m.ageTok)
+}
+
+// ageAfter schedules the next redraw of tok's chain while a row shows the
+// age of a tunnel error.
+func (m Model) ageAfter(tok async.Token) tea.Cmd {
+	for _, a := range m.shown {
+		if !a.TunnelErrAt.IsZero() {
+			return tea.Tick(ageEvery, func(time.Time) tea.Msg { return ageTickMsg{tok: tok} })
+		}
+	}
+	return nil
 }
 
 // refresh re-reads the list. The watcher stays armed on its own channel.
