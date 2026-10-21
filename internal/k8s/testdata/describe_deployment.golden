@@ -1,0 +1,34 @@
+Name:                   nginx
+Namespace:              k4s-demo
+CreationTimestamp:      Tue, 20 Oct 2026 22:41:45 +0000
+Labels:                 app=nginx
+Annotations:            deployment.kubernetes.io/revision: 1
+Selector:               app=nginx
+Replicas:               3 desired | 3 updated | 3 total | 2 available | 1 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        0
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+Pod Template:
+  Labels:  app=nginx
+           tier=front
+  Containers:
+   nginx:
+    Image:      nginx:1.27-alpine
+    Port:       80/TCP
+    Host Port:  0/TCP
+    Limits:
+      cpu:         100m
+      memory:      64Mi
+    Mounts:        <none>
+  Volumes:         <none>
+  Node-Selectors:  <none>
+  Tolerations:     <none>
+Conditions:
+  Type          Status  Reason
+  ----          ------  ------
+  Available     True    MinimumReplicasAvailable
+  Progressing   True    NewReplicaSetAvailable
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  15h   deployment-controller  Scaled up replica set nginx-59f9f966f from 0 to 3

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -49,12 +48,6 @@ func (c *Client) ListPods(ctx context.Context, namespace string, opts ...ListOpt
 		})
 	}
 	return out, nil
-}
-
-// podStatus is the STATUS the pods table shows; describe reuses it so the
-// two screens agree.
-func podStatus(p *corev1.Pod) string {
-	return PodColumnsFor(p).Status
 }
 
 // ContainersForPod returns the names of every container in the pod's spec.

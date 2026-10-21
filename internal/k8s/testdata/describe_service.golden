@@ -1,0 +1,21 @@
+Name:                     nginx-lb
+Namespace:                k4s-demo
+Labels:                   app=nginx
+Annotations:              <none>
+Selector:                 app=nginx
+Type:                     LoadBalancer
+IP Family Policy:         SingleStack
+IP Families:              IPv4
+IP:                       10.43.12.7
+IPs:                      10.43.12.7
+LoadBalancer Ingress:     192.168.156.2
+Port:                     http  8080/TCP
+TargetPort:               80/TCP
+NodePort:                 http     31234/TCP
+Port:                     <unset>  9090/TCP
+TargetPort:               metrics/TCP
+NodePort:                 <unset>  31999/TCP
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Internal Traffic Policy:  Cluster
+Events:                   <none>

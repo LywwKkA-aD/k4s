@@ -1,0 +1,113 @@
+Name:                 native-sidecar
+Namespace:            k4s-demo
+Priority:             1000
+Priority Class Name:  workload-high
+Service Account:      shipper
+Node:                 k4s-server/192.168.156.2
+Start Time:           Tue, 20 Oct 2026 22:41:45 +0000
+Labels:               app=native-sidecar
+Annotations:          <none>
+Status:               Running
+IP:                   10.42.0.38
+IPs:
+  IP:           10.42.0.38
+  IP:           fd00:10:42::26
+Controlled By:  ReplicaSet/native-sidecar-6b7f9
+Init Containers:
+  log-shipper:
+    Container ID:    containerd://44884348fc53
+    Image:           busybox:1.37
+    Image ID:        docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+    Port:            <none>
+    Host Port:       <none>
+    Restart Policy:  Always
+    Command:
+      /bin/sh
+      -c
+    Args:
+      tail -F /var/log/app/app.log
+    State:          Running
+      Started:      Tue, 20 Oct 2026 22:52:52 +0000
+    Last State:     Terminated
+      Reason:       Unknown
+      Exit Code:    255
+      Started:      Tue, 20 Oct 2026 22:41:54 +0000
+      Finished:     Tue, 20 Oct 2026 22:52:44 +0000
+    Ready:          True
+    Restart Count:  1
+    Limits:
+      cpu:     50m
+      memory:  32Mi
+    Requests:
+      cpu:     10m
+      memory:  8Mi
+    Mounts:
+      /var/log/app from logs (rw)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-gdslw (ro)
+  setup:
+    Container ID:  containerd://1e6cbbb0b98b
+    Image:         busybox:1.37
+    Image ID:      docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+    Port:          <none>
+    Host Port:     <none>
+    Command:
+      /bin/sh
+      -c
+    Args:
+      echo setup done
+    State:          Terminated
+      Reason:       Completed
+      Exit Code:    0
+      Started:      Tue, 20 Oct 2026 22:52:53 +0000
+      Finished:     Tue, 20 Oct 2026 22:52:53 +0000
+    Ready:          True
+    Restart Count:  1
+    Mounts:
+      /var/log/app from logs (rw)
+Containers:
+  app:
+    Container ID:  containerd://f93962b0e467
+    Image:         busybox:1.37
+    Image ID:      docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+    Ports:         8080/TCP, 9090/TCP
+    Host Ports:    0/TCP, 9090/TCP
+    Command:
+      /bin/sh
+      -c
+    Args:
+      while true; do sleep 2; done
+    State:          Running
+      Started:      Tue, 20 Oct 2026 22:52:54 +0000
+    Last State:     Terminated
+      Reason:       Unknown
+      Exit Code:    255
+      Started:      Tue, 20 Oct 2026 22:41:54 +0000
+      Finished:     Tue, 20 Oct 2026 22:52:44 +0000
+    Ready:          True
+    Restart Count:  1
+    Mounts:
+      /etc/app from config (ro,path="app.conf")
+      /var/log/app from logs (rw)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       True 
+  ContainersReady             True 
+  PodScheduled                True 
+Volumes:
+  logs:
+    Type:       EmptyDir (a temporary directory that shares a pod's lifetime)
+    Medium:     
+    SizeLimit:  <unset>
+  config:
+    Type:      ConfigMap (a volume populated by a ConfigMap)
+    Name:      app-config
+    Optional:  false
+  kube-api-access-gdslw:
+    Type:        Projected (a volume that contains injected data from multiple sources)
+QoS Class:       Burstable
+Node-Selectors:  kubernetes.io/os=linux
+Tolerations:     node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                 node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:          <none>

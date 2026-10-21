@@ -2,6 +2,7 @@ package k8s_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -51,8 +52,9 @@ func describeObjects(kind string) []runtime.Object {
 }
 
 // TestDescribeSurvivesAFailedEventsList pins that events are best-effort:
-// when listing them fails, describe still renders the object, drops the
-// Events section without a word, and returns no error.
+// when listing them fails, describe still renders the object and says
+// the events are unavailable with a short reason, never the raw error,
+// which names the user and the verb.
 func TestDescribeSurvivesAFailedEventsList(t *testing.T) {
 	t.Parallel()
 
@@ -60,14 +62,41 @@ func TestDescribeSurvivesAFailedEventsList(t *testing.T) {
 		name       string
 		install    func(*fake.Clientset)
 		wantEvents bool
+		wantLine   string
 	}{
 		{name: "events readable", install: func(*fake.Clientset) {}, wantEvents: true},
-		{name: "events forbidden", install: func(cs *fake.Clientset) { k8stest.Forbid(cs, "list", "events") }},
-		{name: "events list unauthorized", install: func(cs *fake.Clientset) {
-			cs.PrependReactor("list", "events", func(ktesting.Action) (bool, runtime.Object, error) {
-				return true, nil, apierrors.NewUnauthorized("Unauthorized")
-			})
-		}},
+		{
+			name:     "events forbidden",
+			install:  func(cs *fake.Clientset) { k8stest.Forbid(cs, "list", "events") },
+			wantLine: "<unavailable: forbidden>",
+		},
+		{
+			name: "events list unauthorized",
+			install: func(cs *fake.Clientset) {
+				cs.PrependReactor("list", "events", func(ktesting.Action) (bool, runtime.Object, error) {
+					return true, nil, apierrors.NewUnauthorized("Unauthorized")
+				})
+			},
+			wantLine: "<unavailable: unauthorized>",
+		},
+		{
+			name: "events list fails otherwise",
+			install: func(cs *fake.Clientset) {
+				cs.PrependReactor("list", "events", func(ktesting.Action) (bool, runtime.Object, error) {
+					return true, nil, apierrors.NewInternalError(errors.New("etcd is sad"))
+				})
+			},
+			wantLine: "<unavailable: error>",
+		},
+		{
+			name: "events list times out",
+			install: func(cs *fake.Clientset) {
+				cs.PrependReactor("list", "events", func(ktesting.Action) (bool, runtime.Object, error) {
+					return true, nil, context.DeadlineExceeded
+				})
+			},
+			wantLine: "<unavailable: timeout>",
+		},
 	}
 	for _, d := range describers() {
 		for _, tc := range cases {
@@ -87,12 +116,28 @@ func TestDescribeSurvivesAFailedEventsList(t *testing.T) {
 				if hasEvents != tc.wantEvents {
 					t.Fatalf("Events section shown = %v, want %v:\n%s", hasEvents, tc.wantEvents, out)
 				}
-				if strings.Contains(out, "forbidden") || strings.Contains(out, "Unauthorized") {
-					t.Fatalf("Describe%s leaked the events error into the output:\n%s", d.kind, out)
+				if tc.wantLine != "" && !hasLine(out, "Events:", tc.wantLine) {
+					t.Fatalf("Describe%s lacks %q:\n%s", d.kind, tc.wantLine, out)
+				}
+				for _, leak := range []string{"cannot list", "Unauthorized", "etcd"} {
+					if strings.Contains(out, leak) {
+						t.Fatalf("Describe%s leaked the events error into the output:\n%s", d.kind, out)
+					}
 				}
 			})
 		}
 	}
+}
+
+// hasLine reports a line of out that starts with prefix and ends with
+// suffix, whatever the alignment between them.
+func hasLine(out, prefix, suffix string) bool {
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.HasPrefix(line, prefix) && strings.HasSuffix(line, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDescribeGetErrors(t *testing.T) {
