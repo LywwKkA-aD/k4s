@@ -71,8 +71,8 @@ func Init(getenv func(string) string) error {
 	return nil
 }
 
-// forcedProfile is the colour profile mono pins the program to; nil lets
-// Bubble Tea detect it.
+// forcedProfile is the colour profile the program is pinned to (mono, or
+// truecolor announced by COLORTERM); nil lets Bubble Tea detect it.
 var forcedProfile *colorprofile.Profile
 
 func apply(mode Mode, getenv func(string) string) {
@@ -89,6 +89,26 @@ func apply(mode Mode, getenv func(string) string) {
 	default:
 		use(colourPalette(detectDark(getenv)))
 	}
+	if mode != ModeMono && wantsTruecolor(stdoutIsTerminal(), getenv("TERM"), getenv("COLORTERM")) {
+		p := colorprofile.TrueColor
+		forcedProfile = &p
+	}
+}
+
+// wantsTruecolor reports whether COLORTERM announces 24-bit colour on a real
+// terminal. colorprofile ignores COLORTERM for tmux and screen TERMs and
+// falls back to 256 colours unless tmux advertises RGB, while termenv (and
+// so k4s 1.1) trusted it; tmux passes truecolor through when it is set up
+// to, and that is what COLORTERM tells us.
+func wantsTruecolor(isTerminal bool, termName, colorterm string) bool {
+	if !isTerminal || termName == "dumb" {
+		return false
+	}
+	switch strings.ToLower(colorterm) {
+	case "truecolor", "24bit":
+		return true
+	}
+	return false
 }
 
 // ColorProfile returns the colour profile the program must render with, and
@@ -101,12 +121,13 @@ func ColorProfile() (colorprofile.Profile, bool) {
 	return *forcedProfile, true
 }
 
-// monoProfile keeps text attributes on a real terminal and drops every
-// escape code where they would be noise: pipes, files and TERM=dumb. The
-// ASCII profile drops colour but keeps bold, underline and reverse, so the
-// selected row stays visible whatever profile NO_COLOR would select.
-func monoProfile(isTerminal bool, termName string) colorprofile.Profile {
-	if !isTerminal || termName == "dumb" {
+// monoProfile keeps text attributes on a terminal and drops every escape
+// code only where output is not a terminal (pipes, files): Bubble Tea v2's
+// NoTTY writer also strips cursor movement, which a TUI on TERM=dumb still
+// needs. The ASCII profile drops colour but keeps bold, underline and
+// reverse, so the selected row stays visible whatever NO_COLOR would select.
+func monoProfile(isTerminal bool, _ string) colorprofile.Profile {
+	if !isTerminal {
 		return colorprofile.NoTTY
 	}
 	return colorprofile.ASCII
