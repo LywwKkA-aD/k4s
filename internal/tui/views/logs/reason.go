@@ -70,7 +70,9 @@ const (
 
 // judge tells what became of a pod's stream, or of a pod waiting to
 // stream, from its state now. A pod's own end wins over the stream's
-// error: the stream of a deleted pod ends with one too.
+// error: the stream of a deleted pod ends with one too. Each word of the
+// state is made inert on its own as it goes into the note, wherever the
+// state was read: one escape left open would swallow the rest.
 func judge(e end) verdict {
 	switch {
 	case !e.found || e.state.Deleting:
@@ -86,7 +88,7 @@ func judge(e end) verdict {
 	case !ok:
 		return verdict{outcome: outError, note: noteEndedHead + missingContainer(e.container)}
 	case !c.HasLog():
-		return verdict{outcome: outWaiting, note: "△ waiting: " + orDefault(c.Waiting, "Pending"), restarts: c.Restarts}
+		return verdict{outcome: outWaiting, note: "△ waiting: " + orDefault(sanitize.Line(c.Waiting), "Pending"), restarts: c.Restarts}
 	case e.waiting:
 		return verdict{outcome: outStarted, restarts: c.Restarts}
 	case e.restarts != restartsUnknown && c.Restarts > e.restarts:
@@ -104,14 +106,14 @@ func judge(e end) verdict {
 // failedNote names why a pod failed: its own reason (Evicted), else how
 // its container ended.
 func failedNote(e end) string {
-	if e.state.Reason != "" {
-		return "○ ended: pod failed · " + e.state.Reason
+	if reason := sanitize.Line(e.state.Reason); reason != "" {
+		return "○ ended: pod failed · " + reason
 	}
 	c, _ := e.state.Container(e.container)
 	if c.Exit == nil || c.Exit.Reason == "" {
 		return "○ ended: pod failed"
 	}
-	return "○ ended: pod failed · " + c.Exit.Reason + " (exit " + exitCode(c.Exit) + ")"
+	return "○ ended: pod failed · " + sanitize.Line(c.Exit.Reason) + " (exit " + exitCode(c.Exit) + ")"
 }
 
 // exitDetail is " (OOMKilled, exit 137)", or empty when the exit is
@@ -123,7 +125,7 @@ func exitDetail(x *k8s.ContainerExit) string {
 	if x.Reason == "" {
 		return " (exit " + exitCode(x) + ")"
 	}
-	return " (" + x.Reason + ", exit " + exitCode(x) + ")"
+	return " (" + sanitize.Line(x.Reason) + ", exit " + exitCode(x) + ")"
 }
 
 func exitCode(x *k8s.ContainerExit) string {
@@ -137,7 +139,7 @@ func missingContainer(name string) string {
 	if name == "" {
 		return "the pod has no containers"
 	}
-	return "container " + name + " is not in the pod"
+	return "container " + sanitize.Line(name) + " is not in the pod"
 }
 
 func orDefault(s, fallback string) string {

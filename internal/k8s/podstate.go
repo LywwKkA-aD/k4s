@@ -7,6 +7,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 )
 
 // defaultContainerAnnotation names the container kubectl logs and exec pick
@@ -16,6 +18,8 @@ const defaultContainerAnnotation = "kubectl.kubernetes.io/default-container"
 // PodState is a pod as its log streams see it: whether it is going away,
 // how it ended, and where each app container stands. The logs view tells
 // from it why a stream ended and when a waiting pod has a log to follow.
+// The reasons are inert text (see internal/sanitize): the node and the
+// controllers write them, and the view prints them.
 type PodState struct {
 	Phase string
 	// Reason is the pod's own reason, such as Evicted.
@@ -98,7 +102,7 @@ func PodStateOf(p *corev1.Pod) PodState {
 	}
 	s := PodState{
 		Phase:            string(p.Status.Phase),
-		Reason:           p.Status.Reason,
+		Reason:           sanitize.Line(p.Status.Reason),
 		Deleting:         p.DeletionTimestamp != nil,
 		DefaultContainer: p.Annotations[defaultContainerAnnotation],
 		Containers:       make([]ContainerState, 0, len(p.Spec.Containers)),
@@ -122,7 +126,7 @@ func containerStateOf(cs corev1.ContainerStatus) ContainerState {
 	case st.Terminated != nil:
 		out.Exit = exitOf(st.Terminated)
 	case st.Waiting != nil:
-		out.Waiting = st.Waiting.Reason
+		out.Waiting = sanitize.Line(st.Waiting.Reason)
 	}
 	return out
 }
@@ -131,7 +135,7 @@ func exitOf(t *corev1.ContainerStateTerminated) *ContainerExit {
 	if t == nil {
 		return nil
 	}
-	return &ContainerExit{Reason: t.Reason, Code: t.ExitCode}
+	return &ContainerExit{Reason: sanitize.Line(t.Reason), Code: t.ExitCode}
 }
 
 // pendingReason is why a pod's containers have no status yet: it is not
@@ -142,7 +146,7 @@ func pendingReason(p *corev1.Pod) string {
 	}
 	for _, c := range p.Status.Conditions {
 		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Reason != "" {
-			return c.Reason
+			return sanitize.Line(c.Reason)
 		}
 	}
 	return string(corev1.PodPending)
