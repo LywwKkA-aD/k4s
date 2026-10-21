@@ -1,0 +1,200 @@
+01| |
+  | |
+  | |
+  | |
+  | |
+02|┏┓|
+  |┃┃|
+  |┃┃|
+  |┃┃|
+  |┗┛|
+03|┏━┓|
+  |┃…┃|
+  |┃…┃|
+  |┃…┃|
+  |┗━┛|
+04|┏━━┓|
+  |┃›…┃|
+  |┃ …┃|
+  |┃ …┃|
+  |┗━━┛|
+05|┏━━━┓|
+  |┃›▲…┃|
+  |┃ △…┃|
+  |┃ ·…┃|
+  |┗━━━┛|
+06|┏━━━━┓|
+  |┃›▲ …┃|
+  |┃ △ …┃|
+  |┃ · …┃|
+  |┗━━━━┛|
+07|┏━━━━━┓|
+  |┃›▲ s…┃|
+  |┃ △ c…┃|
+  |┃ · g…┃|
+  |┗━━━━━┛|
+08|┏━━━━━━┓|
+  |┃›▲ sh…┃|
+  |┃ △ ci…┃|
+  |┃ · gr…┃|
+  |┗━━━━━━┛|
+09|┏━ 18… ━┓|
+  |┃›▲ sho…┃|
+  |┃ △ ci/…┃|
+  |┃ · gro…┃|
+  |┗━ 1/… ━┛|
+10|┏━┫ 3 … ┣┓|
+  |┃›▲ shop…┃|
+  |┃ △ ci/r…┃|
+  |┃ · grow…┃|
+  |┗━ 1/9… ━┛|
+11|┏━┫ 3 p… ┣┓|
+  |┃›▲ shop/…┃|
+  |┃ △ ci/ru…┃|
+  |┃ · growl…┃|
+  |┗━ 1/9 … ━┛|
+12|┏━┫ 3 po… ┣┓|
+  |┃›▲ shop/p…┃|
+  |┃ △ ci/run…┃|
+  |┃ · growly…┃|
+  |┗━ 1/9 ·… ━┛|
+13|┏━┫ 3 pods ┣┓|
+  |┃›▲ shop/pa…┃|
+  |┃ △ ci/runn…┃|
+  |┃ · growlyt…┃|
+  |┗━ 1/9 · … ━┛|
+14|┏━┫ 3 pods ┣━┓|
+  |┃›▲ shop/pay…┃|
+  |┃ △ ci/runne…┃|
+  |┃ · growlyti…┃|
+  |┗━ 1/9 · +… ━┛|
+15|┏━┫ 3 pods ┣━━┓|
+  |┃›▲ shop/paym…┃|
+  |┃ △ ci/runner…┃|
+  |┃ · growlytic…┃|
+  |┗━ 1/9 · +2… ━┛|
+16|┏━┫ 3 pods ┣━━━┓|
+  |┃›▲ shop/payme…┃|
+  |┃ △ ci/runner …┃|
+  |┃ · growlytics…┃|
+  |┗━ 1/9 · +2 … ━┛|
+17|┏━┫ 3 pods ┣━━━━┓|
+  |┃›▲ shop/paymen…┃|
+  |┃ △ ci/runner  …┃|
+  |┃ · growlytics/…┃|
+  |┗━ 1/9 · +2 ·… ━┛|
+18|┏━┫ 3 pods ┣━━━━━┓|
+  |┃›▲ shop/payment…┃|
+  |┃ △ ci/runner  0…┃|
+  |┃ · growlytics/r…┃|
+  |┗━ 1/9 · +2 · … ━┛|
+19|┏━┫ 3 pods ┣━━━━━━┓|
+  |┃›▲ shop/payments…┃|
+  |┃ △ ci/runner  0/…┃|
+  |┃ · growlytics/re…┃|
+  |┗━ 1/9 · +2 · z… ━┛|
+20|┏━┫ 3 pods ┣━ 18… ━┓|
+  |┃›▲ shop/payments-…┃|
+  |┃ △ ci/runner  0/1…┃|
+  |┃ · growlytics/rep…┃|
+  |┗━ 1/9 · +2 · z … ━┛|
+21|┏━┫ 3 pods ┣━ 185… ━┓|
+  |┃›▲ shop/payments-w…┃|
+  |┃ △ ci/runner  0/1 …┃|
+  |┃ · growlytics/repo…┃|
+  |┗━ 1/9 · +2 · z z… ━┛|
+22|┏━┫ 3 pods ┣━ 185 … ━┓|
+  |┃›▲ shop/payments-wo…┃|
+  |┃ △ ci/runner  0/1  …┃|
+  |┃ · growlytics/repor…┃|
+  |┗━ 1/9 · +2 · z zo… ━┛|
+23|┏━┫ 3 pods ┣━ 185 ·… ━┓|
+  |┃›▲ shop/payments-wor…┃|
+  |┃ △ ci/runner  0/1  P…┃|
+  |┃ · growlytics/report…┃|
+  |┗━ 1/9 · +2 · z zoom ━┛|
+24|┏━┫ 3 pods ┣━ 185 · … ━┓|
+  |┃›▲ shop/payments-work…┃|
+  |┃ △ ci/runner  0/1  Pe…┃|
+  |┃ · growlytics/report …┃|
+  |┗━━ 1/9 · +2 · z zoom ━┛|
+25|┏━┫ 3 pods ┣━ 185 · 3… ━┓|
+  |┃›▲ shop/payments-worke…┃|
+  |┃ △ ci/runner  0/1  Pen…┃|
+  |┃ · growlytics/report  …┃|
+  |┗━━━ 1/9 · +2 · z zoom ━┛|
+26|┏━┫ 3 pods ┣━ 185 · 33… ━┓|
+  |┃›▲ shop/payments-worker…┃|
+  |┃ △ ci/runner  0/1  Pend…┃|
+  |┃ · growlytics/report  E…┃|
+  |┗━━━━ 1/9 · +2 · z zoom ━┛|
+27|┏━┫ 3 pods ┣━ 185 · 33 … ━┓|
+  |┃›▲ shop/payments-worker-…┃|
+  |┃ △ ci/runner  0/1  Pendi…┃|
+  |┃ · growlytics/report  Ev…┃|
+  |┗━━━━━ 1/9 · +2 · z zoom ━┛|
+28|┏━┫ 3 pods ┣━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6…┃|
+  |┃ △ ci/runner  0/1  Pending┃|
+  |┃ · growlytics/report  Evi…┃|
+  |┗━━━━━━ 1/9 · +2 · z zoom ━┛|
+29|┏━┫ 3 pods ┣━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c…┃|
+  |┃ △ ci/runner  0/1  Pending ┃|
+  |┃ · growlytics/report  Evic…┃|
+  |┗━━━━━━━ 1/9 · +2 · z zoom ━┛|
+30|┏━┫ 3 pods ┣━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9…┃|
+  |┃ △ ci/runner  0/1  Pending  ┃|
+  |┃ · growlytics/report  Evict…┃|
+  |┗━━━━━━━━ 1/9 · +2 · z zoom ━┛|
+31|┏━┫ 3 pods ┣━━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9f…┃|
+  |┃ △ ci/runner  0/1  Pending   ┃|
+  |┃ · growlytics/report  Evicted┃|
+  |┗━━━━━━━━━ 1/9 · +2 · z zoom ━┛|
+32|┏━┫ 3 pods ┣━━━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9f7…┃|
+  |┃ △ ci/runner  0/1  Pending    ┃|
+  |┃ · growlytics/report  Evicted ┃|
+  |┗━━━━━━━━━━ 1/9 · +2 · z zoom ━┛|
+33|┏━┫ 3 pods ┣━━━━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9f7d…┃|
+  |┃ △ ci/runner  0/1  Pending     ┃|
+  |┃ · growlytics/report  Evicted  ┃|
+  |┗━━━━━━━━━━━ 1/9 · +2 · z zoom ━┛|
+34|┏━┫ 3 pods ┣━━━━━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9f7d8…┃|
+  |┃ △ ci/runner  0/1  Pending      ┃|
+  |┃ · growlytics/report  Evicted   ┃|
+  |┗━━━━━━━━━━━━ 1/9 · +2 · z zoom ━┛|
+35|┏━┫ 3 pods ┣━━━━━━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9f7d8b…┃|
+  |┃ △ ci/runner  0/1  Pending       ┃|
+  |┃ · growlytics/report  Evicted    ┃|
+  |┗━━━━━━━━━━━━━ 1/9 · +2 · z zoom ━┛|
+36|┏━┫ 3 pods ┣━━━━━━━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9f7d8b5…┃|
+  |┃ △ ci/runner  0/1  Pending        ┃|
+  |┃ · growlytics/report  Evicted     ┃|
+  |┗━━━━━━━━━━━━━━ 1/9 · +2 · z zoom ━┛|
+37|┏━┫ 3 pods ┣━━━━━━━━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9f7d8b5-…┃|
+  |┃ △ ci/runner  0/1  Pending         ┃|
+  |┃ · growlytics/report  Evicted      ┃|
+  |┗━━━━━━━━━━━━━━━ 1/9 · +2 · z zoom ━┛|
+38|┏━┫ 3 pods ┣━━━━━━━━━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9f7d8b5-x…┃|
+  |┃ △ ci/runner  0/1  Pending          ┃|
+  |┃ · growlytics/report  Evicted       ┃|
+  |┗━━━━━━━━━━━━━━━━ 1/9 · +2 · z zoom ━┛|
+39|┏━┫ 3 pods ┣━━━━━━━━━━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9f7d8b5-xk…┃|
+  |┃ △ ci/runner  0/1  Pending           ┃|
+  |┃ · growlytics/report  Evicted        ┃|
+  |┗━━━━━━━━━━━━━━━━━ 1/9 · +2 · z zoom ━┛|
+40|┏━┫ 3 pods ┣━━━━━━━━━━━━━ 185 · 33 ns ━┓|
+  |┃›▲ shop/payments-worker-6c9f7d8b5-xk2…┃|
+  |┃ △ ci/runner  0/1  Pending            ┃|
+  |┃ · growlytics/report  Evicted         ┃|
+  |┗━━━━━━━━━━━━━━━━━━ 1/9 · +2 · z zoom ━┛|
