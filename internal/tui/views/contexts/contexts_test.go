@@ -18,8 +18,9 @@ const (
 )
 
 // TestMain points KUBECONFIG at a generated file so the picker never reads
-// the developer's own contexts. Tests that need another file use t.Setenv
-// and do not run in parallel.
+// the developer's own contexts, and XDG_STATE_HOME at an empty directory
+// so the root model the flow tests drive finds no saved port-forwards.
+// Tests that need another file use t.Setenv and do not run in parallel.
 func TestMain(m *testing.M) {
 	os.Exit(run(m))
 }
@@ -30,6 +31,9 @@ func run(m *testing.M) int {
 		panic(err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
+	if err := os.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state")); err != nil {
+		panic(err)
+	}
 	path, err := tuitest.WriteKubeconfig(dir, alpha, beta, alpha)
 	if err != nil {
 		panic(err)

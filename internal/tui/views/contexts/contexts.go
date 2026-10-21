@@ -24,6 +24,8 @@ const (
 	// prevents the "loading" placeholder from flashing on fast disks but
 	// also lets the WindowSizeMsg arrive first so the table is sized.
 	loadDelay = 50 * time.Millisecond
+	// nameColumn is the NAME cell of a row; the first holds the marker.
+	nameColumn = 1
 )
 
 // Model is the contexts list view.
@@ -31,6 +33,8 @@ type Model struct {
 	table  table.Model
 	loaded bool
 	err    error
+	// pending is the row a Restore asked for, held until the first read.
+	pending pendingRow
 
 	currentContext string
 	source         k8s.Source
@@ -96,10 +100,11 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	case contextsMsg:
 		m.err = msg.err
 		m.loaded = true
-		if msg.err == nil {
-			m.table.SetRows(m.toRows(msg.items))
+		if msg.err != nil {
+			return m, nil
 		}
-		return m, nil
+		m.table.SetRows(m.toRows(msg.items))
+		return m.landPending()
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.refreshKey):
@@ -109,7 +114,7 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 			if row == nil {
 				return m, nil
 			}
-			name := row[1] // NAME column
+			name := row[nameColumn]
 			return m, func() tea.Msg {
 				return views.ContextSelectedMsg{Name: name}
 			}
