@@ -39,6 +39,10 @@
 //     owns the refresh cadence. A view with a Poller labels its w binding
 //     with Poller.Hint() ("watch 5s", "watch 20s (slow API)", "paused"):
 //     that is where watch state shows now that the footer has no --watch.
+//   - The root owns q, :, ?, Esc, y and ctrl+c unless the view CapturesKeys
+//     (then every key goes to the view). A view must not bind them. A new
+//     global key is added to this list in the same change that binds it in
+//     the root.
 //   - Time is the view's own. A view that needs a clock for tests takes it
 //     as an option on its New (for example WithClock(func() time.Time));
 //     the root never passes clocks to views.
