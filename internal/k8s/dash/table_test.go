@@ -56,7 +56,8 @@ func TestDecodeTableCellTypes(t *testing.T) {
 	t.Parallel()
 
 	body := `{"columnDefinitions":[{"name":"Name"},{"name":"Desired"},{"name":"Suspend"},{"name":"Text"}],
-	 "rows":[{"cells":["a",3,true,"7"]},{"cells":["b",null,false,"x"]},{"cells":["c"]}],
+	 "rows":[{"cells":["a",3,true,"7"]},{"cells":["b",null,false,"x"]},{"cells":["c"]},
+	  {"cells":["d",4294967296,false,"-2147483649"]}],
 	 "metadata":{"remainingItemCount":5,"continue":"tok"}}`
 	tb, err := decodeTable([]byte(body))
 	if err != nil {
@@ -65,9 +66,14 @@ func TestDecodeTableCellTypes(t *testing.T) {
 	desired, suspend, text := tb.col("Desired"), tb.col("Suspend"), tb.col("Text")
 	nums := []struct {
 		row, col int
-		want     int64
+		want     int
 		ok       bool
-	}{{0, desired, 3, true}, {0, text, 7, true}, {1, desired, 0, false}, {1, text, 0, false}}
+	}{
+		{0, desired, 3, true}, {0, text, 7, true}, {1, desired, 0, false}, {1, text, 0, false},
+		// Counts are int32 in the API; anything wider is garbage, and on
+		// 32-bit builds it would wrap.
+		{3, desired, 0, false}, {3, text, 0, false},
+	}
 	for _, n := range nums {
 		if got, ok := tb.num(n.row, n.col); got != n.want || ok != n.ok {
 			t.Errorf("num(%d, %d) = %d, %v; want %d, %v", n.row, n.col, got, ok, n.want, n.ok)

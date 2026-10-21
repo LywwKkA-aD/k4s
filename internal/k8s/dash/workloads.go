@@ -27,7 +27,7 @@ func deployRowsFrom(t table, ns string) []workloadRow {
 		}
 		u, _ := t.num(i, upToDate)
 		a, _ := t.num(i, available)
-		r.upToDate, r.available = int(u), int(a)
+		r.upToDate, r.available = u, a
 		out = append(out, r)
 	}
 	return out
@@ -51,7 +51,7 @@ func dsRowsFrom(t table, ns string) []workloadRow {
 		r, okR := t.num(i, ready)
 		a, _ := t.num(i, available)
 		out = append(out, workloadRow{
-			name: n, namespace: ns, desired: int(d), ready: int(r), available: int(a), readyOK: okD && okR,
+			name: n, namespace: ns, desired: d, ready: r, available: a, readyOK: okD && okR,
 		})
 	}
 	return out
