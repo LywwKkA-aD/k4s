@@ -1,7 +1,7 @@
  k4s · ctx fake · ns ALL · dashboard
 ──────────────────────────────────────────────────────────
-›◆ nothing failing in what k4s can see             watch 5s
- ▸ next  kubectl api-resources --api-group=metrics.k8s.io  …
+›◆ nothing failing in what k4s can see
+ ▸ next  kubectl api-resources --api-group=metrics.k8s.io
    1 cluster    ○ readyz not served
    2 nodes      ○ no nodes registered
 ╭─┤ 3 pods ├───────────────────────────────────────────────╮

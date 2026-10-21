@@ -21,8 +21,8 @@ const (
 )
 
 // nodeCols is one step of the column drop order: ROLES first, then the
-// per-node strips, AGE and PODS, then the meters narrow to 6 cells and to
-// the value alone.
+// per-node strips, AGE and PODS; the meters narrow to 6 cells before PODS
+// goes, as in the 120x40 mockup, and to the value alone last.
 type nodeCols struct {
 	roles, strips, age, pods bool
 	meter                    int
@@ -33,10 +33,14 @@ var nodeSteps = []nodeCols{
 	{strips: true, age: true, pods: true, meter: meterWide},
 	{age: true, pods: true, meter: meterWide},
 	{pods: true, meter: meterWide},
-	{meter: meterWide},
+	{pods: true, meter: meterNarrow},
 	{meter: meterNarrow},
 	{meter: meterValue},
 }
+
+// narrowFrom is where the narrow layouts start the drop order: they draw
+// no sparklines, and ROLES, which drops before the strips, goes with them.
+const narrowFrom = 2
 
 // nodesBody draws panel 2: a table of nodes over the cluster history.
 func nodesBody(f frame, w, h int) panelBody {
@@ -56,9 +60,11 @@ func nodesBody(f frame, w, h int) panelBody {
 		return body
 	}
 	var tail []string
-	if hasMetrics(f.snap) {
+	switch {
+	case f.narrow():
+	case hasMetrics(f.snap):
 		tail = chartLines(f, w, chartSize(len(n.Rows), h))
-	} else {
+	default:
 		tail = noteLines(f, len(n.Rows), h)
 	}
 	room := h - 1 - len(tail)
@@ -107,7 +113,11 @@ func nodeTable(f frame, w, room int) (lines []string, hidden int) {
 	var head []string
 	var cells [][]string
 	var c cols
-	for _, step := range nodeSteps {
+	steps := nodeSteps
+	if f.narrow() {
+		steps = nodeSteps[narrowFrom:]
+	}
+	for _, step := range steps {
 		head, cells = nodeCells(f, step)
 		if c = measure(head, cells, isPodsHead, isMeterHead); c.width() <= avail {
 			break

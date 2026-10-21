@@ -28,9 +28,16 @@ type frame struct {
 	// answers; retry is when the poller asks again.
 	staleSince time.Time
 	retry      time.Duration
-	th         viz.Theme
-	ds         styles.DashboardStyles
+	// kind is the layout drawn: the narrow ones say less per line.
+	kind layoutKind
+	th   viz.Theme
+	ds   styles.DashboardStyles
 }
+
+// narrow reports the compact accordion and the smaller layouts, which
+// drop the banner's words around the chips, the next counter and
+// question, and every sparkline (§3, what 80x24 drops).
+func (f frame) narrow() bool { return f.kind <= kindCompact }
 
 // dimmed is f for a panel whose data is stale: every state colour gives
 // way to the label colour. The glyphs and words stay, so mono, which has

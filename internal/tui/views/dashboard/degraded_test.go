@@ -121,7 +121,7 @@ func TestDegradedSources(t *testing.T) {
 			want: []string{
 				"— ns", "forbidden · :ns <name> to switch", "○ storage    no pvc · stale 2m",
 				"— network    services forbidden", "— version    version forbidden",
-				"▲ api        not ready · 6/8 checks · etcd failing · failing etcd",
+				"▲ api        not ready · failing etcd, informer-sync · 6/8 checks",
 			},
 			not: []string{"(namespace kube-system)"},
 		},

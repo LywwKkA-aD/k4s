@@ -159,6 +159,52 @@ func TestCompactTooShortFallsBackToSummaryLines(t *testing.T) {
 	}
 }
 
+// TestPanelsCollapseInOrder: when not every panel fits, they go in the
+// spec's order (top pods, k3s, cluster, events, workloads, nodes) and
+// pods goes last; the rest stay in panel order.
+func TestPanelsCollapseInOrder(t *testing.T) {
+	t.Parallel()
+
+	all := present(shown{k3s: true, top: true})
+	for n, want := range []string{"[]", "[3]", "[2 3]", "[2 3 4]", "[2 3 4 5]", "[1 2 3 4 5]", "[1 2 3 4 5 6]", "[1 2 3 4 5 6 7]", "[1 2 3 4 5 6 7]"} {
+		if got := fmt.Sprint(keep(all, n)); got != want {
+			t.Errorf("keep %d = %s, want %s", n, got, want)
+		}
+	}
+}
+
+// TestSummaryLinesCollapseInOrder is the same order in the smallest
+// layout: the banner drops to one row first, then panels go.
+func TestSummaryLinesCollapseInOrder(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		h    int
+		sh   shown
+		want string
+	}{
+		{h: 9, sh: shown{k3s: true, top: true}, want: "[1 2 3 4 5 6 7]"},
+		{h: 8, sh: shown{k3s: true, top: true}, want: "[1 2 3 4 5 6 7]"},
+		{h: 7, sh: shown{k3s: true, top: true}, want: "[1 2 3 4 5 6]"},
+		{h: 6, sh: shown{k3s: true, top: true}, want: "[1 2 3 4 5]"},
+		{h: 6, sh: shown{top: true}, want: "[1 2 3 4 5]"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d rows %+v", tt.h, tt.sh), func(t *testing.T) {
+			t.Parallel()
+			l := buildLayout(50, tt.h, tt.sh, dash.PanelPods)
+			if got := fmt.Sprint(l.visible()); got != tt.want {
+				t.Fatalf("%d rows show %s, want %s", tt.h, got, tt.want)
+			}
+			for i, p := range l.places {
+				if i > 0 && p.y != l.places[i-1].y+1 {
+					t.Fatalf("summary lines leave a gap: %+v", l.places)
+				}
+			}
+		})
+	}
+}
+
 // TestEveryPlaceFits sweeps the sizes the view must survive: every place
 // lies inside the body and no two overlap.
 func TestEveryPlaceFits(t *testing.T) {

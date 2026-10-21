@@ -24,6 +24,9 @@ func chartLines(f frame, w, size int) []string {
 	}
 	usable := w - 1 - len(chartIndent) - 1
 	half := (usable - 3) / 2
+	if half < sparkBelow {
+		return sparkLines(f, usable, size)
+	}
 	// Both charts span the same time, so they share a width.
 	half2 := half
 	rows := 1

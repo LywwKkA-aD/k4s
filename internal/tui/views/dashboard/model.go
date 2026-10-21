@@ -168,12 +168,16 @@ func (m Model) HelpMap() []key.Binding {
 }
 
 // watchHint is the cadence for the w hint: "watch 5s", "watch 15s (slow
-// API)" while stretched, "paused" with watch off.
+// API)" while stretched, "paused" with watch off. The compact layouts,
+// whose banner has no room for it, keep it in the hints as "w 5s".
 func (m Model) watchHint() string {
 	if !m.poll.Enabled() {
 		return "paused"
 	}
-	hint := "watch " + seconds(m.cadence)
+	hint := seconds(m.cadence)
+	if m.lay.w == 0 || m.lay.kind > kindCompact {
+		hint = "watch " + hint
+	}
 	if m.slowed {
 		hint += " (slow API)"
 	}
