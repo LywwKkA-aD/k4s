@@ -106,9 +106,10 @@ func serviceExternalIP(s *corev1.Service) string {
 // should treat that as "no logs available, do nothing".
 //
 // Superseded by ServiceLogTarget, which skips finished pods and reports
-// them, and returns ErrNoSelector instead of nothing. It stays until the
-// services view moves over; the formal deprecation marker would fail
-// staticcheck on that caller first.
+// them, and returns ErrNoSelector instead of nothing. The services view
+// no longer calls it; only the tuitest seed test does, and it goes with
+// that caller. The formal deprecation marker would fail staticcheck there
+// first.
 func (c *Client) PodsAndContainersForService(ctx context.Context, namespace, name string) ([]string, []string, error) {
 	svc, err := c.Clientset.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
