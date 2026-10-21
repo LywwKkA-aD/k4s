@@ -60,7 +60,7 @@ func TestNextKeepsAWorkloadWhenOnlyAnUnrelatedPodMatchesItsPrefix(t *testing.T) 
 func TestNextCoverageCountsOnlyPickedPods(t *testing.T) {
 	t.Parallel()
 
-	var pods []PodRow
+	pods := make([]PodRow, 0, maxSuggestions+1)
 	for i := range maxSuggestions {
 		p := problem("ops", fmt.Sprintf("crash-%d", i), "CrashLoopBackOff", 3, "app", hour, time.Duration(i+1)*minute)
 		p.Sev = SevWaiting

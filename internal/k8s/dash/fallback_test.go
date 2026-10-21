@@ -21,21 +21,32 @@ func TestFallbackRefreshResolvesEachListInItsOwnNamespace(t *testing.T) {
 	if !s.Scope.Fallback || s.Scope.Namespace != "shop" {
 		t.Fatalf("scope %+v, want the pods list to fall back to shop", s.Scope)
 	}
-	var shopCrash, worker, stagingAPI bool
+	crash := podRowNamed(s, "payments-worker-6c9f7d8b5-xk2lp")
+	if !crash.Resolved || crash.Key.Namespace != "shop" || crash.Container != "worker" {
+		t.Fatalf("crash pod = %+v", crash)
+	}
+	for name, ns := range map[string]string{"payments-worker": "shop", "api": "staging"} {
+		r := deploymentRowNamed(s, name)
+		if !r.Resolved || r.Key.Namespace != ns {
+			t.Errorf("deployment %s = %+v, want it placed in %s", name, r.Key, ns)
+		}
+	}
+}
+
+func podRowNamed(s Snapshot, name string) PodRow {
 	for _, r := range s.Pods.Problems {
-		if r.Key.Name == "payments-worker-6c9f7d8b5-xk2lp" {
-			shopCrash = r.Resolved && r.Key.Namespace == "shop" && r.Container == "worker"
+		if r.Key.Name == name {
+			return r
 		}
 	}
+	return PodRow{}
+}
+
+func deploymentRowNamed(s Snapshot, name string) WorkloadRow {
 	for _, r := range s.Workloads.Rows {
-		switch {
-		case r.Key.Kind == "deployment" && r.Key.Name == "payments-worker":
-			worker = r.Resolved && r.Key.Namespace == "shop"
-		case r.Key.Kind == "deployment" && r.Key.Name == "api":
-			stagingAPI = r.Resolved && r.Key.Namespace == "staging"
+		if r.Key.Kind == "deployment" && r.Key.Name == name {
+			return r
 		}
 	}
-	if !shopCrash || !worker || !stagingAPI {
-		t.Fatalf("crash pod placed %v, payments-worker %v, staging api %v", shopCrash, worker, stagingAPI)
-	}
+	return WorkloadRow{}
 }

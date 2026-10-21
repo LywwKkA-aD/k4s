@@ -66,9 +66,7 @@ const (
 
 // wanted lists the lookups the current rows call for, most urgent first.
 func wanted(st store, k3s bool, now time.Time) []want {
-	var out []want
-	out = append(out, podWants(st, now)...)
-	out = append(out, workloadWants(st, k3s)...)
+	out := append(podWants(st, now), workloadWants(st, k3s)...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].rank < out[j].rank })
 	return out
 }
