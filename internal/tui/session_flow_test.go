@@ -150,15 +150,22 @@ func TestFooterAfterContextSwitch(t *testing.T) {
 		{name: "contexts", input: colon("ctx")},
 	}
 	rows := make([]string, len(cases))
-	for i, tc := range cases {
-		m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), views.ContextSelectedMsg{Name: "other"})
-		m, _ = tuitest.Drive(t, m, tc.input...)
-		row := commandRow(m)
-		if !strings.Contains(row, "--context other ") && !strings.HasPrefix(row, "kubectl config ") {
-			t.Errorf("%s: command row %q lacks --context other", tc.name, row)
+	// t.Run returns once every parallel subtest of the group has finished,
+	// so rows is complete when the golden is written.
+	t.Run("views", func(t *testing.T) {
+		for i, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), views.ContextSelectedMsg{Name: "other"})
+				m, _ = tuitest.Drive(t, m, tc.input...)
+				row := commandRow(m)
+				if !strings.Contains(row, "--context other ") && !strings.HasPrefix(row, "kubectl config ") {
+					t.Errorf("command row %q lacks --context other", row)
+				}
+				rows[i] = tc.name + ": " + row
+			})
 		}
-		rows[i] = tc.name + ": " + row
-	}
+	})
 	tuitest.Golden(t, "footer_after_ctx_other", strings.Join(rows, "\n")+"\n")
 }
 
