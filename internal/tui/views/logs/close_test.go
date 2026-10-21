@@ -1,11 +1,11 @@
 package logs_test
 
-// The Close tests measure the process-wide goroutine count, so they do not
-// run in parallel. Every other test in this package is parallel and stays
-// parked until these finish.
+// The Close tests measure process-wide goroutines, so they do not run in
+// parallel. Every other test in this package is parallel and stays parked
+// until these finish; what earlier tests left winding down is measured as
+// a baseline first.
 
 import (
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +21,21 @@ const floodLines = 5000
 // viewPkg prefixes every frame of the view under test.
 const viewPkg = "internal/tui/views/logs."
 
+// settledParked is tuitest.Parked(viewPkg) once it has stopped moving.
+func settledParked() int {
+	prev, same := tuitest.Parked(viewPkg), 0
+	for deadline := time.Now().Add(2 * time.Second); same < 3 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+		cur := tuitest.Parked(viewPkg)
+		if cur == prev {
+			same++
+			continue
+		}
+		prev, same = cur, 0
+	}
+	return prev
+}
+
 func TestCloseStopsStreamGoroutines(t *testing.T) {
 	cases := []struct {
 		name string
@@ -32,21 +47,23 @@ func TestCloseStopsStreamGoroutines(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := tuitest.NewFakeClient(t, tuitest.WithLogs(strings.Repeat("line\n", floodLines)))
-			base := tuitest.SettledGoroutines()
+			before := settledParked()
 
 			v := logs.New(c, tuitest.NamespaceDemo, tc.pods, 100, "")
-			tuitest.Eventually(t, 2*time.Second, func() bool { return runtime.NumGoroutine() > base },
-				"streams never started")
-			if parked := tuitest.SettledGoroutines(); parked <= base || tuitest.Parked(viewPkg) == 0 {
-				t.Fatalf("streams finished on their own (%d goroutines, base %d); the test proves nothing", parked, base)
-			}
+			t.Cleanup(func() { _ = v.Close() })
+			tuitest.Eventually(t, 2*time.Second, func() bool { return tuitest.Parked(viewPkg) > before },
+				"the streams never blocked on the undrained view; the test proves nothing")
 
 			if err := v.Close(); err != nil {
 				t.Fatalf("Close: %v", err)
 			}
-			tuitest.WaitGoroutines(t, base, 5*time.Second, viewPkg)
-			if n := tuitest.Parked(viewPkg); n != 0 {
-				t.Errorf("%d stream goroutines survived Close:\n%s", n, tuitest.Stacks(viewPkg))
+			deadline := time.Now().Add(5 * time.Second)
+			for tuitest.Parked(viewPkg) > before {
+				if time.Now().After(deadline) {
+					t.Fatalf("%d stream goroutines survived Close (%d before):\n%s",
+						tuitest.Parked(viewPkg), before, tuitest.Stacks(viewPkg))
+				}
+				time.Sleep(10 * time.Millisecond)
 			}
 			if err := v.Close(); err != nil {
 				t.Errorf("second Close: %v", err)
@@ -60,6 +77,7 @@ func TestStreamsEndWhenLogsEnd(t *testing.T) {
 	base := tuitest.SettledGoroutines()
 
 	v, out := tuitest.Mount(t, logs.New(c, tuitest.NamespaceDemo, []string{tuitest.PodWeb1}, 100, ""), 100, 20)
+	t.Cleanup(func() { _ = v.Close() })
 	if screen := tuitest.Screen(v); !strings.Contains(screen, "two") || !strings.Contains(screen, "stream closed") {
 		t.Errorf("finished stream screen:\n%s\nmessages:\n%s", screen, tuitest.Describe(out))
 	}
