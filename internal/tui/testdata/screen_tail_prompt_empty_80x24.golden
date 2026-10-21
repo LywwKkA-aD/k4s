@@ -20,4 +20,4 @@
 
 ──────────────────────────────────────────────────────────────────────────────
  q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  r refresh  ·  …
- ≈ kubectl get all -A --watch
+ kubectl get all -A

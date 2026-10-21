@@ -1,2 +1,2 @@
  : po
- ≈ kubectl get all -A --watch
+ kubectl get all -A

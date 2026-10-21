@@ -86,13 +86,13 @@ func TestNamespaceSelectionScopesTheNextViews(t *testing.T) {
 	if !strings.Contains(header(m), "ns: demo") {
 		t.Errorf("header = %q", header(m))
 	}
-	if !strings.Contains(footer(m), "kubectl get pods -n demo --watch") {
+	if !strings.HasSuffix(footer(m), "\n kubectl get pods -n demo") {
 		t.Errorf("footer = %q", footer(m))
 	}
 	refuteScreen(t, m, tuitest.PodCoreDNS)
 
 	m, _ = tuitest.Drive(t, m, colon("deploy")...)
-	if !strings.Contains(footer(m), "kubectl get deployments -n demo --watch") {
+	if !strings.HasSuffix(footer(m), "\n kubectl get deployments -n demo") {
 		t.Errorf("deployments footer = %q", footer(m))
 	}
 

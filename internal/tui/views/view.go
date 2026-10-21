@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 )
 
@@ -26,9 +27,15 @@ type View interface {
 	// Title is rendered in the header.
 	Title() string
 
-	// KubectlEquivalent is the kubectl command the view's current state maps
-	// to. The TUI surfaces it in the footer so users learn the CLI by osmosis.
-	KubectlEquivalent() string
+	// Command is the kubectl command the view's current state maps to. The
+	// root shows it in the footer's second row, with --context and
+	// --kubeconfig added when a pasted copy would otherwise reach another
+	// cluster, and `y` copies it. Build it with kubectl.New or a builder
+	// (kubectl.PodLogs, kubectl.SelectorLogs, kubectl.Exec, LogsCommand);
+	// never add --context, --kubeconfig or an ApproxMark yourself. Set
+	// Approx only where k4s does more or less than the command would. The
+	// zero Cmd leaves the row empty.
+	Command() kubectl.Cmd
 
 	// Help returns the view-specific bindings to render in the footer next to
 	// the global ones.

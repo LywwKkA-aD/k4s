@@ -1,2 +1,2 @@
  q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  ↑↓/pgup/pgdn scroll  ·  r refresh
- ≈ kubectl describe deployment web -n demo
+ kubectl describe deployment web -n demo

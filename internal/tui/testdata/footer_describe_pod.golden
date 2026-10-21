@@ -1,2 +1,2 @@
  q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  ↑↓/pgup/pgdn scroll  ·  r refresh
- ≈ kubectl describe pod web-1 -n demo
+ kubectl describe pod web-1 -n demo

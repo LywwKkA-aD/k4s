@@ -16,4 +16,4 @@ READY    STATUS              RESTARTS   AGE
 
 ──────────────────────────────────────────────────────────
  q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? hel…
- ≈ kubectl get pods -A --watch
+ kubectl get pods -A

@@ -1,2 +1,2 @@
  q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  enter select  ·  / filter  ·  w watch  ·  r refresh
- ≈ kubectl get namespaces --watch
+ kubectl get namespaces

@@ -114,8 +114,8 @@ func TestStaticContract(t *testing.T) {
 	t.Parallel()
 
 	m := contexts.New("")
-	if m.Title() != "contexts" || m.KubectlEquivalent() != "kubectl config get-contexts" {
-		t.Errorf("Title=%q KubectlEquivalent=%q", m.Title(), m.KubectlEquivalent())
+	if m.Title() != "contexts" || m.Command().String() != "kubectl config get-contexts" {
+		t.Errorf("Title=%q Command=%q", m.Title(), m.Command().String())
 	}
 	if m.CapturesKeys() || m.Close() != nil || len(m.Help()) != 2 {
 		t.Error("contexts captures no keys, owns nothing and offers enter and r")

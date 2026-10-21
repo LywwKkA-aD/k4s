@@ -45,8 +45,8 @@ func TestNamespaceScope(t *testing.T) {
 	if strings.Contains(screen, tuitest.PodCoreDNS) || strings.Contains(screen, "NAMESPACE") {
 		t.Errorf("namespace-scoped top shows other namespaces:\n%s", screen)
 	}
-	if got := m.KubectlEquivalent(); got != "kubectl top pods -n demo" {
-		t.Errorf("KubectlEquivalent = %q", got)
+	if got := m.Command().String(); got != "kubectl top pods -n demo" {
+		t.Errorf("Command = %q", got)
 	}
 }
 
@@ -54,11 +54,11 @@ func TestToggleNodes(t *testing.T) {
 	t.Parallel()
 
 	m := mounted(t, tuitest.NewFakeClient(t), "")
-	if got := m.KubectlEquivalent(); got != "kubectl top pods -A" {
+	if got := m.Command().String(); got != "kubectl top pods -A" {
 		t.Errorf("pods mode = %q", got)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Press("n"))
-	if got := m.KubectlEquivalent(); got != "kubectl top nodes" {
+	if got := m.Command().String(); got != "kubectl top nodes" {
 		t.Errorf("after n = %q", got)
 	}
 	screen := tuitest.Screen(m)

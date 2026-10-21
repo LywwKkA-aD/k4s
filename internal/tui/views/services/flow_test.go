@@ -198,8 +198,8 @@ func TestFilterCapturesKeys(t *testing.T) {
 		t.Fatal("open filter must capture keys")
 	}
 	// w is filter text here, not the watch toggle.
-	if got := m.KubectlEquivalent(); !strings.HasSuffix(got, "--watch") {
-		t.Errorf("w inside the filter toggled watch: %q", got)
+	if screen := tuitest.Screen(m); !strings.Contains(screen, "/ w") {
+		t.Errorf("w inside the filter did not reach it:\n%s", screen)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())
 	if m.CapturesKeys() {
@@ -207,27 +207,28 @@ func TestFilterCapturesKeys(t *testing.T) {
 	}
 }
 
-func TestWatchToggle(t *testing.T) {
+// TestWatchToggleKeepsTheCommand: k4s polls, kubectl --watch streams, so
+// the footer command is the same with auto-refresh on or off.
+func TestWatchToggleKeepsTheCommand(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		namespace string
-		watching  string
-		paused    string
+		want      string
 	}{
-		{namespace: "", watching: "kubectl get services -A --watch", paused: "kubectl get services -A"},
-		{namespace: tuitest.NamespaceDemo, watching: "kubectl get services -n demo --watch", paused: "kubectl get services -n demo"},
+		{namespace: "", want: "kubectl get services -A"},
+		{namespace: tuitest.NamespaceDemo, want: "kubectl get services -n demo"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.watching, func(t *testing.T) {
+		t.Run(tc.want, func(t *testing.T) {
 			t.Parallel()
 			m := services.New(nil, tc.namespace)
-			if got := m.KubectlEquivalent(); got != tc.watching {
-				t.Errorf("default = %q, want %q", got, tc.watching)
+			if got := m.Command().String(); got != tc.want {
+				t.Errorf("default = %q, want %q", got, tc.want)
 			}
 			m, _ = tuitest.Drive(t, m, tuitest.Press("w"))
-			if got := m.KubectlEquivalent(); got != tc.paused {
-				t.Errorf("after w = %q, want %q", got, tc.paused)
+			if got := m.Command().String(); got != tc.want {
+				t.Errorf("after w = %q, want %q", got, tc.want)
 			}
 		})
 	}

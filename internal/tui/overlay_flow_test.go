@@ -26,7 +26,7 @@ func TestHelpPassesOtherKeysOn(t *testing.T) {
 		{name: "q only closes", key: "q", view: "pods", footer: "q home"},
 		{name: "esc only closes", key: "esc", view: "pods", footer: "q home"},
 		{name: "colon opens the command bar", key: ":", view: "pods", footer: ": pods, ns, dashboard"},
-		{name: "w toggles watch", key: "w", view: "pods", footer: "≈ kubectl get pods -A\n"},
+		{name: "slash opens the filter", key: "/", view: "pods", footer: "kubectl get pods -A\n"},
 		{name: "enter opens describe", key: "enter", describe: true},
 	}
 	for _, tc := range cases {
@@ -49,6 +49,10 @@ func TestHelpPassesOtherKeysOn(t *testing.T) {
 			requireView(t, m, tc.view)
 			if got := footer(m) + "\n"; !strings.Contains(got, tc.footer) {
 				t.Fatalf("footer lacks %q:\n%s", tc.footer, got)
+			}
+			if tc.key == "/" {
+				m, _ = tuitest.Drive(t, m, tuitest.Type("web"))
+				requireScreen(t, m, "/ web")
 			}
 		})
 	}
@@ -103,7 +107,7 @@ func TestCommandBarSitsInTheFooter(t *testing.T) {
 	if got := strings.TrimSpace(block[1]); got != ": pods, ns, dashboard" {
 		t.Errorf("first footer row = %q", got)
 	}
-	if got := strings.TrimSpace(block[2]); got != "≈ kubectl get all -A --watch" {
+	if got := strings.TrimSpace(block[2]); got != "kubectl get all -A" {
 		t.Errorf("command row = %q", got)
 	}
 	body := len(after) - len(block)

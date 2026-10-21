@@ -133,23 +133,19 @@ func TestNewWithNoClientClosesChannelImmediately(t *testing.T) {
 	}
 }
 
-func TestKubectlEquivalentSingleVsMulti(t *testing.T) {
+func TestCommandSingleVsMulti(t *testing.T) {
 	t.Parallel()
 
 	single := New(nil, "demo", []string{"alpha"}, 200, "")
-	if !strings.Contains(single.KubectlEquivalent(), "alpha") {
-		t.Errorf("single-pod equivalent missing pod name: %q", single.KubectlEquivalent())
-	}
-	if !strings.Contains(single.KubectlEquivalent(), "--tail=200") {
-		t.Errorf("single-pod equivalent missing tail value: %q", single.KubectlEquivalent())
+	if got := single.Command(); got.String() != "kubectl logs -f alpha --tail=200 -n demo" || got.Approx {
+		t.Errorf("single-pod command = %q (approx %v)", got.String(), got.Approx)
 	}
 
+	// Without a resolved target there is no selector: the first pod's
+	// command stands for the stream, marked as approximate.
 	multi := New(nil, "demo", []string{"alpha", "beta"}, 50, "")
-	if !strings.Contains(multi.KubectlEquivalent(), "alpha,beta") {
-		t.Errorf("multi-pod equivalent missing pod list: %q", multi.KubectlEquivalent())
-	}
-	if !strings.Contains(multi.KubectlEquivalent(), "--tail=50") {
-		t.Errorf("multi-pod equivalent missing tail value: %q", multi.KubectlEquivalent())
+	if got := multi.Command(); got.String() != "kubectl logs -f alpha --tail=50 -n demo" || !got.Approx {
+		t.Errorf("multi-pod command = %q (approx %v)", got.String(), got.Approx)
 	}
 }
 

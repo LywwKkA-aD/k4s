@@ -16,6 +16,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -259,22 +260,22 @@ func (m Model) View() string {
 // Title implements views.View.
 func (m Model) Title() string { return "forwards" }
 
-// KubectlEquivalent implements views.View. The view itself is not a
-// single command, but the highlighted row maps directly to a kubectl
-// invocation — surface that when something is selected.
-func (m Model) KubectlEquivalent() string {
+// Command implements views.View. The view itself is not a single
+// command, but the highlighted row maps directly to a kubectl invocation;
+// with no row there is nothing to show.
+func (m Model) Command() kubectl.Cmd {
 	if m.manager == nil {
-		return ""
+		return kubectl.Cmd{}
 	}
 	list := m.snapshot()
 	idx := m.table.Cursor()
 	if idx < 0 || idx >= len(list) {
-		return "kubectl port-forward …"
+		return kubectl.Cmd{}
 	}
 	a := list[idx]
-	return fmt.Sprintf("kubectl port-forward -n %s %s/%s %d:%d",
-		a.Forward.Namespace, a.Forward.Kind, a.Forward.Name,
-		a.Forward.LocalPort, a.Forward.RemotePort)
+	return kubectl.New("port-forward", "-n", a.Forward.Namespace,
+		a.Forward.Kind+"/"+a.Forward.Name,
+		fmt.Sprintf("%d:%d", a.Forward.LocalPort, a.Forward.RemotePort))
 }
 
 // Help implements views.View.

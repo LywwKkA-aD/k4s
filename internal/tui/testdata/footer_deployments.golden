@@ -1,2 +1,2 @@
  q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  enter describe  ·  l tail all replicas  ·  f port-forward  ·  / filter  ·  w watch  ·  r refre…
- ≈ kubectl get deployments -A --watch
+ kubectl get deployments -A

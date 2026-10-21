@@ -147,15 +147,17 @@ func TestFilterCapturesKeys(t *testing.T) {
 	}
 }
 
-func TestWatchToggle(t *testing.T) {
+// TestWatchToggleKeepsTheCommand: k4s polls, kubectl --watch streams, so
+// the footer command is the same with auto-refresh on or off.
+func TestWatchToggleKeepsTheCommand(t *testing.T) {
 	t.Parallel()
 
 	m := namespaces.New(nil)
-	if got := m.KubectlEquivalent(); got != "kubectl get namespaces --watch" {
+	if got := m.Command().String(); got != "kubectl get namespaces" {
 		t.Errorf("default = %q", got)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Press("w"))
-	if got := m.KubectlEquivalent(); got != "kubectl get namespaces" {
+	if got := m.Command().String(); got != "kubectl get namespaces" {
 		t.Errorf("after w = %q", got)
 	}
 }

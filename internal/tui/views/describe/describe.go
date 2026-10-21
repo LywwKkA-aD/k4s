@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -189,9 +190,9 @@ func (m Model) Title() string {
 	}
 }
 
-// KubectlEquivalent implements views.View.
-func (m Model) KubectlEquivalent() string {
-	return fmt.Sprintf("kubectl describe %s %s -n %s", m.kind, m.name, m.namespace)
+// Command implements views.View.
+func (m Model) Command() kubectl.Cmd {
+	return kubectl.New("describe", string(m.kind), m.name, "-n", m.namespace)
 }
 
 // Help implements views.View.

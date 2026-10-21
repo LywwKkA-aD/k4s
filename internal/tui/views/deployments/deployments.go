@@ -20,6 +20,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -397,20 +398,16 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, m.filter.View(), body)
 }
 
-// Title implements views.View. Stable routing name; watch state is in
-// KubectlEquivalent's "--watch" suffix.
+// Title implements views.View. Stable routing name.
 func (m Model) Title() string { return "deployments" }
 
-// KubectlEquivalent implements views.View.
-func (m Model) KubectlEquivalent() string {
-	suffix := ""
-	if m.watchEnabled {
-		suffix = " --watch"
-	}
+// Command implements views.View. k4s polls rather than holding a watch
+// open, so the command has no --watch.
+func (m Model) Command() kubectl.Cmd {
 	if m.namespace == "" {
-		return "kubectl get deployments -A" + suffix
+		return kubectl.New("get", "deployments", "-A")
 	}
-	return "kubectl get deployments -n " + m.namespace + suffix
+	return kubectl.New("get", "deployments", "-n", m.namespace)
 }
 
 // Help implements views.View.

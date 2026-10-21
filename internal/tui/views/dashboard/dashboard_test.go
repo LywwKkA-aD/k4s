@@ -128,11 +128,11 @@ func TestWatchToggleAndContract(t *testing.T) {
 	t.Parallel()
 
 	m := dashboard.New(nil, nil)
-	if got := m.KubectlEquivalent(); got != "kubectl get all -A --watch" {
+	if got := m.Command().String(); got != "kubectl get all -A" {
 		t.Errorf("default = %q", got)
 	}
 	m, out := tuitest.Drive(t, m, tuitest.Press("w"), tuitest.Press("r"))
-	if got := m.KubectlEquivalent(); got != "kubectl get all -A" {
+	if got := m.Command().String(); got != "kubectl get all -A" {
 		t.Errorf("after w = %q", got)
 	}
 	if len(out) != 0 {

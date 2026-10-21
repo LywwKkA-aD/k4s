@@ -77,8 +77,8 @@ func TestWithoutManager(t *testing.T) {
 	if len(out) != 0 {
 		t.Errorf("keys without a manager emitted:\n%s", tuitest.Describe(out))
 	}
-	if !strings.Contains(tuitest.Screen(m), "port-forward subsystem unavailable") || m.KubectlEquivalent() != "" {
-		t.Errorf("screen=%q kubectl=%q", tuitest.Screen(m), m.KubectlEquivalent())
+	if !strings.Contains(tuitest.Screen(m), "port-forward subsystem unavailable") || !m.Command().IsZero() {
+		t.Errorf("screen=%q kubectl=%q", tuitest.Screen(m), m.Command().String())
 	}
 }
 
@@ -88,15 +88,15 @@ func TestEmptyList(t *testing.T) {
 	if !strings.Contains(screen, "no port-forwards yet") || !strings.Contains(screen, "press 'f'") {
 		t.Errorf("empty list screen:\n%s", screen)
 	}
-	if got := m.KubectlEquivalent(); got != "kubectl port-forward …" {
-		t.Errorf("KubectlEquivalent = %q", got)
+	if got := m.Command(); !got.IsZero() {
+		t.Errorf("Command = %q, want none without a row", got.String())
 	}
 	if _, out := tuitest.Drive(t, m, tuitest.Keys("enter", "s", "r", "d")...); len(out) != 0 {
 		t.Errorf("keys on an empty list emitted:\n%s", tuitest.Describe(out))
 	}
 }
 
-func TestRowsAndKubectlEquivalent(t *testing.T) {
+func TestRowsAndCommand(t *testing.T) {
 	mgr := newManager(t,
 		forward("service", tuitest.ServiceWeb, 18080, 80),
 		forward("pod", tuitest.PodWeb1, 18081, 8080),
@@ -109,11 +109,11 @@ func TestRowsAndKubectlEquivalent(t *testing.T) {
 		}
 	}
 	// Rows sort by namespace, kind, name: the pod comes before the service.
-	if got := m.KubectlEquivalent(); got != "kubectl port-forward -n demo pod/web-1 18081:8080" {
+	if got := m.Command().String(); got != "kubectl port-forward -n demo pod/web-1 18081:8080" {
 		t.Errorf("first row = %q", got)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Press("down"))
-	if got := m.KubectlEquivalent(); got != "kubectl port-forward -n demo service/web 18080:80" {
+	if got := m.Command().String(); got != "kubectl port-forward -n demo service/web 18080:80" {
 		t.Errorf("second row = %q", got)
 	}
 }

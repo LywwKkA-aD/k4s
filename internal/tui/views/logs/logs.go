@@ -19,7 +19,6 @@ package logs
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"charm.land/bubbles/v2/key"
@@ -28,6 +27,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -309,16 +309,9 @@ func (m Model) Title() string {
 	return base
 }
 
-// KubectlEquivalent implements views.View.
-func (m Model) KubectlEquivalent() string {
-	containerArg := ""
-	if m.container != "" {
-		containerArg = " -c " + m.container
-	}
-	if len(m.pods) == 1 {
-		return fmt.Sprintf("kubectl logs -f%s %s -n %s --tail=%d", containerArg, m.pods[0], m.namespace, m.tail)
-	}
-	return fmt.Sprintf("kubectl logs -f%s --tail=%d -n %s {%s}", containerArg, m.tail, m.namespace, strings.Join(m.pods, ","))
+// Command implements views.View.
+func (m Model) Command() kubectl.Cmd {
+	return views.LogsCommand(m.namespace, m.pods, m.container, m.tail, k8s.LogTarget{})
 }
 
 // Help implements views.View. The 't' binding is only advertised when there
