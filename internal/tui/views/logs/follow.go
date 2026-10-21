@@ -109,15 +109,15 @@ func (m Model) onFollowTick(msg async.TickMsg) (views.View, tea.Cmd) {
 		return m, nil
 	}
 	m.follow = poll
-	return m, m.reresolve()
+	return m.reresolve()
 }
 
 // reresolve lists the target's pods again; the reply explains every
 // stream that ended before it was asked.
-func (m *Model) reresolve() tea.Cmd {
+func (m Model) reresolve() (Model, tea.Cmd) {
 	m.explain.upTo = m.streams.ends
 	res, t := m.res, m.target
-	return async.Run(m.follow.Token(), m.follow.Timeout(), func(ctx context.Context) (k8s.LogTarget, error) {
+	return m, async.Run(m.follow.Token(), m.follow.Timeout(), func(ctx context.Context) (k8s.LogTarget, error) {
 		return res.ReresolveLogTarget(ctx, t)
 	})
 }
@@ -183,7 +183,7 @@ func (m Model) onExplainDue(msg explainDueMsg) (views.View, tea.Cmd) {
 			return m, nil
 		}
 		m.follow = poll
-		return m, m.reresolve()
+		return m.reresolve()
 	}
 	return m.startCheck()
 }
