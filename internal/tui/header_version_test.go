@@ -85,7 +85,8 @@ func TestVersionReply(t *testing.T) {
 		{name: "a failure for the previous client", msg: versionReply(async.New(), 0, nil, refused), wantDistro: cluster.Other},
 		{name: "a failed request asks again", msg: versionReply(current, 0, nil, refused), wantDistro: cluster.Other, wantRetry: true},
 		{name: "a failed retry asks again", msg: versionReply(current, 2, nil, refused), wantDistro: cluster.Other, wantRetry: true},
-		{name: "the last retry failed too", msg: versionReply(current, 3, nil, refused), wantDistro: cluster.Other},
+		{name: "a retry past the backoff's cap asks again", msg: versionReply(current, 3, nil, refused), wantDistro: cluster.Other, wantRetry: true},
+		{name: "an outage of an hour still asks again", msg: versionReply(current, 60, nil, refused), wantDistro: cluster.Other, wantRetry: true},
 		{name: "an empty answer asks again", msg: versionReply(current, 0, nil, nil), wantDistro: cluster.Other, wantRetry: true},
 		{name: "a timeout asks again", msg: versionReply(current, 0, nil, context.DeadlineExceeded), wantDistro: cluster.Other, wantRetry: true},
 		{name: "a 503 asks again", msg: versionReply(current, 0, nil, apierrors.NewServiceUnavailable("starting")), wantDistro: cluster.Other, wantRetry: true},
@@ -108,6 +109,8 @@ func TestVersionReply(t *testing.T) {
 	}
 }
 
+// TestVersionRetryBacksOff: the waits grow to a minute and stay there, so
+// a cluster that comes back after any outage still gets named.
 func TestVersionRetryBacksOff(t *testing.T) {
 	t.Parallel()
 
@@ -116,10 +119,12 @@ func TestVersionRetryBacksOff(t *testing.T) {
 		wait    time.Duration
 		ok      bool
 	}{
+		{attempt: -1},
 		{attempt: 0, wait: 15 * time.Second, ok: true},
 		{attempt: 1, wait: 30 * time.Second, ok: true},
 		{attempt: 2, wait: time.Minute, ok: true},
-		{attempt: 3},
+		{attempt: 3, wait: time.Minute, ok: true},
+		{attempt: 1000, wait: time.Minute, ok: true},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("after ask %d", tc.attempt), func(t *testing.T) {

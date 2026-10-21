@@ -15,7 +15,9 @@ import (
 const versionTimeout = 5 * time.Second
 
 // versionRetries are the waits before the header asks again for a version
-// it could not get, one per retry; after the last it stops.
+// it could not get, one per retry; the last repeats until the server
+// answers. Nothing else re-asks after an outage, so a header that stopped
+// would stay blank for the rest of the session.
 var versionRetries = [...]time.Duration{15 * time.Second, 30 * time.Second, time.Minute}
 
 // versionMsg is the reply to the header's /version request; attempt counts
@@ -58,12 +60,12 @@ func (m Model) askVersion(attempt int) tea.Cmd {
 }
 
 // versionRetryAfter is how long the header waits after a failed ask number
-// attempt before it asks again; false once the retries are spent.
+// attempt before it asks again; false for an attempt that was never made.
 func versionRetryAfter(attempt int) (time.Duration, bool) {
-	if attempt < 0 || attempt >= len(versionRetries) {
+	if attempt < 0 {
 		return 0, false
 	}
-	return versionRetries[attempt], true
+	return versionRetries[min(attempt, len(versionRetries)-1)], true
 }
 
 // versionRetryable reports whether asking again could get the version: not
@@ -78,9 +80,9 @@ func versionRetryable(err error) bool {
 
 // apply records the active client's server version. A failure leaves the
 // header as it is, since the dashboard reports an unreachable server, and
-// asks again after a growing wait, so a cluster that was down at the start
-// still gets named. A reply for a client k4s has switched away from is
-// dropped.
+// asks again after a wait that grows to a minute, for as long as the
+// server stays away, so a cluster that was down at the start still gets
+// named. A reply for a client k4s has switched away from is dropped.
 func (v versionMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if m.client == nil || !m.ident.version.Accept(v.res.Token) {
 		return m, nil
