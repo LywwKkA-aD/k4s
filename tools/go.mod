@@ -7,6 +7,8 @@ tool (
 	golang.org/x/vuln/cmd/govulncheck
 )
 
+require github.com/creack/pty v1.1.24
+
 require (
 	4d63.com/gocheckcompilerdirectives v1.4.0 // indirect
 	4d63.com/gochecknoglobals v0.2.2 // indirect
