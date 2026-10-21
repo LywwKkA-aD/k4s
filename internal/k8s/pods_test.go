@@ -15,6 +15,8 @@ func TestListPodsRendersStatusReadinessAndRestarts(t *testing.T) {
 	t.Parallel()
 
 	twoMinAgo := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+	// Hours, so a slow test run cannot tip "(3h ago)" over to "(3h1m ago)".
+	threeHoursAgo := metav1.NewTime(time.Now().Add(-3 * time.Hour))
 
 	objs := []runtime.Object{
 		// healthy pod, 1/1 ready
@@ -25,7 +27,7 @@ func TestListPodsRendersStatusReadinessAndRestarts(t *testing.T) {
 				Phase: corev1.PodRunning,
 				PodIP: "10.0.0.1",
 				ContainerStatuses: []corev1.ContainerStatus{
-					{Name: "main", Ready: true, RestartCount: 0},
+					{Name: "main", Ready: true, RestartCount: 0, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 				},
 			},
 		},
@@ -43,6 +45,9 @@ func TestListPodsRendersStatusReadinessAndRestarts(t *testing.T) {
 						State: corev1.ContainerState{
 							Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"},
 						},
+						LastTerminationState: corev1.ContainerState{
+							Terminated: &corev1.ContainerStateTerminated{FinishedAt: threeHoursAgo},
+						},
 					},
 				},
 			},
@@ -56,9 +61,28 @@ func TestListPodsRendersStatusReadinessAndRestarts(t *testing.T) {
 			Status: corev1.PodStatus{
 				Phase: corev1.PodRunning,
 				ContainerStatuses: []corev1.ContainerStatus{
-					{Name: "web", Ready: true, RestartCount: 0},
-					{Name: "side", Ready: false, RestartCount: 1},
+					{Name: "web", Ready: true, RestartCount: 0, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
+					{Name: "side", Ready: false, RestartCount: 1, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 				},
+			},
+		},
+		// init container failing: kubectl shows the init state, not the phase
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "init-crash", Namespace: "demo", CreationTimestamp: twoMinAgo},
+			Spec: corev1.PodSpec{
+				InitContainers: []corev1.Container{{Name: "migrate"}},
+				Containers:     []corev1.Container{{Name: "main"}},
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodPending,
+				InitContainerStatuses: []corev1.ContainerStatus{{
+					Name:         "migrate",
+					RestartCount: 4,
+					State:        corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{FinishedAt: threeHoursAgo},
+					},
+				}},
 			},
 		},
 	}
@@ -69,8 +93,8 @@ func TestListPodsRendersStatusReadinessAndRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListPods error: %v", err)
 	}
-	if len(got) != 3 {
-		t.Fatalf("expected 3 pods, got %d", len(got))
+	if len(got) != 4 {
+		t.Fatalf("expected 4 pods, got %d", len(got))
 	}
 
 	byName := map[string]Pod{}
@@ -83,10 +107,12 @@ func TestListPodsRendersStatusReadinessAndRestarts(t *testing.T) {
 		wantReady    string
 		wantStatus   string
 		wantRestarts int32
+		wantText     string
 	}{
-		{"happy", "1/1", "Running", 0},
-		{"broken", "0/1", "CrashLoopBackOff", 5},
-		{"multi", "1/2", "Running", 1},
+		{"happy", "1/1", "Running", 0, "0"},
+		{"broken", "0/1", "CrashLoopBackOff", 5, "5 (3h ago)"},
+		{"multi", "1/2", "Running", 1, "1"},
+		{"init-crash", "0/1", "Init:CrashLoopBackOff", 4, "4 (3h ago)"},
 	}
 
 	for _, tc := range cases {
@@ -103,6 +129,9 @@ func TestListPodsRendersStatusReadinessAndRestarts(t *testing.T) {
 		}
 		if p.Restarts != tc.wantRestarts {
 			t.Errorf("%s Restarts = %d, want %d", tc.name, p.Restarts, tc.wantRestarts)
+		}
+		if p.RestartsText != tc.wantText {
+			t.Errorf("%s RestartsText = %q, want %q", tc.name, p.RestartsText, tc.wantText)
 		}
 	}
 }

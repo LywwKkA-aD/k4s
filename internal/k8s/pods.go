@@ -9,16 +9,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Pod is the presentation-friendly snapshot of a Kubernetes Pod.
+// Pod is the presentation-friendly snapshot of a Kubernetes Pod. Ready,
+// Status and Restarts follow `kubectl get pods` (see PodColumnsFor).
 type Pod struct {
 	Name      string
 	Namespace string
-	Ready     string // "1/2" — ready / total containers
-	Status    string // pod phase or container waiting reason
-	Restarts  int32  // sum across all containers
-	Age       time.Duration
-	IP        string
-	Node      string
+	Ready     string // "1/2": ready / total, native sidecars included
+	Status    string // kubectl's STATUS: Running, Init:0/1, Evicted, Terminating...
+	Restarts  int32  // kubectl's RESTARTS count
+	// RestartsText is kubectl's RESTARTS cell, "3 (5m ago)", as of the list.
+	RestartsText string
+	Age          time.Duration
+	IP           string
+	Node         string
 }
 
 // ListPods returns pods in the given namespace, or in all namespaces when
@@ -32,56 +35,26 @@ func (c *Client) ListPods(ctx context.Context, namespace string) ([]Pod, error) 
 	now := time.Now()
 	for i := range list.Items {
 		p := &list.Items[i]
+		cols := PodColumnsFor(p)
 		out = append(out, Pod{
-			Name:      p.Name,
-			Namespace: p.Namespace,
-			Ready:     readyString(p),
-			Status:    podStatus(p),
-			Restarts:  totalRestarts(p),
-			Age:       now.Sub(p.CreationTimestamp.Time),
-			IP:        p.Status.PodIP,
-			Node:      p.Spec.NodeName,
+			Name:         p.Name,
+			Namespace:    p.Namespace,
+			Ready:        cols.Ready,
+			Status:       cols.Status,
+			Restarts:     cols.Restarts,
+			RestartsText: cols.RestartsText(now),
+			Age:          now.Sub(p.CreationTimestamp.Time),
+			IP:           p.Status.PodIP,
+			Node:         p.Spec.NodeName,
 		})
 	}
 	return out, nil
 }
 
-func readyString(p *corev1.Pod) string {
-	ready := 0
-	total := len(p.Spec.Containers)
-	for _, cs := range p.Status.ContainerStatuses {
-		if cs.Ready {
-			ready++
-		}
-	}
-	return fmt.Sprintf("%d/%d", ready, total)
-}
-
-// podStatus mirrors a simplified subset of kubectl's logic: a container's
-// waiting / terminated reason takes precedence over the overall pod phase,
-// because "CrashLoopBackOff" is more useful than "Running" when something is
-// broken.
+// podStatus is the STATUS the pods table shows; describe reuses it so the
+// two screens agree.
 func podStatus(p *corev1.Pod) string {
-	if p.DeletionTimestamp != nil {
-		return "Terminating"
-	}
-	for _, cs := range p.Status.ContainerStatuses {
-		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
-			return cs.State.Waiting.Reason
-		}
-		if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
-			return cs.State.Terminated.Reason
-		}
-	}
-	return string(p.Status.Phase)
-}
-
-func totalRestarts(p *corev1.Pod) int32 {
-	var sum int32
-	for _, cs := range p.Status.ContainerStatuses {
-		sum += cs.RestartCount
-	}
-	return sum
+	return PodColumnsFor(p).Status
 }
 
 // ContainersForPod returns the names of every container in the pod's spec.
