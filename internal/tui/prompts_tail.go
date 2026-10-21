@@ -19,6 +19,9 @@ func (m Model) onTailPromptRequest(msg views.TailPromptRequestMsg) Model {
 func logsRequestCmd(msg overlay.TailChosenMsg) tea.Cmd {
 	req := msg.Request
 	return func() tea.Msg {
-		return views.LogsRequestMsg{Namespace: req.Namespace, Pods: req.Pods, Tail: msg.Tail, Container: req.Container}
+		return views.LogsRequestMsg{
+			Namespace: req.Namespace, Pods: req.Pods, Tail: msg.Tail, Container: req.Container,
+			Target: req.Target, Logs: req.Logs,
+		}
 	}
 }

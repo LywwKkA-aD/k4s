@@ -161,3 +161,6 @@ func parsePort(s string) (uint16, error) {
 	}
 	return uint16(n), nil
 }
+
+// TakesText reports the port prompt's input: y is text there.
+func (forward) TakesText() bool { return true }

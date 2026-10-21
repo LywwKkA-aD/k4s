@@ -40,3 +40,6 @@ func (c command) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 func (c command) View(width int) string {
 	return rows(width, inputView(c.input, width))
 }
+
+// TakesText reports the command bar's input: y is text there.
+func (command) TakesText() bool { return true }

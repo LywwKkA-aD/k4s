@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
@@ -114,7 +115,7 @@ func (m Model) footerTopRow(width int) string {
 // footerCommandRow is the active command as the user would paste it, with
 // ApproxMark in front when k4s does not do exactly what it says.
 func (m Model) footerCommandRow(width int) string {
-	shown := m.current.Command().Display()
+	shown := m.activeCommand().Display()
 	if shown == "" {
 		return ""
 	}
@@ -134,4 +135,13 @@ func (m Model) footerBindings() []string {
 		}
 	}
 	return bindings
+}
+
+// activeCommand is the open overlay's command when it previews one (the
+// tail prompt, the container picker), else the active view's.
+func (m Model) activeCommand() kubectl.Cmd {
+	if cmd, ok := overlay.CommandOf(m.overlay); ok {
+		return cmd
+	}
+	return m.current.Command()
 }

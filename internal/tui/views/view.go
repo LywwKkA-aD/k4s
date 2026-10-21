@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 )
@@ -105,20 +106,31 @@ type ResourceRef struct {
 // Target is the row the logs were asked for; the prompt's title names it
 // ("tail lines · deployment/web · ns demo"). Left zero, the title names
 // the pods instead.
+//
+// Logs is the resolved deployment or service behind Pods, zero for a
+// single pod: LogsCommand turns it into the selector command the prompt
+// previews and the logs view shows. Detached marks a request whose row
+// the cursor has left while it resolved; the prompt still opens, marked
+// "(not the selected row)", and Esc cancels it.
 type TailPromptRequestMsg struct {
 	Namespace string
 	Pods      []string
 	Container string
 	Target    ResourceRef
+	Logs      k8s.LogTarget
+	Detached  bool
 }
 
 // LogsRequestMsg is dispatched (by the root, after the tail prompt closes)
-// to actually open the streaming logs view.
+// to actually open the streaming logs view. Target and Logs come from the
+// TailPromptRequestMsg it answers.
 type LogsRequestMsg struct {
 	Namespace string
 	Pods      []string
 	Tail      int64
 	Container string
+	Target    ResourceRef
+	Logs      k8s.LogTarget
 }
 
 // ContainerPromptRequestMsg asks the root model to open the container picker
@@ -131,13 +143,14 @@ type LogsRequestMsg struct {
 //
 // list views with only one container should bypass this message entirely
 // and emit the next-kind msg directly. Target names the row in the
-// picker's title and is carried on to the tail prompt.
+// picker's title; Target and Logs are carried on to the tail prompt.
 type ContainerPromptRequestMsg struct {
 	Namespace  string
 	Pods       []string
 	Containers []string
 	NextKind   string // "logs" or "exec"
 	Target     ResourceRef
+	Logs       k8s.LogTarget
 }
 
 // ExecRequestMsg drops the user into a kubectl-exec shell against the named

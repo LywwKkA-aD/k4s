@@ -146,7 +146,7 @@ func (m Model) onDescribeRequest(msg views.DescribeRequestMsg) (tea.Model, tea.C
 
 func (m Model) onLogsRequest(msg views.LogsRequestMsg) (tea.Model, tea.Cmd) {
 	m = m.pushHistory()
-	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods, msg.Tail, msg.Container))
+	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods, msg.Tail, msg.Container, logs.WithTarget(msg.Logs)))
 	return m, m.relayoutCmd()
 }
 

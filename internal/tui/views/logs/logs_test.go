@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 )
 
 func TestFormatRawLineSinglePodHasNoPrefix(t *testing.T) {
@@ -146,6 +148,17 @@ func TestCommandSingleVsMulti(t *testing.T) {
 	multi := New(nil, "demo", []string{"alpha", "beta"}, 50, "")
 	if got := multi.Command(); got.String() != "kubectl logs -f alpha --tail=50 -n demo" || !got.Approx {
 		t.Errorf("multi-pod command = %q (approx %v)", got.String(), got.Approx)
+	}
+
+	// The resolved deployment gives the selector the stream stands for.
+	target := k8s.LogTarget{
+		Kind: k8s.LogKindDeployment, Namespace: "demo", Name: "web", Selector: "app=web",
+		Hashes: []string{"h1"}, Pods: []k8s.PodRef{{Name: "alpha"}, {Name: "beta"}},
+	}
+	resolved := New(nil, "demo", []string{"alpha", "beta"}, 50, "app", WithTarget(target))
+	want := "kubectl logs -f -l 'app=web,pod-template-hash in (h1)' --prefix --tail=50 --max-log-requests=2 -n demo -c app"
+	if got := resolved.Command(); got.String() != want || got.Approx {
+		t.Errorf("resolved command = %q (approx %v)\nwant             %q", got.String(), got.Approx, want)
 	}
 }
 

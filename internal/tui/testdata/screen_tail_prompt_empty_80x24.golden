@@ -20,4 +20,4 @@
 
 ──────────────────────────────────────────────────────────────────────────────
  q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  r refresh  ·  …
- kubectl get all -A
+ kubectl logs -f web-1 --tail=100 -n demo
