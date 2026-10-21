@@ -59,27 +59,32 @@ func (m Model) onExecRequest(msg views.ExecRequestMsg) (tea.Model, tea.Cmd) {
 	if m.client == nil {
 		return m.startExec(msg, views.ExecShell)
 	}
-	cs := m.client.Clientset
+	cs, kctx := m.client.Clientset, m.client.Context
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), podLookupTimeout)
 		defer cancel()
 		pod, err := cs.CoreV1().Pods(msg.Namespace).Get(ctx, msg.Pod, metav1.GetOptions{})
-		return execResolvedMsg{req: msg, pod: pod, err: err}
+		return execResolvedMsg{context: kctx, req: msg, pod: pod, err: err}
 	}
 }
 
-// execResolvedMsg is the pod an exec was asked for, or why it could not
-// be read.
+// execResolvedMsg is the pod an exec was asked for in context, or why it
+// could not be read.
 type execResolvedMsg struct {
-	req views.ExecRequestMsg
-	pod *corev1.Pod
-	err error
+	context string
+	req     views.ExecRequestMsg
+	pod     *corev1.Pod
+	err     error
 }
 
 // apply starts the shell the pod runs. A pod that is gone says so; any
 // other failed lookup (a GET RBAC refuses while exec is allowed, a slow
-// API) still tries sh, and kubectl reports what is wrong.
+// API) still tries sh, and kubectl reports what is wrong. A lookup that
+// answers after :ctx starts nothing: its pod is in the old cluster.
 func (r execResolvedMsg) apply(m Model) (tea.Model, tea.Cmd) {
+	if !m.onContext(r.context) {
+		return m, nil
+	}
 	if apierrors.IsNotFound(r.err) {
 		return m.setStatus(status.Warn, "exec: pod "+r.req.Namespace+"/"+r.req.Pod+" is gone, press r")
 	}
@@ -144,7 +149,10 @@ type shellDoneMsg struct {
 }
 
 // apply reports a failed session. A container without the shell gets
-// the kubectl debug command that brings one, shown and never run.
+// the kubectl debug command that brings one, shown and never run. The
+// command comes right after the reason, so the status row, which is cut
+// at the terminal's width, shows it whole on an 80-column screen; the pod
+// and container are in it.
 func (d shellDoneMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if d.err == nil {
 		return m, nil
@@ -152,11 +160,11 @@ func (d shellDoneMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if !d.missingShell() {
 		return m.setError("exec: " + d.err.Error())
 	}
-	text := "exec: no " + d.shell + " in " + podLabel(d.req) + exitLabel(d.err)
-	if debug := m.debugCommand(d); debug != "" {
-		text += " · try " + debug
+	debug := m.debugCommand(d)
+	if debug == "" {
+		return m.setError("exec: no " + d.shell + " in " + podLabel(d.req) + exitLabel(d.err))
 	}
-	return m.setError(text)
+	return m.setError("no " + d.shell + " · " + debug + exitLabel(d.err))
 }
 
 // missingShell reports a shell that could not start: the runtime says the
@@ -200,7 +208,7 @@ func exitLabel(err error) string {
 	if !errors.As(err, &exit) {
 		return ""
 	}
-	return fmt.Sprintf(" (exit %d)", exit.ExitCode())
+	return fmt.Sprintf(" · exit %d", exit.ExitCode())
 }
 
 // shellRun is the kubectl exec process handed to the terminal. It keeps

@@ -146,6 +146,17 @@ func TestExecLooksThePodUp(t *testing.T) {
 	}
 }
 
+// TestExecLookupAfterAContextSwitch: the pod was in the old cluster.
+func TestExecLookupAfterAContextSwitch(t *testing.T) {
+	t.Parallel()
+
+	m := withLookPath(New(tuitest.NewFakeClient(t, tuitest.WithContext("new")), nil), foundAt(fakeKubectlPath), nil)
+	stale := execResolvedMsg{context: "old", req: views.ExecRequestMsg{Namespace: tuitest.NamespaceDemo, Pod: tuitest.PodWeb1}}
+	if _, cmd := m.Update(stale); cmd != nil {
+		t.Error("a lookup from before :ctx started an exec")
+	}
+}
+
 // exitErr is a real *exec.ExitError with code.
 func exitErr(t *testing.T, code string) error {
 	t.Helper()
@@ -175,16 +186,16 @@ func TestShellDoneHintsAtKubectlDebug(t *testing.T) {
 		{name: "clean exit", done: shellDoneMsg{req: web, shell: "sh"}},
 		{
 			name: "127 at once", done: shellDoneMsg{req: web, shell: "sh", err: exitErr(t, "127"), elapsed: time.Second},
-			want: "exec: no sh in web-1/app (exit 127) · try " + debug,
+			want: "no sh · " + debug + " · exit 127",
 		},
 		{
 			name: "126 at once", done: shellDoneMsg{req: web, shell: "sh", err: exitErr(t, "126"), elapsed: time.Second},
-			want: "exec: no sh in web-1/app (exit 126) · try " + debug,
+			want: "no sh · " + debug + " · exit 126",
 		},
 		{
 			name: "the runtime says so", done: shellDoneMsg{req: web, shell: "sh", err: exitErr(t, "1"), elapsed: time.Minute,
 				stderr: `OCI runtime exec failed: exec: "sh": executable file not found in $PATH: unknown`},
-			want: "exec: no sh in web-1/app (exit 1) · try " + debug,
+			want: "no sh · " + debug + " · exit 1",
 		},
 		{
 			name: "127 after a session is the user's last command",
@@ -197,15 +208,15 @@ func TestShellDoneHintsAtKubectlDebug(t *testing.T) {
 		},
 		{
 			name: "not an exit", done: shellDoneMsg{req: web, shell: "sh", err: errors.New("exec: executable file not found in $PATH")},
-			want: "exec: no sh in web-1/app · try " + debug,
+			want: "no sh · " + debug,
 		},
 		{
 			name: "no container named", done: shellDoneMsg{req: views.ExecRequestMsg{Namespace: "demo", Pod: "web-1"}, shell: "sh", err: exitErr(t, "127")},
-			want: "exec: no sh in web-1 (exit 127) · try kubectl debug -it -n demo web-1 --image=busybox:1.36",
+			want: "no sh · kubectl debug -it -n demo web-1 --image=busybox:1.36 · exit 127",
 		},
 		{
 			name: "windows has no busybox", done: shellDoneMsg{req: web, shell: "cmd.exe", err: exitErr(t, "127")},
-			want: "exec: no cmd.exe in web-1/app (exit 127)",
+			want: "exec: no cmd.exe in web-1/app · exit 127",
 		},
 	}
 	for _, tc := range cases {
@@ -220,6 +231,24 @@ func TestShellDoneHintsAtKubectlDebug(t *testing.T) {
 				t.Errorf("status = %+v, %v; want %q", msg, ok, tc.want)
 			}
 		})
+	}
+}
+
+// TestDebugHintFitsEightyColumns: the status row is cut at the width, and
+// the command must survive it to be copied.
+func TestDebugHintFitsEightyColumns(t *testing.T) {
+	t.Parallel()
+
+	m := New(nil, nil)
+	m.width, m.height = 80, 24
+	done := shellDoneMsg{
+		req:   views.ExecRequestMsg{Namespace: tuitest.NamespaceDemo, Pod: tuitest.PodWeb1, Container: tuitest.ContainerNginx},
+		shell: "sh", err: errors.New(`exec: "sh": executable file not found in $PATH`),
+	}
+	next, _ := m.Update(execDoneMsg(done))
+	want := "kubectl debug -it -n demo web-1 --image=busybox:1.36 --target=nginx"
+	if footer := tuitest.Footer(next); !strings.Contains(footer, want) {
+		t.Errorf("footer at 80 columns lacks %q:\n%s", want, footer)
 	}
 }
 
