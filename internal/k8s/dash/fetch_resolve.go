@@ -16,7 +16,7 @@ type lookup struct {
 	keep  bool // cache the entry; transient failures are retried next refresh
 }
 
-func (f Fetcher) lookupAll(ctx context.Context, todo []want, scope Scope, consistent bool) []lookup {
+func (f Fetcher) lookupAll(ctx context.Context, todo []want, consistent bool) []lookup {
 	out := make([]lookup, len(todo))
 	sem := make(chan struct{}, maxInFlight)
 	var wg sync.WaitGroup
@@ -28,7 +28,7 @@ func (f Fetcher) lookupAll(ctx context.Context, todo []want, scope Scope, consis
 			defer func() { <-sem }()
 			cctx, cancel := context.WithTimeout(ctx, clusterTimeout)
 			defer cancel()
-			objs, n, err := f.lookupOne(cctx, w.key, scope.Namespace, consistent)
+			objs, n, err := f.lookupOne(cctx, w.key, w.ns, consistent)
 			st := classify(err)
 			out[i] = lookup{
 				key: w.key, entry: resolveEntry{sig: w.sig, objs: objs}, bytes: n,

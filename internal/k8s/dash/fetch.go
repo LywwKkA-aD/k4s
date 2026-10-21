@@ -173,9 +173,9 @@ func backoffCounts(prev Snapshot, outs []outcome) (throttle, failures int) {
 
 // place runs the typed lookups the current rows need, within the plan's cap.
 func (f Fetcher) place(ctx context.Context, s Snapshot, p Plan, now time.Time) Snapshot {
-	ws := wanted(s.st, s.Scope, capsOf(s.st).K3s, now)
+	ws := wanted(s.st, capsOf(s.st).K3s, now)
 	todo := pending(s.st, ws, p.ResolveCap)
-	for _, r := range f.lookupAll(ctx, todo, s.Scope, p.Force) {
+	for _, r := range f.lookupAll(ctx, todo, p.Force) {
 		s.Requests++
 		s.Bytes += r.bytes
 		if r.keep {

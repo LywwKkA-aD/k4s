@@ -35,7 +35,7 @@ func TestLookupQueue(t *testing.T) {
 		{name: "bad,name", status: "Error", readyOf: 1, readyOK: true},
 	}, deploys: []workloadRow{{name: "web", ready: 0, desired: 2}, {name: "coredns", ready: 1, desired: 1}}}
 
-	ws := wanted(st, Scope{}, true, fixedNow)
+	ws := wanted(st, true, fixedNow)
 	keys := make([]string, 0, len(ws))
 	for _, w := range ws {
 		keys = append(keys, w.key.kind+"/"+w.key.name)
@@ -62,10 +62,19 @@ func TestLookupQueue(t *testing.T) {
 		t.Fatalf("prune kept %v", kept)
 	}
 
-	scoped := wanted(store{pods: st.pods, deploys: st.deploys}, Scope{Namespace: "shop"}, true, fixedNow)
+	inShop := func(rows []podRow) []podRow {
+		out := make([]podRow, len(rows))
+		for i, r := range rows {
+			r.namespace = "shop"
+			out[i] = r
+		}
+		return out
+	}
+	scopedDeploys := []workloadRow{{name: "web", namespace: "shop", ready: 0, desired: 2}}
+	scoped := wanted(store{pods: inShop(st.pods), deploys: scopedDeploys}, true, fixedNow)
 	for _, w := range scoped {
-		if w.key.kind != "pod" {
-			t.Fatalf("a namespaced list needs no namespace lookups: %+v", w)
+		if w.key.kind != "pod" || w.ns != "shop" {
+			t.Fatalf("a namespaced list needs no namespace lookups, only crash containers in its namespace: %+v", w)
 		}
 	}
 }
