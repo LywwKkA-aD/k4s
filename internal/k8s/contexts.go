@@ -1,10 +1,25 @@
 package k8s
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
+
+// ErrInvalidNamespace reports a name that cannot be a namespace.
+var ErrInvalidNamespace = errors.New("invalid namespace")
+
+// ValidateNamespace checks that name can be a namespace: a DNS-1123 label
+// of lower-case letters, digits and '-', at most 63 characters. It does not
+// ask the cluster, since RBAC may forbid reading namespaces.
+func ValidateNamespace(name string) error {
+	if errs := validation.IsDNS1123Label(name); len(errs) > 0 {
+		return fmt.Errorf("%w %q: %s", ErrInvalidNamespace, name, strings.Join(errs, "; "))
+	}
+	return nil
+}
 
 // Context is a presentation-friendly view of a kubeconfig context — just
 // the bits the TUI needs to render a picker (name + cluster + user) and the
@@ -22,11 +37,13 @@ type Context struct {
 // → ~/.kube/config). The slice preserves whatever order the file uses;
 // callers wanting alphabetical output should sort.
 func ListContexts(explicitPath string) ([]Context, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if explicitPath != "" {
-		rules.ExplicitPath = explicitPath
-	}
-	raw, err := rules.Load()
+	return ListContextsFrom(explicitSource(explicitPath))
+}
+
+// ListContextsFrom is ListContexts for the kubeconfig src names, such as a
+// running Client's Source.
+func ListContextsFrom(src Source) ([]Context, error) {
+	raw, err := src.rules().Load()
 	if err != nil {
 		return nil, fmt.Errorf("load kubeconfig: %w", err)
 	}
@@ -48,36 +65,14 @@ func ListContexts(explicitPath string) ([]Context, error) {
 // whatever the file's current-context says. Empty contextName falls back
 // to the current-context to keep behaviour identical to LoadFromKubeconfig.
 func LoadFromKubeconfigContext(explicitPath, contextName string) (*Client, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if explicitPath != "" {
-		rules.ExplicitPath = explicitPath
+	return Load(explicitSource(explicitPath), contextName)
+}
+
+// explicitSource is the Source for a --kubeconfig-style path, or the
+// default lookup when path is "".
+func explicitSource(path string) Source {
+	if path == "" {
+		return Source{}
 	}
-	raw, err := rules.Load()
-	if err != nil {
-		return nil, fmt.Errorf("load kubeconfig: %w", err)
-	}
-	target := contextName
-	if target == "" {
-		target = raw.CurrentContext
-	}
-	if target == "" {
-		return nil, fmt.Errorf("kubeconfig has no current-context")
-	}
-	if _, ok := raw.Contexts[target]; !ok {
-		return nil, fmt.Errorf("context %q not found in kubeconfig", target)
-	}
-	cfg, err := buildConfig(*raw, target, rules)
-	if err != nil {
-		return nil, err
-	}
-	cs, err := newClientset(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return &Client{
-		Clientset:       cs,
-		Context:         target,
-		RestConfig:      cfg,
-		KubeconfigPaths: rules.GetLoadingPrecedence(),
-	}, nil
+	return Source{Paths: []string{path}, Origin: OriginFlag}
 }
