@@ -45,6 +45,9 @@ type Model struct {
 	poll  async.Poller
 	acts  async.InFlight
 	asked asked
+
+	// pending is a restored State's row, held until the first list lands.
+	pending pendingRow
 }
 
 // Option changes how New builds the view.
