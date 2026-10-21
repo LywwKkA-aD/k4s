@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"fmt"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/startup"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 )
@@ -44,20 +47,41 @@ func (m Model) switchClient(name string) (*k8s.Client, error) {
 	return k8s.Load(m.startup.Source, name)
 }
 
-// resetForwards is the one place a context switch touches port-forwards:
-// it stops the old cluster's sessions, so their local ports are freed and
-// no SPDY goroutine outlives its cluster, then opens the state for the new
-// client. StopAll blocks until the sessions are down; a non-blocking stop
-// replaces it here and nowhere else.
+// resetForwards is the one place a context switch touches port-forwards.
+// It closes the old cluster's sessions at once, so their local ports are
+// freed and no SPDY goroutine outlives its cluster, and returns the wait
+// for them as a Cmd: a hung tunnel must not freeze the switch. The new
+// client's Manager is built After that stop and refuses to register or
+// start a forward until the old sessions are down or timed out, since a
+// new forward could otherwise lose its local port to an old one.
 func (m Model) resetForwards(client *k8s.Client) (Model, tea.Cmd) {
+	var stop *forwards.Stopping
 	if m.forwardMgr != nil {
-		_ = m.forwardMgr.StopAll()
+		stop = m.forwardMgr.BeginStopAll()
 	}
-	mgr, err := forwards.NewManager(client)
-	if err != nil {
-		m.forwardMgr = nil
-		return m.setError("forwards: " + err.Error())
+	var waitCmd tea.Cmd
+	stopping := ""
+	if stop != nil && stop.Count() > 0 {
+		stopping = fmt.Sprintf("%d forwards", stop.Count())
+		if stop.Count() == 1 {
+			stopping = "1 forward"
+		}
+		waitCmd = func() tea.Msg {
+			if err := stop.Wait(); err != nil {
+				return views.StatusMsg{Level: status.Warn, Text: "forwards: " + err.Error()}
+			}
+			return views.StatusMsg{Level: status.OK, Text: "stopped " + stopping}
+		}
 	}
+
+	mgr, err := forwards.NewManager(client, forwards.After(stop))
 	m.forwardMgr = mgr
-	return m, nil
+	var statusCmd tea.Cmd
+	switch {
+	case err != nil:
+		m, statusCmd = m.setError("forwards: " + err.Error())
+	case waitCmd != nil:
+		m, statusCmd = m.setStatus(status.Info, "stopping "+stopping+"…")
+	}
+	return m, tea.Batch(statusCmd, waitCmd)
 }
