@@ -105,7 +105,7 @@ func TestExecRunsTheFooterCommand(t *testing.T) {
 			m.kubectlSession = newKubectlSession(tc.client, tc.flags, func(string) string { return "" }, "/home/me")
 			m = withLookPath(m, foundAt(fakeKubectlPath), []string{"PATH=/bin", "KUBECONFIG=/stale"})
 
-			c, err := m.execCommand(req)
+			c, err := m.execCommand(req, views.ExecShell)
 			if err != nil {
 				t.Fatalf("execCommand: %v", err)
 			}
@@ -241,7 +241,7 @@ func TestExecDoneReportsAFailedShell(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			upd, _ := New(nil, nil).Update(execDoneMsg{err: tc.err})
+			upd, _ := New(nil, nil).Update(execDoneMsg(shellDoneMsg{shell: views.ExecShell, err: tc.err}))
 			msg, ok := upd.(Model).status.Current(time.Now())
 			if tc.want == "" {
 				if ok {
@@ -294,7 +294,7 @@ func TestExecReadsTheShellEnvironment(t *testing.T) {
 			if got := strings.Contains(shown, "--kubeconfig "+tc.path); got != tc.wantFlag {
 				t.Errorf("%q names --kubeconfig = %v, want %v", shown, got, tc.wantFlag)
 			}
-			cmd, err := m.execCommand(req)
+			cmd, err := m.execCommand(req, views.ExecShell)
 			if err != nil {
 				t.Fatalf("execCommand: %v", err)
 			}
