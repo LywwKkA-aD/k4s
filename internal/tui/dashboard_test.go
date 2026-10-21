@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
@@ -138,7 +139,9 @@ func TestColorProfileReachesTheNextDashboard(t *testing.T) {
 			m, _ = tuitest.Drive(t, m, colon("pods")...)
 			m, _ = tuitest.Drive(t, m, tuitest.Press("q"))
 			requireView(t, m, "dashboard")
-			_, out := tuitest.Step(t, m, tuitest.Press("r"))
+			// The spinner's delay is a real 150 ms timer here: give it room
+			// on a loaded machine.
+			_, out := tuitest.DriveWith(t, tuitest.Driver{CmdTimeout: 2 * time.Second}, m, tuitest.Press("r"))
 			spins := false
 			for _, msg := range out {
 				spins = spins || strings.HasSuffix(fmt.Sprintf("%T", msg), "spinDueMsg")
