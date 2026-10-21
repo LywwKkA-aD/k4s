@@ -1,17 +1,16 @@
 // Package deployments is the deployments list view: rows show each deployment
 // with kubectl-style READY / UP-TO-DATE / AVAILABLE counters. Enter opens
-// describe; 'l' resolves the deployment's pods + containers and asks the
-// root model to open the right prompt — single-container pod templates skip
-// straight to the tail prompt, multi-container ones detour through the
+// describe; 'l' resolves the pods the deployment's ReplicaSets run and asks
+// the root model to open the right prompt — single-container pod templates
+// skip straight to the tail prompt, multi-container ones detour through the
 // container picker first. Either way the logs view ends up streaming every
-// replica through the multi-pod machinery, with a coloured per-pod prefix.
+// running replica through the multi-pod machinery, with a coloured per-pod
+// prefix.
+//
+// The list refreshes through an async.Poller.
 package deployments
 
 import (
-	"context"
-	"fmt"
-	"strconv"
-	"sync/atomic"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -21,76 +20,93 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
-	fetchTimeout  = 5 * time.Second
-	minTableRows  = 5
-	watchInterval = 5 * time.Second
+	minTableRows = 5
+	// A list across every namespace may run longer than one namespace's
+	// before the poller counts it as slow and backs off.
+	namespaceTimeout     = 5 * time.Second
+	allNamespacesTimeout = 15 * time.Second
 )
 
-// viewGen numbers Model instances. Ticks and fetch replies carry the gen
-// they were scheduled under, and Update drops any from another instance.
-// The message type cannot do this: when the view is rebuilt (Esc back or a
-// repeated command) the old instance's pending tick reaches the new one,
-// where it would start a second refresh chain, and its fetch reply could
-// overwrite fresh rows.
-var viewGen atomic.Int64
+// Option configures New.
+type Option func(options) options
 
-func nextGen() int64 { return viewGen.Add(1) }
+type options struct {
+	clock async.Clock
+}
 
-// tickMsg is the watch tick of the instance whose gen it carries.
-type tickMsg struct {
-	gen int64
-	t   time.Time
+// WithClock arms the view's timers on clock: the refresh tick and the
+// "resolving logs" status. Tests pass an asynctest.Clock; nil keeps the
+// real one.
+func WithClock(c async.Clock) Option {
+	return func(o options) options {
+		if c != nil {
+			o.clock = c
+		}
+		return o
+	}
 }
 
 // Model is the deployments list view scoped to a namespace ("" = all).
 type Model struct {
 	client    *k8s.Client
 	namespace string
-	table     table.Model
-	raw       []k8s.Deployment
-	err       error
-	loaded    bool
-	// busy suppresses overlapping fetches: fetchTimeout == watchInterval,
-	// so without the guard requests stack up every tick against a dead API.
-	busy  bool
-	bodyH int
-	gen   int64
+	clock     async.Clock
 
-	watchEnabled bool
-	filter       filter.Model
+	table  table.Model
+	filter filter.Model
+	bodyH  int
 
-	selectKey  key.Binding
-	logsKey    key.Binding
-	forwardKey key.Binding
-	watchKey   key.Binding
-	refreshKey key.Binding
-	filterKey  key.Binding
+	raw []k8s.Deployment
+	// shown are the rows of the table, raw narrowed by the filter.
+	shown  []k8s.Deployment
+	err    error
+	loaded bool
+
+	// tok is the mint row actions take their tokens from.
+	tok   async.Token
+	poll  async.Poller
+	watch bool
+	acts  async.InFlight
+	// logsFor is the deployment the logs resolve in flight is for.
+	logsFor views.ResourceRef
+
+	keys keyMap
 }
 
-type deploymentsMsg struct {
-	gen       int64
-	namespace string
-	items     []k8s.Deployment
-	err       error
+type keyMap struct {
+	describe key.Binding
+	logs     key.Binding
+	forward  key.Binding
+	filter   key.Binding
+	watch    key.Binding
+	refresh  key.Binding
 }
 
-// resolvedMsg is the result of "for this deployment, give me its pods and
-// container names" — kicked off from the 'l' handler.
-type resolvedMsg struct {
-	namespace  string
-	pods       []string
-	containers []string
-	err        error
+func newKeyMap() keyMap {
+	return keyMap{
+		describe: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "describe")),
+		logs:     key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "tail all replicas")),
+		forward:  key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "port-forward")),
+		filter:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+		watch:    key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "watch")),
+		refresh:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+	}
 }
 
 // New constructs a deployments view for the given namespace ("" = all).
-func New(client *k8s.Client, namespace string) Model {
+// With a client it starts the first list, which Init sends.
+func New(client *k8s.Client, namespace string, opts ...Option) Model {
+	o := options{clock: async.RealClock{}}
+	for _, opt := range opts {
+		o = opt(o)
+	}
 	t := table.New(
 		table.WithColumns(tableColumns(namespace == "")),
 		table.WithFocused(true),
@@ -99,278 +115,74 @@ func New(client *k8s.Client, namespace string) Model {
 	t.SetStyles(styles.Table())
 	styles.FitTable(&t)
 
+	tok := async.New()
+	poll := async.NewPoller(tok, async.Config{
+		Enabled: client != nil,
+		Timeout: listTimeout(namespace),
+		Clock:   o.clock,
+	})
+	if client != nil {
+		poll, _ = poll.Begin()
+	}
 	return Model{
-		client:       client,
-		namespace:    namespace,
-		table:        t,
-		watchEnabled: true,
-		filter:       filter.New(),
-		gen:          nextGen(),
-		selectKey: key.NewBinding(
-			key.WithKeys("enter"),
-			key.WithHelp("enter", "describe"),
-		),
-		logsKey: key.NewBinding(
-			key.WithKeys("l"),
-			key.WithHelp("l", "tail all replicas"),
-		),
-		watchKey: key.NewBinding(
-			key.WithKeys("w"),
-			key.WithHelp("w", "watch"),
-		),
-		refreshKey: key.NewBinding(
-			key.WithKeys("r"),
-			key.WithHelp("r", "refresh"),
-		),
-		filterKey: key.NewBinding(
-			key.WithKeys("/"),
-			key.WithHelp("/", "filter"),
-		),
-		forwardKey: key.NewBinding(
-			key.WithKeys("f"),
-			key.WithHelp("f", "port-forward"),
-		),
+		client:    client,
+		namespace: namespace,
+		clock:     o.clock,
+		table:     t,
+		filter:    filter.New(),
+		tok:       tok,
+		poll:      poll,
+		watch:     true,
+		keys:      newKeyMap(),
 	}
 }
 
-func tableColumns(showNamespace bool) []table.Column {
-	cols := make([]table.Column, 0, 6)
-	if showNamespace {
-		cols = append(cols, table.Column{Title: "NAMESPACE", Width: 18})
+func listTimeout(namespace string) time.Duration {
+	if namespace == "" {
+		return allNamespacesTimeout
 	}
-	cols = append(cols,
-		table.Column{Title: "NAME", Width: 30},
-		table.Column{Title: "READY", Width: 8},
-		table.Column{Title: "UP-TO-DATE", Width: 11},
-		table.Column{Title: "AVAILABLE", Width: 10},
-		table.Column{Title: "AGE", Width: 8},
-	)
-	return cols
+	return namespaceTimeout
 }
 
-// Init kicks off the first deployments fetch and the watch ticker.
+// Init sends the first list New started, from the watch cache like a tick.
 func (m Model) Init() tea.Cmd {
-	if m.client == nil {
-		return tickCmd(m.gen)
+	if !m.poll.Busy() {
+		return nil
 	}
-	return tea.Batch(fetchCmd(m.gen, m.client, m.namespace), tickCmd(m.gen))
+	return m.list(watchCacheRV)
 }
 
-func tickCmd(gen int64) tea.Cmd {
-	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg{gen: gen, t: t} })
-}
-
-func fetchCmd(gen int64, c *k8s.Client, namespace string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
-		items, err := c.ListDeployments(ctx, namespace)
-		return deploymentsMsg{gen: gen, namespace: namespace, items: items, err: err}
-	}
-}
-
-// resolvePodsAndContainersCmd issues two API calls in sequence — one for the
-// matching pods, one for the container template — and ships the combined
-// result back as resolvedMsg.
-func resolvePodsAndContainersCmd(c *k8s.Client, ns, name string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
-		pods, err := c.PodsForDeployment(ctx, ns, name)
-		if err != nil {
-			return resolvedMsg{namespace: ns, err: err}
-		}
-		containers, err := c.ContainersForDeployment(ctx, ns, name)
-		if err != nil {
-			return resolvedMsg{namespace: ns, pods: pods, err: err}
-		}
-		return resolvedMsg{namespace: ns, pods: pods, containers: containers}
-	}
-}
-
-// Update routes size/refresh/select/logs and forwards navigation to the table.
+// Update routes size, refresh, replies and keys, and forwards navigation
+// to the table.
 func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.bodyH = msg.Height
 		m.filter.SetWidth(msg.Width)
 		m.table.SetHeight(max(m.tableHeight(), minTableRows))
-	case tickMsg:
-		if msg.gen != m.gen {
-			return m, nil
-		}
-		cmds := []tea.Cmd{tickCmd(m.gen)}
-		if m.watchEnabled && m.client != nil && !m.busy {
-			m.busy = true
-			cmds = append(cmds, fetchCmd(m.gen, m.client, m.namespace))
-		}
-		return m, tea.Batch(cmds...)
-	case tea.PasteMsg:
-		cmd, _ := m.feedFilter(msg)
-		return m, cmd
-	case tea.KeyPressMsg:
-		if cmd, consumed := m.feedFilter(msg); consumed {
-			return m, cmd
-		}
-		if cmd, handled := m.handleKey(msg); handled {
-			return m, cmd
-		}
-	case resolvedMsg:
-		return m, m.dispatchResolved(msg)
-	case deploymentsMsg:
-		if msg.gen != m.gen {
-			return m, nil
-		}
-		m.applyDeployments(msg)
 		return m, nil
+	case async.TickMsg:
+		return m.onTick(msg)
+	case async.Result[[]k8s.Deployment]:
+		return m.onList(msg)
+	case async.Result[k8s.LogTarget]:
+		return m.onLogTarget(msg)
+	case resolvingMsg:
+		return m, m.onResolving(msg)
+	case tea.PasteMsg:
+		next, cmd, _ := m.feedFilter(msg)
+		return next, cmd
+	case tea.KeyPressMsg:
+		if next, cmd, consumed := m.feedFilter(msg); consumed {
+			return next, cmd
+		}
+		if next, cmd, handled := m.onKey(msg); handled {
+			return next, cmd
+		}
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
-}
-
-// applyDeployments releases the busy flag and folds the fetch result into
-// the table. Answers that raced a namespace switch within one generation
-// are dropped (busy is still released so the next tick can fetch again).
-func (m *Model) applyDeployments(msg deploymentsMsg) {
-	m.busy = false
-	if msg.namespace != m.namespace {
-		return
-	}
-	m.err = msg.err
-	m.loaded = true
-	if msg.err == nil {
-		m.raw = msg.items
-		m.applyFilter()
-	}
-}
-
-func (m Model) tableHeight() int {
-	if m.filter.Active() {
-		return m.bodyH - 1
-	}
-	return m.bodyH
-}
-
-// feedFilter hands a key press or a paste to the open filter and refilters
-// the rows. It reports false when the filter is closed or let the key pass.
-func (m *Model) feedFilter(msg tea.Msg) (tea.Cmd, bool) {
-	if !m.filter.IsOpen() {
-		return nil, false
-	}
-	var cmd tea.Cmd
-	var consumed bool
-	m.filter, cmd, consumed = m.filter.Update(msg)
-	if consumed {
-		m.applyFilter()
-	}
-	return cmd, consumed
-}
-
-func (m *Model) applyFilter() {
-	items := m.raw
-	if m.filter.Active() {
-		items = make([]k8s.Deployment, 0, len(m.raw))
-		for _, d := range m.raw {
-			if m.filter.Match(d.Name, d.Namespace) {
-				items = append(items, d)
-			}
-		}
-	}
-	m.table.SetRows(toRows(items, m.namespace == ""))
-	m.table.SetHeight(max(m.tableHeight(), minTableRows))
-}
-
-func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
-	switch {
-	case key.Matches(msg, m.filterKey):
-		var cmd tea.Cmd
-		m.filter, cmd = m.filter.Open()
-		m.applyFilter()
-		return cmd, true
-	case key.Matches(msg, m.refreshKey) && m.client != nil && !m.busy:
-		m.busy = true
-		return fetchCmd(m.gen, m.client, m.namespace), true
-	case key.Matches(msg, m.watchKey):
-		m.watchEnabled = !m.watchEnabled
-		return nil, true
-	case key.Matches(msg, m.selectKey) && m.canActOnRow():
-		ns, name := deploymentCoords(m.table.SelectedRow(), m.namespace)
-		return func() tea.Msg {
-			return views.DescribeRequestMsg{Kind: "deployment", Namespace: ns, Name: name}
-		}, true
-	case key.Matches(msg, m.logsKey) && m.canActOnRow():
-		ns, name := deploymentCoords(m.table.SelectedRow(), m.namespace)
-		return resolvePodsAndContainersCmd(m.client, ns, name), true
-	case key.Matches(msg, m.forwardKey) && m.canActOnRow():
-		ns, name := deploymentCoords(m.table.SelectedRow(), m.namespace)
-		return func() tea.Msg {
-			return views.ForwardRequestMsg{Kind: "deployment", Namespace: ns, Name: name}
-		}, true
-	}
-	return nil, false
-}
-
-func (m Model) canActOnRow() bool {
-	return m.client != nil && m.loaded && len(m.table.Rows()) > 0 && m.table.SelectedRow() != nil
-}
-
-// dispatchResolved decides between the fast path (single container → tail
-// prompt directly) and the picker detour. Errors and empty results are
-// silent no-ops so the table state survives.
-func (m Model) dispatchResolved(msg resolvedMsg) tea.Cmd {
-	if msg.err != nil || len(msg.pods) == 0 {
-		return nil
-	}
-	if len(msg.containers) <= 1 {
-		container := ""
-		if len(msg.containers) == 1 {
-			container = msg.containers[0]
-		}
-		return func() tea.Msg {
-			return views.TailPromptRequestMsg{Namespace: msg.namespace, Pods: msg.pods, Container: container}
-		}
-	}
-	return func() tea.Msg {
-		return views.ContainerPromptRequestMsg{
-			Namespace:  msg.namespace,
-			Pods:       msg.pods,
-			Containers: msg.containers,
-			NextKind:   "logs",
-		}
-	}
-}
-
-// deploymentCoords reads (namespace, name) out of the selected row,
-// accounting for whether the table is rendering the NAMESPACE column.
-func deploymentCoords(row table.Row, scopedNamespace string) (string, string) {
-	if scopedNamespace == "" {
-		return row[0], row[1]
-	}
-	return scopedNamespace, row[0]
-}
-
-func toRows(items []k8s.Deployment, showNamespace bool) []table.Row {
-	rows := make([]table.Row, 0, len(items))
-	for _, d := range items {
-		size := 5
-		if showNamespace {
-			size = 6
-		}
-		row := make(table.Row, 0, size)
-		if showNamespace {
-			row = append(row, d.Namespace)
-		}
-		row = append(row,
-			d.Name,
-			fmt.Sprintf("%d/%d", d.Ready, d.Replicas),
-			strconv.Itoa(int(d.UpToDate)),
-			strconv.Itoa(int(d.Available)),
-			k8s.HumanizeDuration(d.Age),
-		)
-		rows = append(rows, row)
-	}
-	return rows
 }
 
 // View renders the table or a placeholder.
@@ -385,7 +197,7 @@ func (m Model) View() string {
 		return styles.Warn.Render("deployments unavailable: " + m.err.Error())
 	}
 	body := m.table.View()
-	if len(m.table.Rows()) == 0 {
+	if len(m.shown) == 0 {
 		if m.filter.Active() {
 			body = styles.Hint.Render("no deployments match /" + m.filter.Query())
 		} else {
@@ -410,13 +222,16 @@ func (m Model) Command() kubectl.Cmd {
 	return kubectl.New("get", "deployments", "-n", m.namespace)
 }
 
-// Help implements views.View.
+// Help implements views.View. The w binding names the refresh cadence.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.logsKey, m.forwardKey, m.filterKey, m.watchKey, m.refreshKey}
+	watch := m.keys.watch
+	watch.SetHelp("w", m.poll.Hint())
+	return []key.Binding{m.keys.describe, m.keys.logs, m.keys.forward, m.keys.filter, watch, m.keys.refresh}
 }
 
 // CapturesKeys implements views.View.
 func (m Model) CapturesKeys() bool { return m.filter.IsOpen() }
 
-// Close implements views.View. No long-lived resources held.
+// Close implements views.View. No long-lived resources held: a reply or a
+// tick still on its way is dropped by its token.
 func (m Model) Close() error { return nil }
