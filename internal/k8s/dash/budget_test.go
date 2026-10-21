@@ -149,6 +149,35 @@ func TestRequestBudget(t *testing.T) {
 	}
 }
 
+// A field selector makes the apiserver answer with Continue and no
+// remaining count; the capped page must stay capped on every refresh.
+func TestCappedEventsStayCappedWithoutARemainingCount(t *testing.T) {
+	t.Parallel()
+
+	a := newAPIServer(t, bigCluster(4100, fixedNow), withContinueOnly())
+	ticks := simulate(t, a, 5*time.Minute, watching)
+
+	var eventLists []seen
+	for _, tk := range ticks {
+		for _, s := range tk.seen {
+			if s.typed && s.verb == "list" && s.resource == "events" {
+				eventLists = append(eventLists, s)
+			}
+		}
+	}
+	if len(eventLists) < 4 {
+		t.Fatalf("only %d event lists in five minutes", len(eventLists))
+	}
+	for i, s := range eventLists[1:] {
+		if s.limit != eventCap {
+			t.Errorf("event refresh %d has limit %d, want %d", i+2, s.limit, eventCap)
+		}
+	}
+	if ev := ticks[len(ticks)-1].snap.Events; !ev.Truncated {
+		t.Errorf("events not marked truncated: total %d rows %d", ev.Total, len(ev.Rows))
+	}
+}
+
 // checkResourceVersions: lists read the watch cache (RV=0), except a
 // limited count or a capped page, which must read consistently (RV=""),
 // since RV=0 ignores limit.
