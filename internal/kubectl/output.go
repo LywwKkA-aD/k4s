@@ -2,9 +2,10 @@ package kubectl
 
 import (
 	"bytes"
-	"regexp"
 	"strings"
-	"unicode"
+	"unicode/utf8"
+
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 )
 
 // cappedBuffer keeps the first limit bytes written to it and drops the
@@ -26,12 +27,9 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// escapes matches CSI and OSC terminal sequences and lone two-byte escapes,
-// which an error message from the cluster can carry into the status line.
-var escapes = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b.?`)
-
-// firstLine returns the first non-blank line of out with terminal escapes
-// and other control characters removed.
+// firstLine returns the first non-blank line of out as inert text: the
+// message comes from the cluster and can carry terminal escapes into the
+// status line.
 func firstLine(out []byte) string {
 	for line := range strings.SplitSeq(string(out), "\n") {
 		clean := strings.TrimSpace(printable(line))
@@ -42,12 +40,8 @@ func firstLine(out []byte) string {
 	return ""
 }
 
+// printable drops the replacement runes the sanitizer puts in for invalid
+// UTF-8: a status line is better without them.
 func printable(s string) string {
-	s = escapes.ReplaceAllString(s, "")
-	return strings.Map(func(r rune) rune {
-		if r == unicode.ReplacementChar || (unicode.IsControl(r) && r != '\t') {
-			return -1
-		}
-		return r
-	}, s)
+	return strings.ReplaceAll(sanitize.Line(s), string(utf8.RuneError), "")
 }
