@@ -5,12 +5,14 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/LywwKkA-aD/k4s/internal/cli"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -249,6 +251,55 @@ func TestExecDoneReportsAFailedShell(t *testing.T) {
 			}
 			if !ok || msg.Text != tc.want {
 				t.Fatalf("status = %+v, %v; want %q", msg, ok, tc.want)
+			}
+		})
+	}
+}
+
+// TestExecReadsTheShellEnvironment builds the model the way main does, with
+// WithFlags and the production session wiring, so the $KUBECONFIG and home
+// directory lookups behind the footer command are exercised. It sets the
+// environment, so it cannot run in parallel.
+func TestExecReadsTheShellEnvironment(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shells only")
+	}
+	home := t.TempDir()
+	defaultFile := filepath.Join(home, ".kube", "config")
+	envFile := filepath.Join(t.TempDir(), "env.yaml")
+	otherFile := filepath.Join(t.TempDir(), "other.yaml")
+	req := views.ExecRequestMsg{Namespace: "shop", Pod: "api-7d9f"}
+
+	cases := []struct {
+		name       string
+		kubeconfig string // $KUBECONFIG
+		path       string // the file k4s loaded
+		opts       cli.Options
+		wantFlag   bool // the pasted command names --kubeconfig
+	}{
+		{name: "file from KUBECONFIG", kubeconfig: envFile, path: envFile},
+		{name: "default file under HOME", path: defaultFile},
+		{name: "file a bare kubectl would not load", kubeconfig: envFile, path: otherFile, wantFlag: true},
+		{name: "file named on the command line", kubeconfig: envFile, path: envFile, opts: cli.Options{Kubeconfig: envFile}, wantFlag: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", home)
+			t.Setenv(kubectl.EnvKubeconfig, tc.kubeconfig)
+			c := &k8s.Client{Context: "dev", CurrentContext: "dev", KubeconfigPaths: []string{tc.path}}
+			m := New(c, nil, WithFlags(tc.opts))
+			m = withLookPath(m, foundAt(fakeKubectlPath), []string{"PATH=/bin"})
+
+			shown := m.decorate(mustExec(t, req)).String()
+			if got := strings.Contains(shown, "--kubeconfig "+tc.path); got != tc.wantFlag {
+				t.Errorf("%q names --kubeconfig = %v, want %v", shown, got, tc.wantFlag)
+			}
+			cmd, err := m.execCommand(req)
+			if err != nil {
+				t.Fatalf("execCommand: %v", err)
+			}
+			if got, want := kubeconfigEnv(cmd.Env), []string{"KUBECONFIG=" + tc.path}; !slices.Equal(got, want) {
+				t.Errorf("KUBECONFIG = %v, want %v", got, want)
 			}
 		})
 	}
