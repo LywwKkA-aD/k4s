@@ -31,9 +31,10 @@ type Target struct {
 }
 
 // namespaced are the commands that list one namespace at a time, and ns,
-// whose argument switches the namespace in place.
+// whose argument switches the namespace in place. Nodes are
+// cluster-scoped and take none.
 var namespaced = map[string]bool{
-	"pods": true, "deployments": true, "services": true, "top": true, "namespaces": true,
+	"pods": true, "deployments": true, "services": true, "top": true, "events": true, "namespaces": true,
 }
 
 // TakesNamespace reports whether the canonical command takes a namespace
@@ -41,7 +42,7 @@ var namespaced = map[string]bool{
 func TakesNamespace(canonical string) bool { return namespaced[canonical] }
 
 // Parse reads a command bar entry: a command or alias, then for pods,
-// deployments, services, top and ns an optional namespace as kubectl
+// deployments, services, top, events and ns an optional namespace as kubectl
 // spells it: `demo`, `-n demo`, or `-A` / `--all-namespaces` for every
 // namespace. "all" is a namespace name like any other. The name is
 // checked as a namespace name only, never looked up: RBAC may forbid

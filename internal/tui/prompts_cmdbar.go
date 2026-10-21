@@ -1,21 +1,13 @@
 package tui
 
 import (
-	"fmt"
-	"strings"
-
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/command"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
-
-// allNamespacesArg is `:ns -A`. "all" cannot mean all namespaces: it is a
-// valid namespace name.
-const allNamespacesArg = "-A"
 
 // openCommandBar opens the ":" bar in the footer. A status message from an
 // earlier action goes: the user has moved on.
@@ -25,46 +17,45 @@ func (m Model) openCommandBar() Model {
 	return m
 }
 
-// execCmd runs what was typed into the command bar: a view's name, or
-// `ns <name>` (`ns -A`) to change the namespace. Only ns takes an
-// argument.
+// execCmd runs what was typed into the command bar (command.Parse): a
+// view's name; `ns <name>` or `ns -A` to change the namespace; or a list
+// with a namespace, `pods demo`, `deploy -n demo`, `svc -A`. What Parse
+// refuses goes to the status row.
 func (m Model) execCmd(input string) (Model, tea.Cmd) {
-	word, arg := splitCommand(input)
-	name, ok := command.Resolve(word)
-	if !ok || (arg != "" && name != viewNamespaces) {
-		return m.setError(fmt.Sprintf("unknown command: %s", strings.TrimSpace(input)))
+	t, err := command.Parse(input)
+	if err != nil {
+		return m.setError(err.Error())
 	}
 	m.status = m.status.Clear()
-	if arg != "" {
-		return m.switchNamespace(arg)
+	switch {
+	case t.Scoped && t.Name == viewNamespaces:
+		return m.switchNamespace(t.Namespace)
+	case t.Scoped:
+		return m.openIn(t.Name, t.Namespace)
 	}
-	next := m.switchTo(name)
+	next := m.switchTo(t.Name)
 	return next, next.relayoutCmd()
 }
 
-// splitCommand returns the first word of input and the rest, blanks
-// collapsed.
-func splitCommand(input string) (word, arg string) {
-	fields := strings.Fields(input)
-	if len(fields) == 0 {
-		return "", ""
+// openIn is a list command with a namespace ("" for -A): the list in
+// that namespace, one Esc from the view it was asked from. On the list
+// itself it is :ns, which keeps the filter, watch and mode.
+func (m Model) openIn(name, ns string) (Model, tea.Cmd) {
+	if m.current.Title() == name {
+		return m.switchNamespace(ns)
 	}
-	return fields[0], strings.Join(fields[1:], " ")
+	m = m.pushHistory()
+	m = m.enterNamespace(ns)
+	m = m.replaceView(name)
+	return m, m.relayoutCmd()
 }
 
-// switchNamespace is `:ns <name>`. On a namespaced list the same view
-// reloads in the new namespace with its filter, watch and mode but not its
-// row, which is not there; from any other view pods opens there. The
-// name is checked as a namespace name only: RBAC may forbid reading
-// namespaces, so it is not looked up.
-func (m Model) switchNamespace(arg string) (Model, tea.Cmd) {
-	ns := ""
-	if arg != allNamespacesArg {
-		if err := k8s.ValidateNamespace(arg); err != nil {
-			return m.setError(err.Error())
-		}
-		ns = arg
-	}
+// switchNamespace is `:ns <name>`, ns "" for `:ns -A`. On a namespaced
+// list the same view reloads in the new namespace with its filter, watch
+// and mode but not its row, which is not there; from any other view pods
+// opens there. command.Parse checked the name as a namespace name only:
+// RBAC may forbid reading namespaces, so it is not looked up.
+func (m Model) switchNamespace(ns string) (Model, tea.Cmd) {
 	view, st := m.current.Title(), stateOf(m.current).WithoutSelection()
 	if !isNamespacedList(view) {
 		view, st = viewPods, views.State{}

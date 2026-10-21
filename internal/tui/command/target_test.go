@@ -24,6 +24,8 @@ func TestParse(t *testing.T) {
 		{input: "deploy --all-namespaces", want: command.Target{Name: "deployments", All: true, Scoped: true}},
 		{input: "svc kube-system", want: command.Target{Name: "services", Namespace: "kube-system", Scoped: true}},
 		{input: "top demo", want: command.Target{Name: "top", Namespace: "demo", Scoped: true}},
+		{input: "ev demo", want: command.Target{Name: "events", Namespace: "demo", Scoped: true}},
+		{input: "events -A", want: command.Target{Name: "events", All: true, Scoped: true}},
 		// all is a valid namespace name; every namespace is -A.
 		{input: "pods all", want: command.Target{Name: "pods", Namespace: "all", Scoped: true}},
 		{input: "ns demo", want: command.Target{Name: "namespaces", Namespace: "demo", Scoped: true}},
@@ -53,6 +55,9 @@ func TestParseRefuses(t *testing.T) {
 		{input: "nope", is: command.ErrUnknown, text: "unknown command: nope"},
 		{input: "dashboard demo", is: command.ErrNoNamespace, text: "dashboard takes no namespace"},
 		{input: "ctx demo", is: command.ErrNoNamespace, text: "contexts takes no namespace"},
+		// Nodes are cluster-scoped: no namespace, not even every one.
+		{input: "nodes demo", is: command.ErrNoNamespace, text: "nodes takes no namespace"},
+		{input: "no -A", is: command.ErrNoNamespace, text: "nodes takes no namespace"},
 		{input: "pods Demo", is: k8s.ErrInvalidNamespace},
 		{input: "pods -n", is: command.ErrBadArgument, text: "pods: -n needs a namespace"},
 		{input: "pods a b", is: command.ErrBadArgument, text: `pods takes one namespace, not "a b"`},
@@ -77,7 +82,7 @@ func TestTakesNamespace(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range command.All() {
-		want := name == "pods" || name == "deployments" || name == "services" || name == "top" || name == "namespaces"
+		want := name == "pods" || name == "deployments" || name == "services" || name == "top" || name == "events" || name == "namespaces"
 		if got := command.TakesNamespace(name); got != want {
 			t.Errorf("TakesNamespace(%q) = %v, want %v", name, got, want)
 		}

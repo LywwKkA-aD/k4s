@@ -118,8 +118,12 @@ func TestNamespaceCommandErrors(t *testing.T) {
 		want  string
 	}{
 		{name: "not a namespace name", input: "ns Demo_1", want: `invalid namespace "Demo_1"`},
-		{name: "two arguments", input: "ns demo shop", want: `invalid namespace "demo shop"`},
-		{name: "other commands take no argument", input: "pods demo", want: "unknown command: pods demo"},
+		{name: "two arguments", input: "ns demo shop", want: `namespaces takes one namespace, not "demo shop"`},
+		{name: "a list with a bad namespace", input: "pods Demo_1", want: `invalid namespace "Demo_1"`},
+		{name: "an unknown flag", input: "deploy --all", want: `deployments: unknown flag "--all"`},
+		{name: "a view without namespaces", input: "dashboard demo", want: "dashboard takes no namespace"},
+		{name: "nodes are cluster-scoped", input: "nodes demo", want: "nodes takes no namespace"},
+		{name: "every namespace for nodes", input: "nodes -A", want: "nodes takes no namespace"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
