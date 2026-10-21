@@ -12,31 +12,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/pods"
 )
 
-const (
-	width  = 140
-	height = 30
-)
-
-func mounted(t *testing.T, c *k8s.Client, namespace string) pods.Model {
-	t.Helper()
-	m, _ := tuitest.Mount(t, pods.New(c, namespace), width, height)
-	return m
-}
-
-func keys(prefix []tea.Msg, more ...tea.Msg) []tea.Msg {
-	return slices.Concat(prefix, more)
-}
-
 func TestRowActionsEmitRequests(t *testing.T) {
 	t.Parallel()
 
 	demo := tuitest.NamespaceDemo
+	multi := []string{tuitest.ContainerApp, tuitest.ContainerSidecar}
 	cases := []struct {
 		name      string
 		namespace string
@@ -50,7 +36,7 @@ func TestRowActionsEmitRequests(t *testing.T) {
 			want:      views.DescribeRequestMsg{Kind: "pod", Namespace: demo, Name: tuitest.PodWeb1},
 		},
 		{
-			name:      "enter in all namespaces reads the namespace column",
+			name:      "enter in all namespaces reads the pod's namespace",
 			namespace: "",
 			keys:      keys(tuitest.FilterBy(tuitest.PodCoreDNS), tuitest.Enter()),
 			want:      views.DescribeRequestMsg{Kind: "pod", Namespace: tuitest.NamespaceSystem, Name: tuitest.PodCoreDNS},
@@ -59,15 +45,27 @@ func TestRowActionsEmitRequests(t *testing.T) {
 			name:      "l on a single-container pod goes straight to the tail prompt",
 			namespace: demo,
 			keys:      keys(tuitest.FilterBy(tuitest.PodWeb1), tuitest.Press("l")),
-			want:      views.TailPromptRequestMsg{Namespace: demo, Pods: []string{tuitest.PodWeb1}, Container: tuitest.ContainerNginx},
+			want: views.TailPromptRequestMsg{
+				Namespace: demo, Pods: []string{tuitest.PodWeb1}, Container: tuitest.ContainerNginx,
+				Target: podRef(demo, tuitest.PodWeb1),
+			},
 		},
 		{
 			name:      "l on a multi-container pod asks for the container",
 			namespace: demo,
 			keys:      keys(tuitest.FilterBy(tuitest.PodMulti), tuitest.Press("l")),
 			want: views.ContainerPromptRequestMsg{
-				Namespace: demo, Pods: []string{tuitest.PodMulti},
-				Containers: []string{tuitest.ContainerApp, tuitest.ContainerSidecar}, NextKind: "logs",
+				Namespace: demo, Pods: []string{tuitest.PodMulti}, Containers: multi, NextKind: "logs",
+				Target: podRef(demo, tuitest.PodMulti),
+			},
+		},
+		{
+			name:      "l in all namespaces streams from the pod's namespace",
+			namespace: "",
+			keys:      keys(tuitest.FilterBy(tuitest.PodCoreDNS), tuitest.Press("l")),
+			want: views.TailPromptRequestMsg{
+				Namespace: tuitest.NamespaceSystem, Pods: []string{tuitest.PodCoreDNS}, Container: tuitest.ContainerCoreDNS,
+				Target: podRef(tuitest.NamespaceSystem, tuitest.PodCoreDNS),
 			},
 		},
 		{
@@ -81,8 +79,8 @@ func TestRowActionsEmitRequests(t *testing.T) {
 			namespace: demo,
 			keys:      keys(tuitest.FilterBy(tuitest.PodMulti), tuitest.Press("e")),
 			want: views.ContainerPromptRequestMsg{
-				Namespace: demo, Pods: []string{tuitest.PodMulti},
-				Containers: []string{tuitest.ContainerApp, tuitest.ContainerSidecar}, NextKind: "exec",
+				Namespace: demo, Pods: []string{tuitest.PodMulti}, Containers: multi, NextKind: "exec",
+				Target: podRef(demo, tuitest.PodMulti),
 			},
 		},
 		{
@@ -97,30 +95,50 @@ func TestRowActionsEmitRequests(t *testing.T) {
 			t.Parallel()
 			m := mounted(t, tuitest.NewFakeClient(t), tc.namespace)
 			_, out := tuitest.Drive(t, m, tc.keys...)
-			if !tuitest.Contains(out, tc.want) {
-				t.Errorf("want %T %+v among:\n%s", tc.want, tc.want, tuitest.Describe(out))
+			reqs := tuitest.Requests(out)
+			if len(reqs) != 1 || !tuitest.Contains(reqs, tc.want) {
+				t.Errorf("want exactly %T %+v, got:\n%s", tc.want, tc.want, tuitest.Describe(reqs))
 			}
 		})
 	}
 }
 
-func TestRowActionsNeedLoadedRows(t *testing.T) {
+// TestRowActionsWithoutARowSaySo: a row key that has no row to act on
+// answers in the status line instead of doing nothing.
+func TestRowActionsWithoutARowSaySo(t *testing.T) {
 	t.Parallel()
 
+	loading := newView(tuitest.NewFakeClient(t), tuitest.NamespaceDemo)
+	noConfig := newView(nil, tuitest.NamespaceDemo)
 	cases := []struct {
 		name string
 		m    pods.Model
+		want views.StatusMsg
 	}{
-		{name: "not loaded yet", m: pods.New(tuitest.NewFakeClient(t), tuitest.NamespaceDemo)},
-		{name: "no kubeconfig", m: pods.New(nil, tuitest.NamespaceDemo)},
-		{name: "empty cluster", m: mounted(t, tuitest.NewFakeClient(t, tuitest.WithObjects()), tuitest.NamespaceDemo)},
+		{name: "not loaded yet", m: loading, want: views.StatusMsg{Level: status.Info, Text: "pods are still loading"}},
+		{name: "no kubeconfig", m: noConfig, want: views.StatusMsg{Level: status.Warn, Text: "no kubeconfig"}},
+		{
+			name: "empty cluster",
+			m:    mounted(t, tuitest.NewFakeClient(t, tuitest.WithObjects()), tuitest.NamespaceDemo),
+			want: views.StatusMsg{Level: status.Warn, Text: "no pod selected"},
+		},
+		{
+			name: "filter matches nothing",
+			m: func() pods.Model {
+				m, _ := tuitest.Drive(t, mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo), tuitest.FilterBy("nothing-here")...)
+				return m
+			}(),
+			want: views.StatusMsg{Level: status.Warn, Text: "no pod selected"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, out := tuitest.Drive(t, tc.m, tuitest.Keys("enter", "l", "e", "f")...)
-			if len(out) != 0 {
-				t.Errorf("row actions without rows emitted:\n%s", tuitest.Describe(out))
+			for _, k := range []string{"enter", "l", "e", "f"} {
+				_, out := tuitest.Drive(t, tc.m, tuitest.Press(k))
+				if len(out) != 1 || out[0] != tc.want {
+					t.Errorf("%s: want only %+v, got:\n%s", k, tc.want, tuitest.Describe(out))
+				}
 			}
 		})
 	}
@@ -140,18 +158,24 @@ func TestViewStates(t *testing.T) {
 	}{
 		{
 			name: "no kubeconfig",
-			m:    func(*testing.T) pods.Model { return pods.New(nil, "") },
+			m: func(*testing.T) pods.Model {
+				m := newView(nil, "")
+				return m
+			},
 			want: []string{"no kubeconfig"},
 		},
 		{
 			name: "loading",
-			m:    func(t *testing.T) pods.Model { return pods.New(tuitest.NewFakeClient(t), "") },
+			m: func(t *testing.T) pods.Model {
+				m := newView(tuitest.NewFakeClient(t), "")
+				return m
+			},
 			want: []string{"loading pods"},
 		},
 		{
 			name:    "namespace scoped table",
 			m:       func(t *testing.T) pods.Model { return mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo) },
-			want:    []string{"NAME", "READY", "STATUS", tuitest.PodWeb1, tuitest.PodMulti, "2/2", "CrashLoopBackOff", "7"},
+			want:    []string{"NAME", "READY", "STATUS", "RESTARTS", "AGE", tuitest.PodWeb1, tuitest.PodMulti, "2/2", "CrashLoopBackOff", "7", "1h"},
 			notWant: []string{"NAMESPACE", tuitest.PodCoreDNS},
 		},
 		{
@@ -242,7 +266,7 @@ func TestWatchToggleKeepsTheCommand(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.want, func(t *testing.T) {
 			t.Parallel()
-			m := pods.New(nil, tc.namespace)
+			m := newView(nil, tc.namespace)
 			if got := m.Command().String(); got != tc.want {
 				t.Errorf("default = %q, want %q", got, tc.want)
 			}
@@ -288,17 +312,19 @@ func TestRefreshRespectsBusy(t *testing.T) {
 	}
 }
 
-func TestStaleGenerationReplyIsDropped(t *testing.T) {
+func TestStaleReplyFromAnotherViewIsDropped(t *testing.T) {
 	t.Parallel()
 
 	c := tuitest.NewFakeClient(t)
-	_, oldReplies := tuitest.Init(t, pods.New(c, tuitest.NamespaceDemo))
+	old := newView(c, tuitest.NamespaceDemo)
+	_, oldReplies := tuitest.Init(t, old)
 	if len(oldReplies) == 0 {
 		t.Fatal("the first view produced no fetch reply")
 	}
 
-	fresh, _ := tuitest.Drive(t, pods.New(c, tuitest.NamespaceDemo), tuitest.Resize(width, height))
-	fresh, inFlight := tuitest.Step(t, fresh, tuitest.Press("r"))
+	fresh := newView(c, tuitest.NamespaceDemo)
+	fresh, _ = tuitest.Drive(t, fresh, tuitest.Resize(width, height))
+	inFlight := tuitest.Collect(t, fresh.Init())
 	fresh, _ = tuitest.Drive(t, fresh, oldReplies...)
 
 	if screen := tuitest.Screen(fresh); !strings.Contains(screen, "loading pods") {
@@ -317,7 +343,7 @@ func TestStaleGenerationReplyIsDropped(t *testing.T) {
 func TestStaticContract(t *testing.T) {
 	t.Parallel()
 
-	m := pods.New(nil, "")
+	m := newView(nil, "")
 	if m.Title() != "pods" {
 		t.Errorf("Title = %q", m.Title())
 	}
