@@ -115,12 +115,22 @@ func TestListEventsNewestFirst(t *testing.T) {
 func ptrTo(e corev1.Event) *corev1.Event { return &e }
 
 // pagedEvents serves total events in pages of the requested Limit, as an
-// apiserver does for a consistent list, and records every request.
+// apiserver does for a consistent list, and records every request. item
+// makes the i-th event in key order; nil serves e-00000, e-00001, ...
+// about pod/web-1, each a second older than the one before.
 type pagedEvents struct {
 	total int
+	item  func(i int) corev1.Event
 
 	mu   sync.Mutex
 	seen []metav1.ListOptions
+}
+
+func (p *pagedEvents) at(i int) corev1.Event {
+	if p.item != nil {
+		return p.item(i)
+	}
+	return event(fmt.Sprintf("e-%05d", i), "Normal", "Pulled", 1, ago(time.Duration(i)*time.Second), ago(time.Duration(i)*time.Second))
 }
 
 func (p *pagedEvents) react(a ktesting.Action) (bool, runtime.Object, error) {
@@ -141,7 +151,7 @@ func (p *pagedEvents) react(a ktesting.Action) (bool, runtime.Object, error) {
 	end := min(start+int(o.Limit), p.total)
 	list := &corev1.EventList{}
 	for i := start; i < end; i++ {
-		list.Items = append(list.Items, event(fmt.Sprintf("e-%05d", i), "Normal", "Pulled", 1, ago(time.Duration(i)*time.Second), ago(time.Duration(i)*time.Second)))
+		list.Items = append(list.Items, p.at(i))
 	}
 	if end < p.total {
 		list.Continue = fmt.Sprintf("from-%d", end)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 )
 
 // eventSubject names the object whose events a describe lists.
@@ -21,44 +24,66 @@ type eventSubject struct {
 	uid                   types.UID
 }
 
-// describeEventsLimit bounds the events a describe lists: an object that
-// has flapped for weeks in a long-lived namespace can have thousands.
-const describeEventsLimit = 500
+const (
+	// describeEventsShown bounds the events a describe lists: an object
+	// that has flapped for weeks in a long-lived namespace can have
+	// thousands.
+	describeEventsShown = 500
+	// describeEventsRead bounds the events read to find the newest: the
+	// server answers in key order, not by time.
+	describeEventsRead = 2000
+)
 
 // eventList is the events about one object, or why they could not be
 // read. Events are best effort: a failed list never fails the describe.
-// more is set when the server held more than describeEventsLimit; they
-// are not read, and subject names the object for the note that says so.
+// items are the newest describeEventsShown of the total read; more is set
+// when the server held more than describeEventsRead, which are not read.
+// subject names the object for the note that says what was left out.
 type eventList struct {
 	items   []corev1.Event
 	err     error
+	total   int
 	more    bool
 	subject eventSubject
 }
 
-// eventsFor lists the events about s. They are matched by uid, as kubectl
-// describe matches them, so an earlier object of the same name lends none
-// of its own; without a uid, by kind and name. The field selector only
-// narrows what the server sends.
+// eventsFor lists the events about s, in pages of eventsPage up to
+// describeEventsRead. They are matched by uid, as kubectl describe matches
+// them, so an earlier object of the same name lends none of its own;
+// without a uid, by kind and name. The field selector only narrows what
+// the server sends.
 func (c *Client) eventsFor(ctx context.Context, s eventSubject) eventList {
 	sel := fields.Set{"involvedObject.name": s.name, "involvedObject.namespace": s.namespace}
 	if s.uid != "" {
 		sel["involvedObject.uid"] = string(s.uid)
 	}
-	list, err := c.Clientset.CoreV1().Events(s.namespace).List(ctx, metav1.ListOptions{
-		FieldSelector: sel.AsSelector().String(),
-		Limit:         describeEventsLimit,
-	})
-	if err != nil {
-		return eventList{err: fmt.Errorf("list events: %w", err)}
-	}
-	mine := make([]corev1.Event, 0, len(list.Items))
-	for _, e := range list.Items {
-		if s.about(e.InvolvedObject) {
-			mine = append(mine, e)
+	opts := metav1.ListOptions{FieldSelector: sel.AsSelector().String(), Limit: eventsPage}
+	var mine []corev1.Event
+	read := 0
+	for {
+		list, err := c.Clientset.CoreV1().Events(s.namespace).List(ctx, opts)
+		if err != nil {
+			return eventList{err: fmt.Errorf("list events: %w", err)}
 		}
+		read += len(list.Items)
+		for _, e := range list.Items {
+			if s.about(e.InvolvedObject) {
+				mine = append(mine, e)
+			}
+		}
+		if list.Continue == "" || read >= describeEventsRead {
+			return newestAbout(s, mine, list.Continue != "")
+		}
+		opts.Continue = list.Continue
 	}
-	return eventList{items: mine, more: list.Continue != "", subject: s}
+}
+
+// newestAbout keeps the newest describeEventsShown of mine, the events
+// read about s; more marks a list the server had not finished.
+func newestAbout(s eventSubject, mine []corev1.Event, more bool) eventList {
+	slices.SortStableFunc(mine, func(a, b corev1.Event) int { return eventTime(b).Compare(eventTime(a)) })
+	kept := mine[:min(len(mine), describeEventsShown)]
+	return eventList{items: slices.Clip(kept), total: len(mine), more: more, subject: s}
 }
 
 func (s eventSubject) about(ref corev1.ObjectReference) bool {
@@ -89,11 +114,23 @@ func writeEvents(w describeWriter, ev eventList, now time.Time) {
 	for _, e := range sorted {
 		w.write(1, "%s\t%s\t%s\t%s\t%s\n", e.Type, e.Reason, eventAge(e, now), eventSource(e), strings.TrimSpace(e.Message))
 	}
-	if ev.more {
+	if ev.more || ev.total > len(ev.items) {
+		of := strconv.Itoa(ev.total)
+		if ev.more {
+			of = "more than " + strconv.Itoa(describeEventsRead)
+		}
 		w.flush()
-		s := ev.subject
-		w.write(1, "… more events: kubectl events --for %s/%s -n %s\n", strings.ToLower(s.kind), s.name, s.namespace)
+		w.write(1, "… showing the newest %d of %s: %s\n", len(ev.items), of, ev.subject.eventsCommand())
 	}
+}
+
+// eventsCommand is the `kubectl events` that lists every event about s.
+func (s eventSubject) eventsCommand() string {
+	args := []string{"events", "--for", strings.ToLower(s.kind) + "/" + s.name}
+	if s.namespace != "" {
+		args = append(args, "-n", s.namespace)
+	}
+	return kubectl.New(args...).String()
 }
 
 // unavailable is the short reason events could not be listed.
