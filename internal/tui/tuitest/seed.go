@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -45,25 +46,67 @@ const (
 const seedAge = 90 * time.Minute
 
 // DemoObjects returns the default seed: three namespaces, five pods (one of
-// them with two containers, one crash-looping), two deployments and two
-// services selecting them. Every call returns fresh objects.
+// them with two containers, one crash-looping), two deployments with the
+// ReplicaSets that own their pods, and two services selecting them. Every call returns fresh objects.
 func DemoObjects() []runtime.Object {
 	web := map[string]string{"app": "web"}
 	multi := map[string]string{"app": "multi"}
+	webDep, webRS := controlled(Deployment(NamespaceDemo, DeploymentWeb, 2, web, ContainerNginx))
+	multiDep, multiRS := controlled(Deployment(NamespaceDemo, DeploymentMulti, 1, multi, ContainerApp, ContainerSidecar))
 	return []runtime.Object{
 		Namespace(NamespaceDefault),
 		Namespace(NamespaceDemo),
 		Namespace(NamespaceSystem),
-		Pod(NamespaceDemo, PodWeb1, web, ContainerNginx),
-		Pod(NamespaceDemo, PodWeb2, web, ContainerNginx),
-		Pod(NamespaceDemo, PodMulti, multi, ContainerApp, ContainerSidecar),
+		ownedBy(Pod(NamespaceDemo, PodWeb1, hashed(web), ContainerNginx), webRS),
+		ownedBy(Pod(NamespaceDemo, PodWeb2, hashed(web), ContainerNginx), webRS),
+		ownedBy(Pod(NamespaceDemo, PodMulti, hashed(multi), ContainerApp, ContainerSidecar), multiRS),
 		crashLooping(Pod(NamespaceDemo, PodCrash, map[string]string{"app": "crash"}, ContainerApp)),
 		Pod(NamespaceSystem, PodCoreDNS, map[string]string{"k8s-app": "kube-dns"}, ContainerCoreDNS),
-		Deployment(NamespaceDemo, DeploymentWeb, 2, web, ContainerNginx),
-		Deployment(NamespaceDemo, DeploymentMulti, 1, multi, ContainerApp, ContainerSidecar),
+		webDep, webRS,
+		multiDep, multiRS,
 		Service(NamespaceDemo, ServiceWeb, ServiceWebPort, web),
 		Service(NamespaceDemo, ServiceMulti, ServiceMultiPort, multi),
 	}
+}
+
+// templateHash is the pod-template-hash of every demo ReplicaSet.
+const templateHash = "7d4b9c"
+
+const hashLabel = "pod-template-hash"
+
+func hashed(labels map[string]string) map[string]string {
+	out := map[string]string{hashLabel: templateHash}
+	for k, v := range labels {
+		out[k] = v
+	}
+	return out
+}
+
+// controlled gives dep a UID and returns it with the ReplicaSet the
+// deployment controller would create for it, at revision 1.
+func controlled(dep *appsv1.Deployment) (*appsv1.Deployment, *appsv1.ReplicaSet) {
+	dep.UID = types.UID("uid-" + dep.Namespace + "-" + dep.Name)
+	rs := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{
+		Name:              dep.Name + "-" + templateHash,
+		Namespace:         dep.Namespace,
+		UID:               types.UID("uid-rs-" + dep.Namespace + "-" + dep.Name),
+		Labels:            hashed(dep.Spec.Selector.MatchLabels),
+		Annotations:       map[string]string{"deployment.kubernetes.io/revision": "1"},
+		CreationTimestamp: created(),
+		OwnerReferences:   []metav1.OwnerReference{controllerRef("Deployment", dep.Name, dep.UID)},
+	}}
+	return dep, rs
+}
+
+// ownedBy marks rs as the controller of pod.
+func ownedBy(pod *corev1.Pod, rs *appsv1.ReplicaSet) *corev1.Pod {
+	pod.OwnerReferences = []metav1.OwnerReference{controllerRef("ReplicaSet", rs.Name, rs.UID)}
+	return pod
+}
+
+func controllerRef(kind, name string, uid types.UID) metav1.OwnerReference {
+	yes := true
+	return metav1.OwnerReference{APIVersion: "apps/v1", Kind: kind, Name: name, UID: uid, Controller: &yes}
 }
 
 func created() metav1.Time {

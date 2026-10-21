@@ -142,9 +142,9 @@ func TestKeysThatCannotActSayWhy(t *testing.T) {
 		{
 			name: "l with only pods of other owners",
 			m: func(t *testing.T) deployments.Model {
-				return mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo)
+				return mounted(t, tuitest.NewFakeClient(t, tuitest.WithObjects(strayObjects()...)), shop)
 			},
-			keys: on(tuitest.DeploymentWeb, tuitest.Press("l")),
+			keys: on("web", tuitest.Press("l")),
 			want: views.StatusMsg{Level: status.Warn, Text: "deployment web: 0 running pods · 2 other pods skipped (kubectl logs -l would include them)"},
 		},
 		{

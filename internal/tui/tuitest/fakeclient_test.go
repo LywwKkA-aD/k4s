@@ -59,13 +59,17 @@ func TestFakeClientSeedRelations(t *testing.T) {
 	if err != nil || !slices.Equal(containers, []string{tuitest.ContainerApp, tuitest.ContainerSidecar}) {
 		t.Errorf("multi containers = %v, %v", containers, err)
 	}
-	pods, err := c.PodsForDeployment(ctx, tuitest.NamespaceDemo, tuitest.DeploymentWeb)
-	if err != nil || !slices.Equal(pods, []string{tuitest.PodWeb1, tuitest.PodWeb2}) {
-		t.Errorf("web deployment pods = %v, %v", pods, err)
+	web, err := c.ResolveLogTarget(ctx, k8s.LogKindDeployment, tuitest.NamespaceDemo, tuitest.DeploymentWeb)
+	if err != nil || !slices.Equal(web.PodNames(), []string{tuitest.PodWeb1, tuitest.PodWeb2}) || len(web.Skipped) != 0 {
+		t.Errorf("web deployment target = %+v, %v", web, err)
 	}
-	svcPods, svcContainers, err := c.PodsAndContainersForService(ctx, tuitest.NamespaceDemo, tuitest.ServiceMulti)
-	if err != nil || !slices.Equal(svcPods, []string{tuitest.PodMulti}) || len(svcContainers) != 2 {
-		t.Errorf("multi service = %v %v, %v", svcPods, svcContainers, err)
+	multi, err := c.ResolveLogTarget(ctx, k8s.LogKindDeployment, tuitest.NamespaceDemo, tuitest.DeploymentMulti)
+	if err != nil || !slices.Equal(multi.PodNames(), []string{tuitest.PodMulti}) || len(multi.Containers) != 2 {
+		t.Errorf("multi deployment target = %+v, %v", multi, err)
+	}
+	svc, err := c.ResolveLogTarget(ctx, k8s.LogKindService, tuitest.NamespaceDemo, tuitest.ServiceMulti)
+	if err != nil || !slices.Equal(svc.PodNames(), []string{tuitest.PodMulti}) || len(svc.Containers) != 2 {
+		t.Errorf("multi service target = %+v, %v", svc, err)
 	}
 }
 

@@ -88,6 +88,18 @@ func shopObjects() []runtime.Object {
 	)
 }
 
+// strayObjects is a deployment web in shop whose labels two pods share
+// without any controller owning them, as a CronJob's pods would.
+func strayObjects() []runtime.Object {
+	labels := map[string]string{"app": "web"}
+	return []runtime.Object{
+		tuitest.Namespace(shop),
+		tuitest.Deployment(shop, "web", 2, labels, appContainer),
+		tuitest.Pod(shop, "web-1", labels, appContainer),
+		tuitest.Pod(shop, "web-2", labels, appContainer),
+	}
+}
+
 // payObjects is a namespace whose deployments "pay" matches four of:
 // pay-api, pay-gateway, pay-worker, payments; web does not match.
 func payObjects() []runtime.Object {
