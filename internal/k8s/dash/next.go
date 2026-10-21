@@ -71,10 +71,34 @@ func suggest(s Snapshot) []Suggestion {
 	return pick(out)
 }
 
-// ownedBy reports whether a pod suggestion already covers workload w: its
-// pods are named <w>-<hash>-<id> (deployment) or <w>-<ordinal> (statefulset).
+// ownedBy reports whether pod belongs to workload w: its pods are named
+// <w>-<hash>-<id> (deployment) or <w>-<ordinal> (statefulset). Matching the
+// shape, not just the prefix, keeps api-gateway-7d9f-x from covering "api".
 func ownedBy(pod, w ObjectKey) bool {
-	return pod.Kind == "pod" && pod.Namespace == w.Namespace && strings.HasPrefix(pod.Name, w.Name+"-")
+	if pod.Kind != "pod" || pod.Namespace != w.Namespace {
+		return false
+	}
+	rest, ok := strings.CutPrefix(pod.Name, w.Name+"-")
+	if !ok || rest == "" {
+		return false
+	}
+	switch w.Kind {
+	case "deployment":
+		return strings.Count(rest, "-") == 1 && !strings.HasPrefix(rest, "-") && !strings.HasSuffix(rest, "-")
+	case "statefulset":
+		return isOrdinal(rest)
+	default:
+		return false
+	}
+}
+
+func isOrdinal(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 func podSuggestion(r PodRow) (Suggestion, bool) {
@@ -177,10 +201,30 @@ func pick(in []Suggestion) []Suggestion {
 		}
 		return in[i].ago < in[j].ago
 	})
+	// A workload is hidden only by a pod suggestion that made the cut, and
+	// hiding it can let another pod in; repeat until the set is stable.
+	covered := map[ObjectKey]bool{}
+	for {
+		out := take(in, covered)
+		grew := false
+		for _, w := range out {
+			if !covered[w.Target] && coveredByPod(w.Target, out) {
+				covered[w.Target], grew = true, true
+			}
+		}
+		if !grew {
+			return out
+		}
+	}
+}
+
+// take keeps the first suggestion per object, up to the cap, skipping
+// the workloads in skip.
+func take(in []Suggestion, skip map[ObjectKey]bool) []Suggestion {
 	seen := map[ObjectKey]bool{}
 	var out []Suggestion
 	for _, sg := range in {
-		if seen[sg.Target] || len(out) >= maxSuggestions || coveredByPod(sg.Target, in) {
+		if seen[sg.Target] || skip[sg.Target] || len(out) >= maxSuggestions {
 			continue
 		}
 		seen[sg.Target] = true
@@ -189,11 +233,11 @@ func pick(in []Suggestion) []Suggestion {
 	return out
 }
 
-func coveredByPod(target ObjectKey, all []Suggestion) bool {
+func coveredByPod(target ObjectKey, picked []Suggestion) bool {
 	if target.Kind != "deployment" && target.Kind != "statefulset" {
 		return false
 	}
-	for _, sg := range all {
+	for _, sg := range picked {
 		if ownedBy(sg.Target, target) {
 			return true
 		}
