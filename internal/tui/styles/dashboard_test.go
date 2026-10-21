@@ -3,11 +3,14 @@ package styles
 import (
 	"image/color"
 	"slices"
+	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/LywwKkA-aD/k4s/internal/tui/viz"
 )
 
 // The spec allows no new hex values: accent2 is the cyan pods already use.
@@ -234,4 +237,17 @@ func containsSGR(s, params string) bool {
 		}
 	}
 	return false
+}
+
+// The meter's hot mark and the warn chip are one glyph, so they can never
+// disagree. viz does not import styles, so the check lives here.
+func TestMeterHotGlyphIsTheWarnGlyph(t *testing.T) {
+	t.Parallel()
+	if viz.HotGlyph != GlyphWarn {
+		t.Errorf("viz.HotGlyph = %q, GlyphWarn = %q", viz.HotGlyph, GlyphWarn)
+	}
+	got := ansi.Strip(viz.Meter(viz.Mono(), 18, 90, 1))
+	if !strings.HasSuffix(got, GlyphWarn) {
+		t.Errorf("hot meter %q does not end in %q", got, GlyphWarn)
+	}
 }

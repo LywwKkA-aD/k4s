@@ -225,3 +225,16 @@ func TestGradientIsSafeForConcurrentUse(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// A width from a broken terminal report must not allocate a ramp of that
+// size.
+func TestGradientWidthIsClamped(t *testing.T) {
+	t.Cleanup(resetTheme)
+	use(colourPalette(true))
+	if got := Gradient(1 << 30).Len(); got != maxRampWidth {
+		t.Errorf("Gradient(1<<30).Len() = %d, want %d", got, maxRampWidth)
+	}
+	if got := Gradient(maxRampWidth).Len(); got != maxRampWidth {
+		t.Errorf("Gradient(%d).Len() = %d", maxRampWidth, got)
+	}
+}
