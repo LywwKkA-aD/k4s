@@ -146,6 +146,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (views.View, tea.Cmd) {
 		return m.onEnter()
 	case key.Matches(msg, m.keys.logs):
 		return m.onLogs()
+	case key.Matches(msg, m.keys.sort) && m.mem.focus.panel == dash.PanelTopPods:
+		m.mem.topByMemory = !m.mem.topByMemory
+		return m.relayout(), nil
 	}
 	if m.client == nil {
 		return m, nil

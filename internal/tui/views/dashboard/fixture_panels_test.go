@@ -6,7 +6,53 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 )
 
-// Panels 4 and 5 of the busy fixture, shaped like the 207x58 mockup.
+// Panels 4 to 7 of the busy fixture, shaped like the 207x58 mockup. Panel
+// 6 is stock k3s as the critique has it: traefik is a Deployment, and
+// ServiceLB, off here, would be svclb-* DaemonSets.
+
+// component is a bundled Deployment in kube-system, fully ready.
+func component(name string) dash.Component {
+	const kind = "deployment"
+	k := dash.ObjectKey{Kind: kind, Namespace: "kube-system", Name: name}
+	return dash.Component{Key: k, Present: true, Ready: 1, Desired: 1, Sev: dash.SevOK, Cmd: kc("describe", kind, name, "-n", "kube-system")}
+}
+
+func busyK3sPanel() dash.K3sPanel {
+	return dash.K3sPanel{
+		Shown: true, Cmd: kc("get", "deploy,ds", "-n", "kube-system"),
+		Components: []dash.Component{
+			component("coredns"),
+			component("traefik"),
+			component("metrics-server"),
+			component("local-path-provisioner"),
+		},
+		ServiceLB: dash.ServiceLBRow{State: dash.StateAbsent, Pending: 1, Cmd: kc("get", "svc", "-A", "--field-selector", "spec.type=LoadBalancer")},
+		Helm:      dash.HelmRow{Avail: ok(), Charts: []string{"traefik", "traefik-crd"}, Cmd: approxCmd("get", "helmcharts", "-A")},
+		Etcd:      dash.EtcdRow{Shown: true, Known: true, Ago: 4 * hour, Node: "k3s-cp-1", Cmd: kc("get", "etcdsnapshotfiles")},
+	}
+}
+
+func usage(ns, name string, cpu, memMi int64) dash.PodUsage {
+	return dash.PodUsage{Key: podKey(ns, name), CPUMilli: cpu, MemBytes: memMi << 20, Cmd: kc("describe", "pod", name, "-n", ns)}
+}
+
+func busyTopPods() dash.TopPodsPanel {
+	byCPU := []dash.PodUsage{
+		usage("monitoring", "prometheus-k8s-0", 1420, 3172),
+		usage("shop", "payments-api-5f7b8c9d4-tq8vn", 910, 612),
+		usage("growlytics", "ingest-6d8c7b5f9-m2kzp", 770, 1434),
+		usage("kube-system", "traefik-6f5f87584-x7k2p", 310, 98),
+		usage("monitoring", "loki-write-0", 280, 2210),
+		usage("ci", "runner-build-8811-q4w9d", 240, 1102),
+		usage("growlytics", "web-7c9d8f6b5-p2r7x", 190, 384),
+		usage("kube-system", "coredns-ccb96694c-8xq2z", 20, 41),
+	}
+	byMem := []dash.PodUsage{byCPU[0], byCPU[4], byCPU[2], byCPU[5], byCPU[1], byCPU[6], byCPU[3], byCPU[7]}
+	return dash.TopPodsPanel{
+		Avail: ok(), Reporting: 76, ByCPU: byCPU, ByMemory: byMem,
+		CmdCPU: kc("top", "pods", "-A", "--sort-by=cpu"), CmdMemory: kc("top", "pods", "-A", "--sort-by=memory"),
+	}
+}
 
 func workload(kind, ns, name string, ready, desired, upToDate, avail int, sev dash.Severity) dash.WorkloadRow {
 	k := dash.ObjectKey{Kind: kind, Namespace: ns, Name: name}

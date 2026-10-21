@@ -35,6 +35,8 @@ type Memory struct {
 	// last snapshot whose section hashes moved.
 	pausedAt time.Time
 	changed  time.Time
+	// topByMemory is panel 7 sorted by memory (s), not CPU.
+	topByMemory bool
 }
 
 // adopt returns the memory to start from for client c listing ns: a fresh

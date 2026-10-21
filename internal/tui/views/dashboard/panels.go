@@ -26,6 +26,14 @@ func panelLabel(p dash.Panel) string {
 	return strconv.Itoa(int(p)) + " " + panelNames[p]
 }
 
+// panelCommand is panelCmd with panel 7's --sort-by following s.
+func (m Model) panelCommand(p dash.Panel) dash.Cmd {
+	if p == dash.PanelTopPods && m.mem.topByMemory {
+		return m.mem.snap.TopPods.CmdMemory
+	}
+	return panelCmd(p, m.mem.snap)
+}
+
 // panelCmd is the command of a panel as a whole; the banner's is the
 // verdict's.
 func panelCmd(p dash.Panel, s dash.Snapshot) dash.Cmd {
@@ -49,9 +57,11 @@ func panelCmd(p dash.Panel, s dash.Snapshot) dash.Cmd {
 }
 
 // rowsOf lists the rows the cursor can stand on in panel p as layout l
-// draws it, in drawing order. Panels 6 and 7 have none yet: they are
-// focused as a whole.
-func rowsOf(p dash.Panel, s dash.Snapshot, l layout) []row {
+// draws it, in drawing order; none where p is a summary line.
+func rowsOf(p dash.Panel, s dash.Snapshot, l layout, byMemory bool) []row {
+	if pl, ok := l.placeOf(p); ok && pl.line {
+		return nil
+	}
 	switch p {
 	case dash.PanelOverview:
 		return nextRows(s, l)
@@ -80,6 +90,15 @@ func rowsOf(p dash.Panel, s dash.Snapshot, l layout) []row {
 			out = append(out, it.row)
 		}
 		return out
+	case dash.PanelK3s:
+		items := k3sItems(s)
+		out := make([]row, 0, len(items))
+		for _, it := range items {
+			out = append(out, it.row)
+		}
+		return out
+	case dash.PanelTopPods:
+		return topRows(topItems(s, byMemory))
 	}
 	return nil
 }
