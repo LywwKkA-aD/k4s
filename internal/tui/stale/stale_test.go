@@ -141,3 +141,17 @@ func TestReset(t *testing.T) {
 		t.Errorf("an error after Reset emitted %v, want one status", got)
 	}
 }
+
+func TestTrackSaysNothing(t *testing.T) {
+	t.Parallel()
+
+	var h stale.Health
+	h = h.Track(nil)
+	h = h.Track(errDown)
+	if !h.Stale() || !errors.Is(h.Err(), errDown) {
+		t.Errorf("Track(err) after a list: Stale = %v, Err = %v", h.Stale(), h.Err())
+	}
+	if _, cmd := h.Fold(errDown); cmd == nil {
+		t.Error("Track used up the status Fold owes for a new error")
+	}
+}

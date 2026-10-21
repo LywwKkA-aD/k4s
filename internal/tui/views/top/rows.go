@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
@@ -83,9 +84,26 @@ func (m Model) withRows() Model {
 		rows = append(rows, u.cells)
 		keys = append(keys, u.key)
 	}
+	at, had := m.cursorKey()
+	prev := max(m.table.Cursor(), 0)
 	m.table.SetRows(rows)
 	m.keys = keys
-	return m
+	if len(keys) == 0 {
+		return m
+	}
+	if i := slices.Index(keys, at); had && i >= 0 {
+		return m.withCursor(i)
+	}
+	return m.withCursor(min(prev, len(keys)-1))
+}
+
+// cursorKey is the views.RowKey of the row under the cursor, if any.
+func (m Model) cursorKey() (string, bool) {
+	c := m.table.Cursor()
+	if c < 0 || c >= len(m.keys) {
+		return "", false
+	}
+	return m.keys[c], true
 }
 
 func (m Model) sortValue(u usage) int64 {
@@ -130,9 +148,10 @@ func (m Model) View() string {
 	if !m.loaded {
 		return styles.Hint.Render("loading metrics…")
 	}
-	if m.err != nil {
-		hint := "metrics unavailable: " + m.err.Error()
-		if isMetricsServerMissing(m.err) {
+	if m.health.Failed() {
+		err := m.health.Err()
+		hint := "metrics unavailable: " + err.Error()
+		if isMetricsServerMissing(err) {
 			hint += "\n\n" + styles.Hint.Render(
 				"hint: install metrics-server (kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml)",
 			)
@@ -142,7 +161,18 @@ func (m Model) View() string {
 	if len(m.table.Rows()) == 0 {
 		return styles.Hint.Render("no metrics yet (give metrics-server a few seconds)")
 	}
+	if banner := m.health.Banner(); banner != "" {
+		return lipgloss.JoinVertical(lipgloss.Left, banner, m.table.View())
+	}
 	return m.table.View()
+}
+
+// tableHeight is the body less the stale banner's line.
+func (m Model) tableHeight() int {
+	if m.health.Stale() {
+		return m.bodyH - 1
+	}
+	return m.bodyH
 }
 
 // report is the status for a failed fetch: once when the failure starts or
@@ -152,7 +182,7 @@ func (m Model) report(err error) tea.Cmd {
 	if err == nil {
 		return nil
 	}
-	if !m.asked && m.err != nil && m.err.Error() == err.Error() {
+	if last := m.health.Err(); !m.asked && last != nil && last.Error() == err.Error() {
 		return nil
 	}
 	msg := views.StatusMsg{Level: status.Warn, Text: "metrics unavailable: " + err.Error()}

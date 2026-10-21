@@ -119,7 +119,7 @@ func TestDefaultsRestoreAsPodsByCPU(t *testing.T) {
 	t.Parallel()
 
 	m, _, _ := restored(t, views.State{Selected: keyMulti})
-	if got := m.Command().String(); got != "kubectl top pods -A" {
+	if got := m.Command().String(); got != "kubectl top pods -A --sort-by=cpu" {
 		t.Errorf("Command = %q", got)
 	}
 }

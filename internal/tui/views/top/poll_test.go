@@ -105,9 +105,9 @@ func TestSortToggle(t *testing.T) {
 		first, last string
 		command     string
 	}{
-		{name: "pods by cpu", first: "cpu-hog", last: "mem-hog", command: "kubectl top pods -n demo"},
+		{name: "pods by cpu", first: "cpu-hog", last: "mem-hog", command: "kubectl top pods -n demo --sort-by=cpu"},
 		{name: "pods by memory", keys: tuitest.Keys("s"), first: "mem-hog", last: "cpu-hog", command: "kubectl top pods -n demo --sort-by=memory"},
-		{name: "back to cpu", keys: tuitest.Keys("s", "s"), first: "cpu-hog", last: "mem-hog", command: "kubectl top pods -n demo"},
+		{name: "back to cpu", keys: tuitest.Keys("s", "s"), first: "cpu-hog", last: "mem-hog", command: "kubectl top pods -n demo --sort-by=cpu"},
 		{name: "nodes by memory", keys: tuitest.Keys("s", "n"), first: "mem-node", last: "cpu-node", command: "kubectl top nodes --sort-by=memory"},
 	}
 	for _, tc := range cases {

@@ -1,2 +1,2 @@
  q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  n nodes/pods  ·  s sort cpu  ·  w watch 5s  ·  r refresh
- kubectl top pods -A
+ kubectl top pods -A --sort-by=cpu

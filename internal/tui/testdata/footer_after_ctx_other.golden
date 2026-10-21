@@ -3,8 +3,8 @@ pods: kubectl --context other get pods -n demo
 deployments: kubectl --context other get deployments -n demo
 services: kubectl --context other get services -n demo
 namespaces: kubectl --context other get namespaces
-top pods: kubectl --context other top pods -n demo
-top nodes: kubectl --context other top nodes
+top pods: kubectl --context other top pods -n demo --sort-by=cpu
+top nodes: kubectl --context other top nodes --sort-by=cpu
 describe: kubectl --context other describe pod web-1 -n demo
 logs: kubectl --context other logs -f web-1 --tail=100 -n demo
 tail prompt: kubectl --context other logs -f web-1 --tail=100 -n demo

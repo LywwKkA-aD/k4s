@@ -19,6 +19,8 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
@@ -63,8 +65,11 @@ type Model struct {
 	pods  []k8s.PodMetric
 	nodes []k8s.NodeMetric
 	// keys holds views.RowKey of each table row, in row order.
-	keys   []string
-	err    error
+	keys []string
+	// health is the last answer: an error over earlier rows is a stale
+	// view, one before any rows is the body.
+	health stale.Health
+	bodyH  int
 	loaded bool
 	// asked marks a fetch the user started (r, n): its failure is reported
 	// even when it repeats the last one.
@@ -155,7 +160,8 @@ func (m Model) timeout() time.Duration {
 func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.table.SetHeight(max(msg.Height, minTableRows))
+		m.bodyH = msg.Height
+		m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	case async.TickMsg:
 		var due bool
 		if m.poll, due = m.poll.Due(msg); due {
@@ -186,7 +192,9 @@ func (m Model) onReply(tok async.Token, err error, keep func(Model) Model) (view
 	var next tea.Cmd
 	m.poll, next = m.poll.Done(tok, err)
 	report := m.report(err)
-	m.loaded, m.err, m.asked = true, err, false
+	m.health = m.health.Track(err)
+	m.loaded, m.asked = true, false
+	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	if err != nil {
 		return m, tea.Batch(next, report)
 	}
@@ -209,7 +217,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	case key.Matches(msg, m.refreshKey) && m.client != nil:
 		var ok bool
 		if m.poll, ok = m.poll.Begin(); !ok {
-			return m, nil, true
+			return m, func() tea.Msg {
+				return views.StatusMsg{Level: status.Info, Text: "refresh already running"}
+			}, true
 		}
 		m.asked = true
 		return m, m.fetch(), true
@@ -235,7 +245,7 @@ func (m Model) withMode(md mode) Model {
 	m.mode = md
 	m.table = newTable(md, m.namespace == "")
 	m.pods, m.nodes, m.keys = nil, nil, nil
-	m.loaded, m.err = false, nil
+	m.loaded, m.health = false, m.health.Reset()
 	m.pending = pendingRow{}
 	return m
 }
@@ -252,8 +262,8 @@ func otherMode(md mode) mode {
 // Command only.
 func (m Model) Title() string { return "top" }
 
-// Command implements views.View. The default CPU order is left implicit;
-// a memory sort is spelled out with --sort-by.
+// Command implements views.View. The sort is always spelled out, so the
+// command pasted from the footer orders its rows as the view does.
 func (m Model) Command() kubectl.Cmd {
 	args := []string{"top", "nodes"}
 	if m.mode == modePods {
@@ -262,10 +272,7 @@ func (m Model) Command() kubectl.Cmd {
 			args = []string{"top", "pods", "-n", m.namespace}
 		}
 	}
-	if m.sort == sortMemory {
-		args = append(args, "--sort-by=memory")
-	}
-	return kubectl.New(args...)
+	return kubectl.New(append(args, "--sort-by="+string(m.sort))...)
 }
 
 // Help implements views.View. The s and w hints show the current sort and
