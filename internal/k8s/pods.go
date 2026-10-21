@@ -29,7 +29,7 @@ type Pod struct {
 func (c *Client) ListPods(ctx context.Context, namespace string, opts ...ListOption) ([]Pod, error) {
 	list, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, listOptions(opts))
 	if err != nil {
-		return nil, fmt.Errorf("list pods: %w", err)
+		return nil, listError("pods", namespace, err)
 	}
 	out := make([]Pod, 0, len(list.Items))
 	now := time.Now()

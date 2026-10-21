@@ -2,7 +2,6 @@ package k8s
 
 import (
 	"context"
-	"fmt"
 	"time"
 )
 
@@ -23,7 +22,7 @@ type Deployment struct {
 func (c *Client) ListDeployments(ctx context.Context, namespace string, opts ...ListOption) ([]Deployment, error) {
 	list, err := c.Clientset.AppsV1().Deployments(namespace).List(ctx, listOptions(opts))
 	if err != nil {
-		return nil, fmt.Errorf("list deployments: %w", err)
+		return nil, listError("deployments", namespace, err)
 	}
 	out := make([]Deployment, 0, len(list.Items))
 	now := time.Now()
