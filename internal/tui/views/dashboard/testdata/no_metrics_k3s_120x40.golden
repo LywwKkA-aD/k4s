@@ -1,5 +1,5 @@
-›▲ attention  3 CrashLoopBackOff · 1 ImagePullBackOff · 4 workloads · 1 job  △ 2 not ready · 1 warning in 10m  watch 5s 
- ▸ next 1/3  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --previous   why does it keep crashing?     
+›▲ attention  3 CrashLoopBackOff · 1 ImagePullBackOff · 4 workloads · 1 job  △ 2 not ready · +1   ◆ 14:02:00 · watch 5s 
+ ▸ next 1/6  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --previous   why does it keep crashing?     
    6 k3s        ● 4/4 components · ◆ etcd snapshot 4h ago                                                               
 ╭─┤ 1 cluster ├──────────────────────────────────── ◆ k3s ─╮╭─┤ 2 nodes ├────────────────────────────────── 3/3 Ready ─╮
 │ ● api      ready · 8/8 checks · etcd ok                  ││   NODE         ROLES               STATUS     PODS  AGE  │

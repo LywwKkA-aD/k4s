@@ -33,6 +33,14 @@ type row struct {
 	target dash.ObjectKey
 	// placed is set when target carries its namespace.
 	placed bool
+	// container is the pod's container l reads, "" for kubectl's default.
+	container string
+}
+
+// pod reports a row that stands for a pod placed in its namespace: one l
+// opens logs for.
+func (r row) pod() bool {
+	return r.placed && r.target.Kind == "pod"
 }
 
 // at focuses panel p at panel level. Focusing a panel opens it in the

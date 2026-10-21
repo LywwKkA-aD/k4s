@@ -150,6 +150,9 @@ func (m Model) Help() []key.Binding {
 	if desc := m.enterHint(); desc != "" {
 		out = append(out, key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", desc)))
 	}
+	if m.logsHint() {
+		out = append(out, m.keys.logs)
+	}
 	return append(out, m.keys.refresh, key.NewBinding(key.WithKeys("w"), key.WithHelp("w", m.watchHint())))
 }
 

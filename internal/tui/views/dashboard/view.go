@@ -44,18 +44,20 @@ func (m Model) frame() frame {
 		hint = "refreshing…"
 	}
 	f := frame{
-		snap:    m.mem.snap,
-		loaded:  m.mem.loaded,
-		hist:    m.mem.hist,
-		focus:   m.mem.focus,
-		since:   m.mem.since,
-		ctx:     clean(m.client.Context),
-		session: m.session,
-		hint:    hint,
-		retry:   m.next,
-		paused:  !m.poll.Enabled(),
-		th:      themeOf(ds),
-		ds:      ds,
+		snap:     m.mem.snap,
+		loaded:   m.mem.loaded,
+		hist:     m.mem.hist,
+		focus:    m.mem.focus,
+		since:    m.mem.since,
+		ctx:      clean(m.client.Context),
+		session:  m.session,
+		hint:     hint,
+		retry:    m.next,
+		paused:   !m.poll.Enabled(),
+		pausedAt: m.mem.pausedAt,
+		changed:  m.mem.changed,
+		th:       themeOf(ds),
+		ds:       ds,
 	}
 	// The fast tier is the pulse: when pods time out, the cluster is gone.
 	if u := m.mem.snap.Ledger[dash.Pods]; u.State == dash.StateStale {
