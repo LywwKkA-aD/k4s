@@ -15,8 +15,6 @@ type State struct {
 	// Cursor is the cursor's index when the state was taken: where the
 	// cursor lands when Selected is gone.
 	Cursor int
-	// Offset is the first row shown, the table's scroll offset.
-	Offset int
 	// Paused is set when the user turned auto-refresh off with w; the zero
 	// State watches, as a fresh view does.
 	Paused bool
@@ -29,7 +27,7 @@ type State struct {
 // WithoutSelection returns s without its row: the state :ns <name> carries
 // into the same view in another namespace, where the row is not.
 func (s State) WithoutSelection() State {
-	s.Selected, s.Cursor, s.Offset = "", 0, 0
+	s.Selected, s.Cursor = "", 0
 	return s
 }
 
@@ -58,7 +56,7 @@ type Stateful interface {
 //   - applies Filter at once, so its first frame is already filtered;
 //   - keeps Paused, Mode and Sort;
 //   - holds Selected until its first list arrives, then puts the cursor on
-//     that row and scrolls to Offset;
+//     that row (the table scrolls it into view);
 //   - when that row is gone, lands on the row at Cursor (clamped to the
 //     list) and emits a StatusMsg at status.Info such as
 //     "deployment web is gone";
