@@ -41,6 +41,7 @@ type Model struct {
 	home    string
 	now     func() time.Time
 	fetch   FetchFunc
+	session kubectl.Session
 
 	mem  Memory
 	poll async.Poller
@@ -78,6 +79,7 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 		home:    home,
 		now:     cfg.now,
 		fetch:   fetch,
+		session: cfg.session,
 		mem:     mem,
 		blurred: cfg.blurred,
 		lastKey: now,
@@ -140,13 +142,14 @@ func (m Model) Help() []key.Binding {
 }
 
 // HelpMap lists the panels for the help popup: the key that focuses each
-// one, its name and its kubectl command.
+// one, its name and its kubectl command, decorated for this session like
+// the footer's.
 func (m Model) HelpMap() []key.Binding {
 	panels := append([]dash.Panel{dash.PanelOverview}, m.lay.visible()...)
 	out := make([]key.Binding, 0, len(panels))
 	for _, p := range panels {
 		k := strconv.Itoa(int(p))
-		desc := panelNames[p] + " · " + toKubectl(panelCmd(p, m.mem.snap)).Display()
+		desc := panelNames[p] + " · " + kubectl.Decorate(toKubectl(panelCmd(p, m.mem.snap)), m.session).Display()
 		out = append(out, key.NewBinding(key.WithKeys(k), key.WithHelp(k, desc)))
 	}
 	return out

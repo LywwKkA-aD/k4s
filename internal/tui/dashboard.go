@@ -8,12 +8,15 @@ import (
 )
 
 // newDashboard builds the dashboard in the active namespace, with what the
-// last dashboard learned and the terminal's focus as last reported.
+// last dashboard learned, the terminal's focus as last reported and the
+// session the footer decorates with, so commands printed in its body paste
+// as the footer's do.
 func (m Model) newDashboard() views.View {
 	return dashboard.New(m.client, m.loadErr,
 		dashboard.WithNamespace(m.namespace),
 		dashboard.WithMemory(m.dashMem),
-		dashboard.WithBlurred(m.blurred))
+		dashboard.WithBlurred(m.blurred),
+		dashboard.WithSession(m.kubectlSession))
 }
 
 // keepDashboard takes v's memory when v is a dashboard about to be

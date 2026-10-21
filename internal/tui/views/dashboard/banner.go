@@ -103,9 +103,9 @@ func nextLine(f frame) string {
 		if len(s.Next) > 1 {
 			label = fmt.Sprintf("▸ next 1/%d", len(s.Next))
 		}
-		return " " + f.ds.Title.Render(label) + "  " + toKubectl(n.Cmd).String() + "   " + f.muted(clean(n.Question))
+		return " " + f.ds.Title.Render(label) + "  " + f.command(n.Cmd) + "   " + f.muted(clean(n.Question))
 	case !s.Daily.Cmd.IsZero():
-		return " " + f.ds.Title.Render("▸ command of the day") + "  " + toKubectl(s.Daily.Cmd).String()
+		return " " + f.ds.Title.Render("▸ command of the day") + "  " + f.command(s.Daily.Cmd)
 	}
 	return ""
 }
