@@ -1,0 +1,85 @@
+package forwards
+
+import (
+	"fmt"
+
+	"charm.land/bubbles/v2/table"
+
+	"github.com/LywwKkA-aD/k4s/internal/forwards"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+)
+
+func columns() []table.Column {
+	return []table.Column{
+		{Title: "STATUS", Width: 10},
+		{Title: "KIND", Width: 11},
+		{Title: "NAMESPACE", Width: 16},
+		{Title: "NAME", Width: 26},
+		{Title: "LOCAL → REMOTE", Width: 18},
+		{Title: "DETAIL", Width: 30},
+	}
+}
+
+// show replaces the rows with list. The cursor stays on the forward it was
+// on while that forward is listed, else on the same index, clamped.
+func (m *Model) show(list []forwards.Active) {
+	prev, _ := m.selected()
+	shown := make([]forwards.Forward, 0, len(list))
+	rows := make([]table.Row, 0, len(list))
+	cursor := m.table.Cursor()
+	for i, a := range list {
+		shown = append(shown, a.Forward)
+		rows = append(rows, rowFor(a))
+		if prev.ID != "" && a.Forward.ID == prev.ID {
+			cursor = i
+		}
+	}
+	m.shown = shown
+	m.table.SetRows(rows)
+	// SetRows leaves the cursor at -1 once the table was empty.
+	m.table.SetCursor(cursor)
+}
+
+// selected is the forward under the cursor, as shown.
+func (m Model) selected() (forwards.Forward, bool) {
+	i := m.table.Cursor()
+	if i < 0 || i >= len(m.shown) {
+		return forwards.Forward{}, false
+	}
+	return m.shown[i], true
+}
+
+func rowFor(a forwards.Active) table.Row {
+	detail := ""
+	if a.Err != nil {
+		detail = a.Err.Error()
+	}
+	return table.Row{
+		a.Status.String(),
+		a.Forward.Kind,
+		a.Forward.Namespace,
+		a.Forward.Name,
+		ports(a.Forward),
+		detail,
+	}
+}
+
+func ports(f forwards.Forward) string {
+	return fmt.Sprintf("%d → %d", f.LocalPort, f.RemotePort)
+}
+
+// target names a forward the way kubectl port-forward does: kind/name.
+func target(f forwards.Forward) string {
+	return f.Kind + "/" + f.Name
+}
+
+// portForwardCmd is `kubectl port-forward -n <ns> <kind>/<name> <l>:<r>`.
+// It does what k4s does: a service port maps to its targetPort on one
+// ready pod, as in kubectl. Names kubectl would reject give the zero Cmd.
+func portForwardCmd(f forwards.Forward) kubectl.Cmd {
+	if kubectl.CheckLabel("namespace", f.Namespace) != nil || kubectl.CheckSubdomain(f.Kind, f.Name) != nil {
+		return kubectl.Cmd{}
+	}
+	return kubectl.New("port-forward", "-n", f.Namespace, target(f),
+		fmt.Sprintf("%d:%d", f.LocalPort, f.RemotePort))
+}
