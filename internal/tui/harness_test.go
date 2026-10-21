@@ -42,19 +42,24 @@ func lines(m tui.Model) []string {
 	return strings.Split(tuitest.Screen(m), "\n")
 }
 
-// header is the first screen line: "k4s · ctx: ... · ns: ... · view: ...".
+// header is the first screen line:
+// "k4s · [distro version ·] [ctx name (host) ·] ns <ns> · <view>".
 func header(m tui.Model) string {
 	return strings.TrimSpace(lines(m)[0])
 }
 
-// viewName is the active view's title as the header shows it.
+// viewName is the active view's title as the header shows it: everything
+// after the namespace.
 func viewName(m tui.Model) string {
-	h := header(m)
-	_, after, ok := strings.Cut(h, "view: ")
+	_, afterNS, ok := strings.Cut(header(m), " · ns ")
 	if !ok {
 		return ""
 	}
-	return strings.TrimSpace(after)
+	_, title, ok := strings.Cut(afterNS, " · ")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(title)
 }
 
 // footer is everything under the footer's top rule, trailing blanks

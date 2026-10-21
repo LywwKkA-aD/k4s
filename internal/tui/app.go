@@ -75,6 +75,9 @@ type Model struct {
 	// grace period's, time.Now unless a test sets WithClock.
 	status status.Line
 	now    func() time.Time
+
+	// ident is what the header says about the cluster (header.go).
+	ident identity
 }
 
 // Option changes how New builds the root model.
@@ -126,20 +129,22 @@ func New(client *k8s.Client, loadErr error, opts ...Option) Model {
 // goes through.
 func (m Model) withClient(c *k8s.Client) Model {
 	m.client = c
+	m.ident = newIdentity(c)
 	m.namespace = clientNamespace(c)
 	m.kubectlSession = newKubectlSession(c, m.flags, os.Getenv, homedir.HomeDir())
 	m.runner = kubectl.NewRunner(kubectl.RunnerConfig{Kubeconfig: kubeconfigPaths(c)})
 	return m
 }
 
-// Init starts the active view and reports a failed preflight.
+// Init starts the active view, asks the server for the header's version
+// and reports a failed preflight.
 func (m Model) Init() tea.Cmd {
-	initCmd := m.current.Init()
-	if m.startup.PreflightErr == nil {
-		return initCmd
+	cmds := []tea.Cmd{m.current.Init(), m.fetchVersion()}
+	if err := m.startup.PreflightErr; err != nil {
+		warn := views.StatusMsg{Level: status.Warn, Text: preflightText(err)}
+		cmds = append(cmds, func() tea.Msg { return warn })
 	}
-	warn := views.StatusMsg{Level: status.Warn, Text: preflightText(m.startup.PreflightErr)}
-	return tea.Batch(initCmd, func() tea.Msg { return warn })
+	return tea.Batch(cmds...)
 }
 
 // currentContextName is a small helper so the contexts view can render the

@@ -1,0 +1,9 @@
+k3s     | k4s · k3s v1.36.5 · ctx default (10.0.0.5) · ns ALL · dashboard
+k3d     | k4s · k3d v1.31.4 · ctx k3d-dev · ns ALL · dashboard
+rke2    | k4s · rke2 v1.30.4 · ctx default (192.168.1.20) · ns kube-system · dashboard
+eks     | k4s · ctx arn:aws:eks:eu-west…/payments-production · ns payments · dashboard
+gke     | k4s · gke · ctx gke_acme-prod_europe-west1_payments · ns ALL · dashboard
+aks     | k4s · aks v1.30.5 · ctx payments-aks · ns ALL · dashboard
+kind    | k4s · kind v1.33.1 · ctx kind-k4s · ns ALL · dashboard
+minikube| k4s · minikube v1.33.1 · ctx minikube · ns ALL · dashboard
+vanilla | k4s · k8s v1.31.0 · ctx kubernetes-admin@kubernetes · ns ALL · dashboard

@@ -25,11 +25,11 @@ func TestEscBringsTopBackAsLeft(t *testing.T) {
 	tuitest.Golden(t, "footer_top_left", before+"\n")
 
 	m, _ = tuitest.Drive(t, m, tuitest.Colon("pods")...)
-	if h := header(m); !strings.Contains(h, "view: pods") {
+	if h := header(m); tuitest.HeaderView(m) != "pods" {
 		t.Fatalf(":pods: header %q", h)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())
-	if h := header(m); !strings.Contains(h, "view: top") {
+	if h := header(m); tuitest.HeaderView(m) != "top" {
 		t.Fatalf("Esc from pods: header %q", h)
 	}
 	if after := tuitest.Footer(m); after != before {

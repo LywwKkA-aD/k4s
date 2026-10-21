@@ -31,6 +31,7 @@ func (m Model) bodyHeight() int {
 func (m Model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
+	v.WindowTitle = m.windowTitle()
 	return v
 }
 
@@ -73,22 +74,12 @@ func (m Model) renderPopup(width, height int) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
 
+// renderHeader is one line over a rule. The line is fitted to the width
+// (see layoutHeader), so the body height never depends on what it says.
 func (m Model) renderHeader() string {
-	parts := []string{styles.Title.Render("k4s")}
-	if m.client != nil {
-		parts = append(parts, styles.Hint.Render("ctx: "+m.client.Context))
-	}
-	ns := m.namespace
-	if ns == "" {
-		ns = "ALL"
-	}
-	parts = append(parts,
-		styles.Hint.Render("ns: "+ns),
-		styles.Hint.Render("view: "+m.current.Title()),
-	)
-
 	w := max(m.width-2, 0)
-	return fit(styles.Header, w, strings.Join(parts, "  ·  "))
+	inner := max(w-styles.Header.GetHorizontalPadding(), 0)
+	return fit(styles.Header, w, layoutHeader(m.headerParts(), inner))
 }
 
 // renderFooter is always two rows under the rule: the command bar, the

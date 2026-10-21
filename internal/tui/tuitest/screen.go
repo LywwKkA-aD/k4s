@@ -45,6 +45,32 @@ func Footer(v any) string {
 	return ""
 }
 
+// headerFields splits the root header, "k4s · [distro ·] [ctx name ·]
+// ns <namespace> · <view>", into the namespace and the view title.
+func headerFields(v any) (namespace, view string) {
+	first, _, _ := strings.Cut(Screen(v), "\n")
+	_, afterNS, ok := strings.Cut(strings.TrimSpace(first), " · ns ")
+	if !ok {
+		return "", ""
+	}
+	namespace, view, _ = strings.Cut(afterNS, " · ")
+	return namespace, strings.TrimSpace(view)
+}
+
+// HeaderView is the active view's title as the root model's header shows
+// it, "" when v renders no header.
+func HeaderView(v any) string {
+	_, view := headerFields(v)
+	return view
+}
+
+// HeaderNamespace is the namespace the root model's header shows: a name,
+// or ALL for every namespace.
+func HeaderNamespace(v any) string {
+	ns, _ := headerFields(v)
+	return ns
+}
+
 // TrimLines strips trailing spaces from every line and drops trailing empty
 // lines. Width-padded renders then compare by content alone.
 func TrimLines(s string) string {

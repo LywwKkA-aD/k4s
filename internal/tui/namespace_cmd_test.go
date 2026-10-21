@@ -86,7 +86,7 @@ func TestNamespaceCommand(t *testing.T) {
 			}
 			m, _ = tuitest.Drive(t, m, colon(tc.input)...)
 			requireView(t, m, tc.view)
-			if !strings.Contains(header(m), "ns: "+tc.ns) {
+			if !strings.Contains(header(m), "ns "+tc.ns) {
 				t.Errorf("header = %q", header(m))
 			}
 			if got := commandRow(m); got != tc.command {
@@ -129,7 +129,7 @@ func TestNamespaceCommandErrors(t *testing.T) {
 			if got := footer(m); !strings.Contains(got, tc.want) {
 				t.Errorf("footer = %q, want %q", got, tc.want)
 			}
-			if !strings.Contains(header(m), "ns: ALL") {
+			if !strings.Contains(header(m), "ns ALL") {
 				t.Errorf("header = %q", header(m))
 			}
 		})

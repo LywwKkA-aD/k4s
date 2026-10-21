@@ -37,17 +37,17 @@ func TestEscOnEarlierModelIgnoresLaterNavigation(t *testing.T) {
 	snapshot := m
 
 	branch := send(snapshot, esc, esc)
-	if got := header(branch); !strings.Contains(got, "view: dashboard") {
+	if got := strings.TrimSpace(header(branch)); !strings.HasSuffix(got, " · dashboard") {
 		t.Fatalf("two Esc presses should land on the dashboard, header: %q", got)
 	}
 	branch = command(branch, "svc")
 	branch = command(branch, "top")
-	if got := header(branch); !strings.Contains(got, "view: top") {
+	if got := strings.TrimSpace(header(branch)); !strings.HasSuffix(got, " · top") {
 		t.Fatalf("branch should be on top, header: %q", got)
 	}
 
 	back := send(snapshot, esc)
-	if got := header(back); !strings.Contains(got, "view: pods") {
+	if got := strings.TrimSpace(header(back)); !strings.HasSuffix(got, " · pods") {
 		t.Errorf("Esc on the earlier model should return to pods, header: %q", got)
 	}
 }

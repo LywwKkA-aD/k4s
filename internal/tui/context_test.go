@@ -27,14 +27,14 @@ func TestContextSwitchFromThePicker(t *testing.T) {
 	requireView(t, m, "dashboard")
 	// The new context's own namespace, as kubectl would use it.
 	h := header(m)
-	if !strings.Contains(h, "ctx: beta") || !strings.Contains(h, "ns: "+tuitest.NamespaceDemo) {
+	if !strings.Contains(h, "ctx beta") || !strings.Contains(h, "ns "+tuitest.NamespaceDemo) {
 		t.Errorf("header after the switch = %q", h)
 	}
 
 	// The old cluster's history is gone.
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())
 	requireView(t, m, "dashboard")
-	if !strings.Contains(header(m), "ctx: beta") {
+	if !strings.Contains(header(m), "ctx beta") {
 		t.Errorf("esc after the switch changed context: %q", header(m))
 	}
 }
@@ -43,7 +43,7 @@ func TestContextSwitchWithoutAClient(t *testing.T) {
 	t.Parallel()
 
 	m, _ := tuitest.Drive(t, started(t, nil), views.ContextSelectedMsg{Name: "alpha"})
-	if !strings.Contains(header(m), "ctx: alpha") {
+	if !strings.Contains(header(m), "ctx alpha") {
 		t.Errorf("header = %q", header(m))
 	}
 	refuteScreen(t, m, "no kubeconfig")
@@ -58,7 +58,7 @@ func TestContextSwitchFailureKeepsTheCurrentClient(t *testing.T) {
 		t.Errorf("footer = %q", got)
 	}
 	requireView(t, m, "pods")
-	if !strings.Contains(header(m), "ctx: "+tuitest.FakeContext) {
+	if !strings.Contains(header(m), "ctx "+tuitest.FakeContext) {
 		t.Errorf("header = %q", header(m))
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())

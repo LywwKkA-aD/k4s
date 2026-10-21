@@ -42,7 +42,7 @@ func leftOnPayWeb(t *testing.T, c *k8s.Client) (tui.Model, string) {
 	m, _ = tuitest.Drive(t, m, slices.Concat(tuitest.Colon("ns"), tuitest.FilterBy("pay"), tuitest.Keys("down", "down", "down", "w"))...)
 	before := tuitest.Footer(m)
 	m, _ = tuitest.Drive(t, m, tuitest.Enter())
-	if h := header(m); !strings.Contains(h, "ns: "+payWeb) || !strings.Contains(h, "view: pods") {
+	if h := header(m); tuitest.HeaderNamespace(m) != payWeb || tuitest.HeaderView(m) != "pods" {
 		t.Fatalf("enter on %s: header %q", payWeb, h)
 	}
 	return m, before
@@ -55,7 +55,7 @@ func TestEscBringsTheNamespacesBackAsLeft(t *testing.T) {
 	tuitest.Golden(t, "footer_namespaces_left", before+"\n")
 
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())
-	if h := header(m); !strings.Contains(h, "view: namespaces") {
+	if h := header(m); tuitest.HeaderView(m) != "namespaces" {
 		t.Fatalf("Esc from pods: header %q", h)
 	}
 	if after := tuitest.Footer(m); after != before {
@@ -65,7 +65,7 @@ func TestEscBringsTheNamespacesBackAsLeft(t *testing.T) {
 		t.Errorf("filter not back:\n%s", screen)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Enter())
-	if h := header(m); !strings.Contains(h, "ns: "+payWeb) {
+	if h := header(m); tuitest.HeaderNamespace(m) != payWeb {
 		t.Errorf("the cursor is not back on %s: header %q", payWeb, h)
 	}
 }
@@ -87,7 +87,7 @@ func TestEscAfterTheRowWasDeleted(t *testing.T) {
 		t.Errorf("footer:\n%s", tuitest.Footer(m))
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Enter())
-	if h := header(m); !strings.Contains(h, "ns: "+payDB) {
+	if h := header(m); tuitest.HeaderNamespace(m) != payDB {
 		t.Errorf("the cursor should land on the nearest row %s: header %q", payDB, h)
 	}
 }
@@ -99,14 +99,14 @@ func TestEscClearsTheFilterFirst(t *testing.T) {
 
 	m, _ := tuitest.Mount(t, tui.New(payClient(t), nil), 160, 40)
 	m, _ = tuitest.Drive(t, m, slices.Concat(tuitest.Colon("ns"), tuitest.FilterBy("pay"), []tea.Msg{tuitest.Esc()})...)
-	if h := header(m); !strings.Contains(h, "view: namespaces") {
+	if h := header(m); tuitest.HeaderView(m) != "namespaces" {
 		t.Fatalf("the first Esc left: header %q", h)
 	}
 	if screen := tuitest.Screen(m); strings.Contains(screen, "/ pay") || !strings.Contains(screen, "shop") {
 		t.Errorf("the first Esc kept the filter:\n%s", screen)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())
-	if h := header(m); !strings.Contains(h, "view: dashboard") {
+	if h := header(m); tuitest.HeaderView(m) != "dashboard" {
 		t.Errorf("the second Esc: header %q", h)
 	}
 }

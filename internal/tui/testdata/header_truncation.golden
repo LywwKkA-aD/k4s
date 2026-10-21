@@ -1,0 +1,9 @@
+120| k4s · eks v1.30.4 · ctx arn:aws:eks:eu-west-1:123456789012:cluster/payments (10.20.30.40) · ns payments · dashboard
+116| k4s · eks · ctx arn:aws:eks:eu-west-1:123456789012:cluster/payments (10.20.30.40) · ns payments · dashboard
+110| k4s · ctx arn:aws:eks:eu-west-1:123456789012:cluster/payments (10.20.30.40) · ns payments · dashboard
+100| k4s · ctx arn:aws:eks:eu-west-1:…789012:cluster/payments (10.20.30.40) · ns payments · dashboard
+ 70| k4s · ctx arn:aws…payments (10.20.30.40) · ns payments · dashboard
+ 60| k4s · ctx arn:aws:e…r/payments · ns payments · dashboard
+ 40| k4s · ctx arn:a…yments · ns payment…
+ 24| k4s · ctx arn:a…yme…
+ 12| k4s · c…

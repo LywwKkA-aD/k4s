@@ -28,13 +28,8 @@ func startedRoot(t *testing.T, c *k8s.Client) tui.Model {
 	return m
 }
 
-func rootLines(m tui.Model) []string {
-	return strings.Split(tuitest.Screen(m), "\n")
-}
-
 func rootView(m tui.Model) string {
-	_, after, _ := strings.Cut(rootLines(m)[0], "view: ")
-	return strings.TrimSpace(after)
+	return tuitest.HeaderView(m)
 }
 
 func requireRootView(t *testing.T, m tui.Model, want string) {

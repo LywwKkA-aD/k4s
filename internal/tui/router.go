@@ -34,6 +34,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = m.status.Expire(msg, m.now())
 		return m, nil
 	}
+	if next, ok := m.onChromeMsg(msg); ok {
+		return next, nil
+	}
 	if next, cmd, ok := m.onRequest(msg); ok {
 		return next, cmd
 	}

@@ -1,4 +1,4 @@
- k4s  ·  ctx: fake  ·  ns: ALL  ·  view: dashboard
+ k4s · ctx fake · ns ALL · dashboard
 ──────────────────────────────────────────────────────────────────────────────
 ╭────────────────────────────────────────────────────────────╮
 │  namespaces 3  ·  pods 5  ·  deployments 2  ·  services 2  │

@@ -1,5 +1,7 @@
-// Package cluster names the Kubernetes distribution k4s is connected to.
-// It works only from data k4s already has and makes no API calls itself.
+// Package cluster names the Kubernetes distribution and the cluster k4s is
+// connected to, and words hints for the distribution. It works only from
+// data k4s already has (the server version, the kubeconfig) and makes no
+// API calls itself.
 package cluster
 
 import "strings"

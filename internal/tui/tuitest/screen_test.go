@@ -48,6 +48,34 @@ func TestTrimLines(t *testing.T) {
 	}
 }
 
+func TestHeaderFields(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		screen string
+		ns     string
+		view   string
+	}{
+		{name: "full header", screen: " k4s · k3s v1.36.5 · ctx default (10.0.0.5) · ns ALL · dashboard   \n────", ns: "ALL", view: "dashboard"},
+		{name: "no client", screen: " k4s · ns demo · pods\n────", ns: "demo", view: "pods"},
+		{name: "a title with separators", screen: " k4s · ctx fake · ns demo · logs · web-1 · /needle\n", ns: "demo", view: "logs · web-1 · /needle"},
+		{name: "no header", screen: "body only", ns: "", view: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			v := fixedView(tc.screen)
+			if got := tuitest.HeaderNamespace(v); got != tc.ns {
+				t.Errorf("HeaderNamespace = %q, want %q", got, tc.ns)
+			}
+			if got := tuitest.HeaderView(v); got != tc.view {
+				t.Errorf("HeaderView = %q, want %q", got, tc.view)
+			}
+		})
+	}
+}
+
 func TestGolden(t *testing.T) {
 	t.Parallel()
 

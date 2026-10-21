@@ -28,7 +28,7 @@ func TestStartsInTheClientNamespace(t *testing.T) {
 
 	c := tuitest.NewFakeClient(t).WithNamespace(tuitest.NamespaceDemo)
 	m, _ := tuitest.Drive(t, startedWith(t, c, nil), colon("pods")...)
-	if !strings.Contains(header(m), "ns: "+tuitest.NamespaceDemo) {
+	if !strings.Contains(header(m), "ns "+tuitest.NamespaceDemo) {
 		t.Errorf("header = %q", header(m))
 	}
 	if got := commandRow(m); got != "kubectl get pods -n demo" {
@@ -108,7 +108,7 @@ func TestContextSwitchReadsTheSessionKubeconfig(t *testing.T) {
 	m, _ = tuitest.Drive(t, m, tuitest.Enter())
 	requireView(t, m, "dashboard")
 	h := header(m)
-	if !strings.Contains(h, "ctx: delta") || !strings.Contains(h, "ns: "+tuitest.NamespaceDemo) {
+	if !strings.Contains(h, "ctx delta") || !strings.Contains(h, "ns "+tuitest.NamespaceDemo) {
 		t.Errorf("header after the switch = %q", h)
 	}
 	want := fmt.Sprintf("kubectl --kubeconfig %s --context delta get all -A", src.Paths[0])

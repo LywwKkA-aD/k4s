@@ -34,13 +34,8 @@ func shopObjects() []runtime.Object {
 	return objs
 }
 
-func rootLines(m tui.Model) []string {
-	return strings.Split(tuitest.Screen(m), "\n")
-}
-
 func rootView(m tui.Model) string {
-	_, after, _ := strings.Cut(rootLines(m)[0], "view: ")
-	return strings.TrimSpace(after)
+	return tuitest.HeaderView(m)
 }
 
 func TestEscFromLogsBringsThePodsBack(t *testing.T) {

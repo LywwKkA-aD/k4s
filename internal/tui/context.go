@@ -36,7 +36,7 @@ func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.C
 	m.startup = startup.Session{Source: m.startup.Source, Distro: cluster.Detect("", client.Context, nil)}
 	m, errCmd := m.resetForwards(client)
 	m.current = dashboard.New(m.client, nil)
-	return m, tea.Batch(m.relayoutCmd(), errCmd, loginProbe(client, false))
+	return m, tea.Batch(m.relayoutCmd(), errCmd, loginProbe(client, false), m.fetchVersion())
 }
 
 // switchClient loads context name from the session's kubeconfig: through

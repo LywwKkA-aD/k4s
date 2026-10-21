@@ -83,7 +83,7 @@ func TestNamespaceSelectionScopesTheNextViews(t *testing.T) {
 		t.Fatalf("namespace pick not emitted:\n%s", tuitest.Describe(out))
 	}
 	requireView(t, m, "pods")
-	if !strings.Contains(header(m), "ns: demo") {
+	if !strings.Contains(header(m), "ns demo") {
 		t.Errorf("header = %q", header(m))
 	}
 	if !strings.HasSuffix(footer(m), "\n kubectl get pods -n demo") {
@@ -100,7 +100,7 @@ func TestNamespaceSelectionScopesTheNextViews(t *testing.T) {
 	requireView(t, m, "pods")
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())
 	requireView(t, m, "namespaces")
-	if !strings.Contains(header(m), "ns: ALL") {
+	if !strings.Contains(header(m), "ns ALL") {
 		t.Errorf("history restores the namespace in effect: %q", header(m))
 	}
 }
@@ -197,8 +197,8 @@ func TestHeaderShowsContextAndNamespace(t *testing.T) {
 		want []string
 		not  []string
 	}{
-		{name: "with a client", with: true, want: []string{"k4s", "ctx: " + tuitest.FakeContext, "ns: ALL", "view: dashboard"}},
-		{name: "without a client", want: []string{"k4s", "ns: ALL", "view: dashboard"}, not: []string{"ctx:"}},
+		{name: "with a client", with: true, want: []string{"k4s", "ctx " + tuitest.FakeContext, "ns ALL", " · dashboard"}},
+		{name: "without a client", want: []string{"k4s", "ns ALL", " · dashboard"}, not: []string{"ctx "}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -267,7 +267,7 @@ func TestContextSwitchWithBrokenStateWarns(t *testing.T) {
 	if got := footer(m); !strings.Contains(got, "forwards: load state:") {
 		t.Errorf("footer = %q", got)
 	}
-	if !strings.Contains(header(m), "ctx: alpha") {
+	if !strings.Contains(header(m), "ctx alpha") {
 		t.Errorf("the switch itself must still happen: %q", header(m))
 	}
 }
