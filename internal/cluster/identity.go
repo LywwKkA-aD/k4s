@@ -3,6 +3,7 @@ package cluster
 import (
 	"net"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -57,6 +58,7 @@ const ambiguousName = "default"
 // Ambiguous reports whether the context name alone does not say which
 // cluster k4s talks to: it is "default", or more than one of the
 // kubeconfig files defines it (the first one wins when they are merged).
+// A file named twice, however it is spelled or linked, counts once.
 // Files that are missing or cannot be read are skipped, as kubectl does.
 func Ambiguous(name string, files []string) bool {
 	if name == "" {
@@ -68,10 +70,11 @@ func Ambiguous(name string, files []string) bool {
 	defining := 0
 	var seen []string
 	for _, f := range files {
-		if slices.Contains(seen, f) {
+		id := fileIdentity(f)
+		if slices.Contains(seen, id) {
 			continue
 		}
-		seen = append(seen, f)
+		seen = append(seen, id)
 		cfg, err := clientcmd.LoadFromFile(f)
 		if err != nil {
 			continue
@@ -81,4 +84,13 @@ func Ambiguous(name string, files []string) bool {
 		}
 	}
 	return defining > 1
+}
+
+// fileIdentity is path with its symlinks resolved when that works, else
+// path cleaned: two spellings of one kubeconfig file compare equal.
+func fileIdentity(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return filepath.Clean(path)
 }

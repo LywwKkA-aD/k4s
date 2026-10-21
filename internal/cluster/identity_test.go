@@ -112,6 +112,16 @@ func writeKubeconfig(t *testing.T, dir, file string, names ...string) string {
 	return path
 }
 
+// symlink makes link point at target, skipping the test where the system
+// does not allow it.
+func symlink(t *testing.T, target, link string) string {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	return link
+}
+
 func TestAmbiguous(t *testing.T) {
 	t.Parallel()
 
@@ -123,6 +133,7 @@ func TestAmbiguous(t *testing.T) {
 		t.Fatal(err)
 	}
 	missing := filepath.Join(dir, "missing")
+	toA, toB := symlink(t, a, filepath.Join(dir, "to-a")), symlink(t, b, filepath.Join(dir, "to-b"))
 
 	cases := []struct {
 		name    string
@@ -135,6 +146,9 @@ func TestAmbiguous(t *testing.T) {
 		{name: "a name two files define", context: "prod", files: []string{a, b}, want: true},
 		{name: "a name one file defines", context: "lab", files: []string{a, b}, want: false},
 		{name: "the same file listed twice", context: "lab", files: []string{a, a}, want: false},
+		{name: "the same file spelled two ways", context: "lab", files: []string{a, dir + "/./a"}, want: false},
+		{name: "the same file through a symlink", context: "lab", files: []string{a, toA}, want: false},
+		{name: "a symlink to another file", context: "prod", files: []string{a, toB}, want: true},
 		{name: "missing and broken files are skipped", context: "prod", files: []string{missing, broken, a}, want: false},
 		{name: "no files", context: "prod", want: false},
 		{name: "no context", context: "", files: []string{a, b}, want: false},
