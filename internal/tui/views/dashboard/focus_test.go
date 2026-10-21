@@ -127,9 +127,15 @@ func TestGoneText(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]string{
-		"pod/shop/payments-0": "pod shop/payments-0 is gone",
-		"node/k3s-agent-1":    "node k3s-agent-1 is gone",
-		"chart":               "chart is gone",
+		"pod/shop/payments-0":                "pod shop/payments-0 is gone",
+		"node/k3s-agent-1":                   "node k3s-agent-1 is gone",
+		"chart":                              "chart is gone",
+		"pod/api#2":                          "pod api is gone",
+		"pod/api#12":                         "pod api is gone",
+		"pod/web#a":                          "pod web#a is gone",
+		"pod/web#":                           "pod web# is gone",
+		"pod/shop/pay\x1b]52;c;ZXZpbA==\a-0": "pod shop/pay-0 is gone",
+		"crd\x1b[2J/x":                       "crd x is gone",
 	}
 	for key, want := range tests {
 		if got := goneText(key); got != want {
