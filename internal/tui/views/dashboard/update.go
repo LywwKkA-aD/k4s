@@ -332,7 +332,7 @@ func (m Model) enterHint() string {
 		return suggestionHint(sg)
 	}
 	if to := m.mem.snap.Verdict.Focus; f.panel == dash.PanelOverview && to != dash.PanelOverview {
-		if _, ok := m.lay.placeOf(to); !ok {
+		if !m.reachable(to) {
 			return ""
 		}
 		return "go to " + panelNames[to]

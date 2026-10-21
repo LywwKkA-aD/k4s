@@ -63,3 +63,12 @@ func (m Model) zoomHint() string {
 func (m Model) present(p dash.Panel) bool {
 	return slices.Contains(present(m.shown()), p)
 }
+
+// reachable reports whether focusing p shows it: on screen, or zoomed
+// where the size leaves it out and there is room for its box.
+func (m Model) reachable(p dash.Panel) bool {
+	if _, ok := m.lay.placeOf(p); ok {
+		return true
+	}
+	return m.present(p) && m.lay.zoomed(p).zoom == p
+}
