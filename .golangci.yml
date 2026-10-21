@@ -47,9 +47,9 @@ linters:
           deny:
             - pkg: github.com/LywwKkA-aD/k4s/internal/tui/views/
               desc: a view must not import a sibling view; emit a message from internal/tui/views
-        # The cluster, port-forward and log-sink layers stay free of the UI so
-        # they test headless and the Charm v2 port does not reach them.
-        # internal/kubectl is listed ahead of the package landing.
+        # The cluster, command-line, startup, port-forward and log-sink layers
+        # stay free of the UI so they test headless and a Charm upgrade does
+        # not reach them.
         core-no-ui:
           list-mode: lax
           files:
@@ -57,6 +57,9 @@ linters:
             - "**/internal/forwards/**"
             - "**/internal/logsink/**"
             - "**/internal/kubectl/**"
+            - "**/internal/cli/**"
+            - "**/internal/startup/**"
+            - "**/internal/cluster/**"
           deny:
             - pkg: github.com/LywwKkA-aD/k4s/internal/tui
               desc: core packages must not import the TUI
