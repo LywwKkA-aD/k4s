@@ -1,0 +1,5 @@
+ NAME                             STATUS                       ROLES                       AGE     VERSION               INTERNAL-IP      OS/ARCH        TAINTS
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ k3s-server                       Ready                        control-plane,etcd,master   2d1h    v1.36.5+k3s1          10.0.0.2         linux/amd64    1
+ pi-agent-1                       Ready                        <none>                      2d1h    v1.36.5+k3s1          10.0.0.11        linux/arm64    0
+ pi-agent-2                       Ready,SchedulingDisabled     <none>                      2d1h    v1.35.2+k3s1          10.0.0.12        linux/arm      1
