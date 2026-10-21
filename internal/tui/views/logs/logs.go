@@ -72,8 +72,9 @@ type logLine struct {
 
 // Model is the streaming logs view.
 type Model struct {
-	client    *k8s.Client
+	// src opens the streams; nil without a kubeconfig.
 	src       streamer
+	crash     crashLog
 	namespace string
 	pods      []string
 	tail      int64
@@ -176,7 +177,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 	si.SetStyles(styles.TextInput())
 
 	m := Model{
-		client:      client,
+		crash:       defaultCrashLog(),
 		namespace:   namespace,
 		pods:        pods,
 		tail:        views.ClampTail(tail, len(pods)),
@@ -196,6 +197,17 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 	m.lastGen = 1
 	m.sess = startSession(m.lastGen, m.spec())
 	return m
+}
+
+// withSource streams from src instead of the client, for tests.
+func withSource(src streamer) Option {
+	return func(m *Model) { m.src = src }
+}
+
+// withCrashLog sends recovered panics to c instead of the k4s log, for
+// tests.
+func withCrashLog(c crashLog) Option {
+	return func(m *Model) { m.crash = c }
 }
 
 // newViewport returns the log viewport. Panning belongs to the view's own

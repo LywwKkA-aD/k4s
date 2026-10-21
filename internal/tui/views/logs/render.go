@@ -125,7 +125,7 @@ func wrapLine(s string, width int) string {
 
 // View implements views.View.
 func (m Model) View() string {
-	if m.client == nil {
+	if m.src == nil {
 		return styles.Warn.Render("no kubeconfig")
 	}
 

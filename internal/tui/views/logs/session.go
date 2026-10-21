@@ -25,17 +25,21 @@ func (s session) stop() {
 	}
 }
 
-// streamSpec is what a session streams.
+// streamSpec is what a session streams, and where a panic in one of its
+// goroutines is logged.
 type streamSpec struct {
 	src       streamer
 	namespace string
 	pods      []string
 	tail      int64 // per pod
 	container string
+	crash     crashLog
 }
 
 func (m Model) spec() streamSpec {
-	return streamSpec{src: m.src, namespace: m.namespace, pods: m.pods, tail: m.tail, container: m.container}
+	return streamSpec{
+		src: m.src, namespace: m.namespace, pods: m.pods, tail: m.tail, container: m.container, crash: m.crash,
+	}
 }
 
 // options are the log options of one pod's current log.
@@ -53,12 +57,16 @@ func startSession(gen int, spec streamSpec) session {
 	case spec.src == nil || len(spec.pods) == 0:
 		close(events)
 	case len(spec.pods) == 1:
+		pod := spec.pods[0]
 		go func() {
 			defer close(events)
-			streamOnePod(ctx, spec.src, spec.namespace, spec.pods[0], spec.options(), events)
+			defer spec.crash.guard("the log stream of pod "+pod, func(err error) {
+				send(ctx, events, logEvent{Pod: pod, Err: err, Done: true})
+			})
+			streamOnePod(ctx, spec.src, spec.namespace, pod, spec.options(), events)
 		}()
 	default:
-		go runMergedStreams(ctx, spec.src, spec.namespace, spec.pods, spec.tail, spec.container, events)
+		go runMergedStreams(ctx, spec, events)
 	}
 	return session{gen: gen, events: events, cancel: cancel}
 }

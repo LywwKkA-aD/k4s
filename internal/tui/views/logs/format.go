@@ -33,7 +33,11 @@ func formatRawLine(ln logLine, multi, full bool, colour styles.PodColorID) strin
 func formatLine(ln logLine, multi, full bool, colour styles.PodColorID, spans []span, current int) string {
 	switch ln.kind {
 	case lineStreamErr:
-		prefix := "[" + ln.pod + "] stream error: "
+		// The merge of several pods fails as a whole, under no pod.
+		prefix := "stream error: "
+		if ln.pod != "" {
+			prefix = "[" + ln.pod + "] " + prefix
+		}
 		return styles.Warn.Render(prefix) + paint(ln.text, &styles.Warn, spans, current)
 	case lineStreamDone:
 		return styles.Hint.Render("[" + ln.pod + "] stream closed")

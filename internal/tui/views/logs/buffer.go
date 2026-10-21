@@ -1,27 +1,34 @@
 package logs
 
 import (
+	"errors"
 	"sort"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/sanitize"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 // onLogEventsBatch applies every event in the batch with a single render
 // at the end: one format per new line and one viewport refresh per drain
 // tick, however many lines a --tail=5000 flood brings. A batch from a
-// session the view has since replaced is dropped.
+// session the view has since replaced is dropped. An internal error (a
+// recovered panic) is also said in the status line.
 func (m Model) onLogEventsBatch(msg logEventsBatch) (views.View, tea.Cmd) {
 	if msg.gen != m.sess.gen {
 		return m, nil
 	}
 	first := len(m.rawLines)
+	var said tea.Cmd
 	for _, ev := range msg.events {
 		switch {
 		case ev.Err != nil:
 			m.appendOne(ev.Pod, sanitize.Line(ev.Err.Error()), lineStreamErr)
+			if internal := (internalError{}); errors.As(ev.Err, &internal) {
+				said = statusCmd(status.Error, internal.Error())
+			}
 		case ev.Done:
 			m.appendOne(ev.Pod, "", lineStreamDone)
 		default:
@@ -32,9 +39,9 @@ func (m Model) onLogEventsBatch(msg logEventsBatch) (views.View, tea.Cmd) {
 	m.settle(first)
 	if msg.done {
 		// Channel was observed closed mid-drain. No further reads needed.
-		return m, nil
+		return m, said
 	}
-	return m, waitOrDrainCmd(m.sess)
+	return m, tea.Batch(waitOrDrainCmd(m.sess), said)
 }
 
 // settle trims the backlog to views.MaxLogLines and lays it out again. A

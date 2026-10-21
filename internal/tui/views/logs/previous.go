@@ -74,6 +74,9 @@ func openPrevious(ctx context.Context, cancel context.CancelFunc, gen int, spec 
 		events := make(chan logEvent, eventBufferSize)
 		go func() {
 			defer close(events)
+			defer spec.crash.guard("the previous log of pod "+pod, func(err error) {
+				send(ctx, events, logEvent{Pod: pod, Err: err, Done: true})
+			})
 			readOnePod(ctx, stream, pod, events)
 		}()
 		return previousOpenedMsg{gen: gen, sess: session{gen: gen, events: events, cancel: cancel}}

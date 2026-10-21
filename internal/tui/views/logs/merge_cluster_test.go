@@ -30,7 +30,7 @@ func TestMergeClusterSmoke(t *testing.T) {
 
 	names := []string{pods[0].Name, pods[1].Name}
 	events := make(chan logEvent, 256)
-	go runMergedStreams(ctx, client, "app", names, 100, "", events)
+	go runMergedStreams(ctx, streamSpec{src: client, namespace: "app", pods: names, tail: 100, crash: defaultCrashLog()}, events)
 
 	counts := make(map[string]int)
 	var first []string

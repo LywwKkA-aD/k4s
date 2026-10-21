@@ -31,12 +31,14 @@ const (
 )
 
 // parsedEvent is one item from a pod's reader: a line with the time the
-// API server stamped on it, or the end of the pod's stream.
+// API server stamped on it, or the end of the pod's stream, with err for
+// one that failed.
 type parsedEvent struct {
 	pod  string
 	text string
 	ts   time.Time
 	kind lineKind
+	err  error
 	seq  uint64 // arrival order, which breaks ties in time
 }
 

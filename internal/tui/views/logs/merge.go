@@ -23,26 +23,41 @@ type streamer interface {
 
 // runMergedStreams reads every pod's log with timestamps, one goroutine a
 // pod, and merges them into events (see merger). It closes events when
-// every reader has finished or ctx is cancelled.
-func runMergedStreams(ctx context.Context, src streamer, namespace string, pods []string, tail int64, container string, events chan<- logEvent) {
+// every reader has finished or ctx is cancelled. A panic in a reader ends
+// that pod's stream with an internal error; one in the merge ends the
+// merge, and the readers with it.
+func runMergedStreams(ctx context.Context, spec streamSpec, events chan<- logEvent) {
 	defer close(events)
-	if len(pods) == 0 {
+	if len(spec.pods) == 0 {
 		return
 	}
-	incoming := make(chan parsedEvent, len(pods)*mergeIncomingBufferCap)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	incoming := make(chan parsedEvent, len(spec.pods)*mergeIncomingBufferCap)
 	var readers sync.WaitGroup
-	for _, pod := range pods {
+	for _, pod := range spec.pods {
 		readers.Add(1)
 		go func() {
 			defer readers.Done()
-			streamOnePodMerged(ctx, src, namespace, pod, tail, container, incoming)
+			defer spec.crash.guard("the merged log stream of pod "+pod, func(err error) {
+				sendParsed(ctx, incoming, parsedEvent{pod: pod, kind: lineStreamErr, err: err})
+			})
+			streamOnePodMerged(ctx, spec, pod, incoming)
 		}()
 	}
 	go func() {
 		readers.Wait()
 		close(incoming)
 	}()
-	mergeLoop(ctx, incoming, events, newMerger(pods, tail, time.Now()), time.Now)
+	mergeGuarded(ctx, incoming, events, newMerger(spec.pods, spec.tail, time.Now()), time.Now, spec.crash)
+}
+
+// mergeGuarded is mergeLoop with a panic in it turned into an error event.
+func mergeGuarded(ctx context.Context, incoming <-chan parsedEvent, events chan<- logEvent, g *merger, now func() time.Time, crash crashLog) {
+	defer crash.guard("the log merge", func(err error) {
+		send(ctx, events, logEvent{Err: err, Done: true})
+	})
+	mergeLoop(ctx, incoming, events, g, now)
 }
 
 // mergeLoop feeds the merger the events as they arrive and the times it
@@ -83,7 +98,7 @@ func emitParsed(ctx context.Context, events chan<- logEvent, evs []parsedEvent) 
 		case lineLog:
 			out = logEvent{Pod: ev.pod, Line: ev.text}
 		case lineStreamErr:
-			out = logEvent{Pod: ev.pod, Err: errors.New(ev.text)}
+			out = logEvent{Pod: ev.pod, Err: ev.err}
 		case lineStreamDone:
 			out = logEvent{Pod: ev.pod, Done: true}
 		}
@@ -94,11 +109,14 @@ func emitParsed(ctx context.Context, events chan<- logEvent, evs []parsedEvent) 
 	return true
 }
 
-func streamOnePodMerged(ctx context.Context, src streamer, ns, pod string, tail int64, container string, out chan<- parsedEvent) {
-	container = resolveStreamContainer(ctx, src, ns, pod, container)
-	stream, err := src.StreamLogs(ctx, ns, pod, k8s.LogOptions{Container: container, Tail: tail, Timestamps: true})
+// streamOnePodMerged reads one pod's log for the merge: each line split
+// from its timestamp, made inert, then the end of the stream.
+func streamOnePodMerged(ctx context.Context, spec streamSpec, pod string, out chan<- parsedEvent) {
+	container := resolveStreamContainer(ctx, spec.src, spec.namespace, pod, spec.container)
+	opts := k8s.LogOptions{Container: container, Tail: spec.tail, Timestamps: true}
+	stream, err := spec.src.StreamLogs(ctx, spec.namespace, pod, opts)
 	if err != nil {
-		sendParsed(ctx, out, parsedEvent{pod: pod, kind: lineStreamErr, text: err.Error()})
+		sendParsed(ctx, out, parsedEvent{pod: pod, kind: lineStreamErr, err: err})
 		return
 	}
 	defer func() { _ = stream.Close() }()
@@ -117,7 +135,7 @@ func streamOnePodMerged(ctx context.Context, src streamer, ns, pod string, tail 
 		}
 		if err != nil {
 			if ctx.Err() == nil {
-				sendParsed(ctx, out, parsedEvent{pod: pod, kind: lineStreamErr, text: err.Error()})
+				sendParsed(ctx, out, parsedEvent{pod: pod, kind: lineStreamErr, err: err})
 			}
 			return
 		}

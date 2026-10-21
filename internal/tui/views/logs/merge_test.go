@@ -11,6 +11,14 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 )
 
+// twoPods is the merge of pod-a and pod-b from src, 100 lines a pod.
+func twoPods(src streamer, container string) streamSpec {
+	return streamSpec{
+		src: src, namespace: "ns", pods: []string{"pod-a", "pod-b"}, tail: 100,
+		container: container, crash: defaultCrashLog(),
+	}
+}
+
 type fakeStreamer map[string]string
 
 func (f fakeStreamer) StreamLogs(_ context.Context, _, podName string, _ k8s.LogOptions) (io.ReadCloser, error) {
@@ -60,7 +68,7 @@ func TestRunMergedStreamsFallsBackToPodContainer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	runMergedStreams(ctx, client, "ns", []string{"pod-a", "pod-b"}, 100, "app", events)
+	runMergedStreams(ctx, twoPods(client, "app"), events)
 	for range events {
 	}
 
@@ -84,7 +92,7 @@ func TestRunMergedStreamsOrdersHistoryByTimestamp(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	runMergedStreams(ctx, client, "ns", []string{"pod-a", "pod-b"}, 100, "", events)
+	runMergedStreams(ctx, twoPods(client, ""), events)
 
 	var got []string
 	for ev := range events {
@@ -122,7 +130,7 @@ func TestRunMergedStreamsSortsWhateverTheNodeClockSays(t *testing.T) {
 				"pod-b": stamp(2*time.Second, "b-1") + stamp(4*time.Second, "b-2"),
 			}
 			events := make(chan logEvent, 64)
-			runMergedStreams(context.Background(), client, "ns", []string{"pod-a", "pod-b"}, 100, "", events)
+			runMergedStreams(context.Background(), twoPods(client, ""), events)
 
 			var got []string
 			for ev := range events {
@@ -149,7 +157,7 @@ func TestRunMergedStreamsEmitsErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	runMergedStreams(ctx, client, "ns", []string{"pod-a", "pod-b"}, 100, "", events)
+	runMergedStreams(ctx, twoPods(client, ""), events)
 
 	var lines, errs, dones int
 	for ev := range events {
@@ -203,7 +211,7 @@ func TestRunMergedStreamsFlushesAQuietPodsHistory(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	events := make(chan logEvent, 64)
 	start := time.Now()
-	go runMergedStreams(ctx, client, "ns", []string{"pod-a", "pod-b"}, 100, "", events)
+	go runMergedStreams(ctx, twoPods(client, ""), events)
 
 	var got []string
 	for len(got) < 2 {
