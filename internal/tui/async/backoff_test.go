@@ -55,9 +55,19 @@ func TestBackoffSequence(t *testing.T) {
 			want:     secs(5, 10, 20, 40, 60, 60, 5),
 		},
 		{
-			name:     "a non-timeout error keeps the cadence",
-			outcomes: []error{errTimeout, errForbidden, nil},
-			want:     secs(10, 10, 5),
+			name:     "a non-timeout error on a steady API keeps the cadence",
+			outcomes: []error{nil, errForbidden, nil},
+			want:     secs(5, 5, 5),
+		},
+		{
+			name:     "an answered error breaks the timeout streak",
+			outcomes: []error{errTimeout, errForbidden, errTimeout},
+			want:     secs(10, 5, 10),
+		},
+		{
+			name:     "an answered error leaves throttling alone",
+			outcomes: []error{errThrottled, errForbidden},
+			want:     secs(10, 10),
 		},
 		{
 			name:     "retry-after is capped",

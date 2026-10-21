@@ -31,6 +31,9 @@ func (b backoff) observe(o Outcome, retryAfter time.Duration) backoff {
 	case OK:
 		next.slow = 0
 		next.throttle = max(b.throttle-1, 0)
+	case Failed:
+		// An API that answers, even with an error, is reachable.
+		next.slow = 0
 	case Slow:
 		next.slow = min(b.slow+1, maxSteps)
 	case Throttled:
