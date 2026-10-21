@@ -244,6 +244,9 @@ func TestFilterCapturesKeysAndNarrowsRows(t *testing.T) {
 	if screen := tuitest.Screen(m); !strings.Contains(screen, "/ web") || strings.Contains(screen, tuitest.PodCrash) {
 		t.Errorf("committed filter keeps narrowing:\n%s", screen)
 	}
+	if got := selected(m); got != tuitest.NamespaceDemo+"/"+tuitest.PodWeb1 {
+		t.Errorf("after the filter matched nothing and then some, the cursor is on %q", got)
+	}
 
 	m, _ = tuitest.Drive(t, m, tuitest.Press("/"), tuitest.Esc())
 	if screen := tuitest.Screen(m); !strings.Contains(screen, tuitest.PodCrash) || strings.Contains(screen, "/ web") {

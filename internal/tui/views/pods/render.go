@@ -7,7 +7,8 @@ import (
 )
 
 // View renders the table or a placeholder, under the filter bar when a
-// filter is open or committed.
+// filter is open or committed. A restored filter shows from the first
+// frame, before its rows arrive.
 func (m Model) View() string {
 	if m.client == nil {
 		return styles.Warn.Render("no kubeconfig")

@@ -80,7 +80,8 @@ func (m Model) onList(msg async.Result[[]k8s.Pod]) (Model, tea.Cmd) {
 		return m, next
 	}
 	m.raw = msg.Value
-	return m.refiltered(), next
+	m, gone := m.refiltered().settlePending()
+	return m, tea.Batch(next, gone)
 }
 
 func (m Model) resized(msg tea.WindowSizeMsg) Model {

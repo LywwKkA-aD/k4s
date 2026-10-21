@@ -89,6 +89,11 @@ func watchHint(m pods.Model) string {
 	return ""
 }
 
+// selected is the row key under the cursor, as State reports it.
+func selected(m pods.Model) string {
+	return m.State().Selected
+}
+
 // down moves the cursor n rows.
 func down(n int) []tea.Msg {
 	out := make([]tea.Msg, 0, n)
