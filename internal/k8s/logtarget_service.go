@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 )
@@ -26,16 +27,22 @@ func (c *Client) ServiceLogTarget(ctx context.Context, namespace, name string) (
 	if err != nil {
 		return LogTarget{}, fmt.Errorf("list pods: %w", err)
 	}
-	t := LogTarget{Kind: LogKindService, Namespace: namespace, Name: name, Selector: selector}
-	for _, p := range byName(pods.Items) {
+	t := servicePods(LogTarget{Kind: LogKindService, Namespace: namespace, Name: name, Selector: selector}, pods.Items)
+	if len(t.Pods) > 0 {
+		t.Containers = t.Pods[0].Containers
+	}
+	return t, nil
+}
+
+// servicePods fills t with the pods the selector matched: finished ones
+// skipped, the rest streamed, both by name.
+func servicePods(t LogTarget, items []corev1.Pod) LogTarget {
+	for _, p := range byName(items) {
 		if finished(p) {
 			t.Skipped = append(t.Skipped, skippedPod(p, SkipFinished, true))
 			continue
 		}
-		t.Pods = append(t.Pods, PodRef{Name: p.Name, Phase: string(p.Status.Phase), Hash: p.Labels[hashLabel]})
-		if t.Containers == nil {
-			t.Containers = containerNames(&p.Spec)
-		}
+		t.Pods = append(t.Pods, podRef(p))
 	}
-	return t, nil
+	return t
 }

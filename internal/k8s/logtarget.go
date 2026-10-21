@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // Kinds ResolveLogTarget accepts.
@@ -44,6 +46,16 @@ type PodRef struct {
 	Phase string
 	// Hash is the pod's pod-template-hash label; empty for none.
 	Hash string
+	// Created is when the pod was created: a pod that joins logs already
+	// open is read from then, so nothing it wrote is lost.
+	Created time.Time
+	// Owner is the pod's controller as "Kind/name"; empty for none.
+	Owner string
+	// Containers are the pod's app containers in spec order, so a stream
+	// can fall back to the pod's own without asking for the pod.
+	Containers []string
+	// State is what a stream's end is explained by.
+	State PodState
 }
 
 // SkippedPod is a pod the selector matches that k4s does not stream.
@@ -57,6 +69,18 @@ type SkippedPod struct {
 	// InSelector is set when the shown selector matches the pod, so the
 	// footer's `kubectl logs -l` would stream it.
 	InSelector bool
+	// State is the pod's state when it was listed.
+	State PodState
+}
+
+// ReplicaSetRef is a ReplicaSet a deployment's log target has seen: one of
+// the deployment's own with its revision, or another's that shares its
+// labels. Re-resolving lists ReplicaSets again only for one it has never
+// seen.
+type ReplicaSetRef struct {
+	UID      types.UID
+	Revision int64
+	Owned    bool
 }
 
 // LogTarget is the pod set behind the multi-pod logs of a deployment or a
@@ -82,6 +106,12 @@ type LogTarget struct {
 	// counted as the deployment's when its controller is a ReplicaSet
 	// named <deployment>-<pod-template-hash>.
 	OwnersGuessed bool
+	// UID is the deployment's, which tells its ReplicaSets from others;
+	// empty for a service.
+	UID types.UID
+	// ReplicaSets are those seen so far, sorted by UID; nil for a service
+	// or when the owners were guessed.
+	ReplicaSets []ReplicaSetRef
 }
 
 // ResolveLogTarget resolves the pods to stream for a deployment or a
@@ -192,6 +222,19 @@ func skippedPod(p *corev1.Pod, reason SkipReason, inSelector bool) SkippedPod {
 		Reason:     reason,
 		Owner:      controllerName(p),
 		InSelector: inSelector,
+		State:      PodStateOf(p),
+	}
+}
+
+func podRef(p *corev1.Pod) PodRef {
+	return PodRef{
+		Name:       p.Name,
+		Phase:      string(p.Status.Phase),
+		Hash:       p.Labels[hashLabel],
+		Created:    p.CreationTimestamp.Time,
+		Owner:      controllerName(p),
+		Containers: containerNames(&p.Spec),
+		State:      PodStateOf(p),
 	}
 }
 

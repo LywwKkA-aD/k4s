@@ -40,7 +40,7 @@ func (c *Client) DeploymentLogTarget(ctx context.Context, namespace, name string
 	if err != nil {
 		return LogTarget{}, err
 	}
-	owners, err := c.replicaSetsOf(ctx, dep, fullList(selector))
+	owners, err := c.replicaSetsOf(ctx, dep.Namespace, dep.Name, dep.UID, fullList(selector))
 	if err != nil {
 		return LogTarget{}, err
 	}
@@ -55,17 +55,17 @@ func (c *Client) DeploymentLogTarget(ctx context.Context, namespace, name string
 		// since the cached one was built has pods already. One quorum re-list
 		// settles it; if it fails, the first answer stands.
 		fresh := metav1.ListOptions{LabelSelector: selector}
-		if again, err := c.replicaSetsOf(ctx, dep, fresh); err == nil {
+		if again, err := c.replicaSetsOf(ctx, dep.Namespace, dep.Name, dep.UID, fresh); err == nil {
 			owners = again
 		}
 	}
 	t := LogTarget{
-		Kind:          LogKindDeployment,
-		Namespace:     namespace,
-		Name:          name,
-		Selector:      selector,
-		Containers:    containerNames(&dep.Spec.Template.Spec),
-		OwnersGuessed: owners.guessed,
+		Kind:       LogKindDeployment,
+		Namespace:  namespace,
+		Name:       name,
+		Selector:   selector,
+		Containers: containerNames(&dep.Spec.Template.Spec),
+		UID:        dep.UID,
 	}
 	return owners.split(t, byName(pods.Items)), nil
 }
@@ -86,33 +86,69 @@ func deploymentSelector(dep *appsv1.Deployment) (string, error) {
 
 // replicaSets identifies a deployment's pods: by the revision of each
 // ReplicaSet it controls, or, when guessed, by the controller's name rule.
+// foreign holds the ReplicaSets seen that another controller owns.
 type replicaSets struct {
 	deployment string
 	revision   map[types.UID]int64
+	foreign    map[types.UID]bool
 	guessed    bool
 }
 
-func (c *Client) replicaSetsOf(ctx context.Context, dep *appsv1.Deployment, opts metav1.ListOptions) (replicaSets, error) {
-	list, err := c.Clientset.AppsV1().ReplicaSets(dep.Namespace).List(ctx, opts)
+func (c *Client) replicaSetsOf(ctx context.Context, namespace, deployment string, uid types.UID, opts metav1.ListOptions) (replicaSets, error) {
+	list, err := c.Clientset.AppsV1().ReplicaSets(namespace).List(ctx, opts)
 	if apierrors.IsForbidden(err) {
-		return replicaSets{deployment: dep.Name, guessed: true}, nil
+		return replicaSets{deployment: deployment, guessed: true}, nil
 	}
 	if err != nil {
 		return replicaSets{}, fmt.Errorf("list replicasets: %w", err)
 	}
-	revision := make(map[types.UID]int64, len(list.Items))
+	s := replicaSets{deployment: deployment, revision: map[types.UID]int64{}, foreign: map[types.UID]bool{}}
 	for i := range list.Items {
 		rs := &list.Items[i]
-		if ref := metav1.GetControllerOfNoCopy(rs); ref != nil && ref.UID == dep.UID {
-			revision[rs.UID] = revisionOf(rs)
+		if ref := metav1.GetControllerOfNoCopy(rs); ref != nil && ref.UID == uid {
+			s.revision[rs.UID] = revisionOf(rs)
+			continue
 		}
+		s.foreign[rs.UID] = true
 	}
-	return replicaSets{deployment: dep.Name, revision: revision}, nil
+	return s, nil
 }
 
-// missesOwnerOf reports whether a pod is controlled by a ReplicaSet that is
-// unknown here yet named like one of the deployment's (<deployment>-<hash>):
-// a sign the ReplicaSet list is older than the pod list.
+// knownReplicaSets is what t has seen of its deployment's ReplicaSets.
+func knownReplicaSets(t LogTarget) replicaSets {
+	if t.OwnersGuessed {
+		return replicaSets{deployment: t.Name, guessed: true}
+	}
+	s := replicaSets{deployment: t.Name, revision: map[types.UID]int64{}, foreign: map[types.UID]bool{}}
+	for _, rs := range t.ReplicaSets {
+		if rs.Owned {
+			s.revision[rs.UID] = rs.Revision
+			continue
+		}
+		s.foreign[rs.UID] = true
+	}
+	return s
+}
+
+// refs lists what s has seen, by UID, for the target to keep.
+func (s replicaSets) refs() []ReplicaSetRef {
+	if s.guessed {
+		return nil
+	}
+	out := make([]ReplicaSetRef, 0, len(s.revision)+len(s.foreign))
+	for uid, rev := range s.revision {
+		out = append(out, ReplicaSetRef{UID: uid, Revision: rev, Owned: true})
+	}
+	for uid := range s.foreign {
+		out = append(out, ReplicaSetRef{UID: uid})
+	}
+	slices.SortFunc(out, func(a, b ReplicaSetRef) int { return cmp.Compare(a.UID, b.UID) })
+	return out
+}
+
+// missesOwnerOf reports whether a pod is controlled by a ReplicaSet never
+// seen here yet named like one of the deployment's (<deployment>-<hash>):
+// the ReplicaSet list is older than the pod list, or a rollout began.
 func (s replicaSets) missesOwnerOf(pods []corev1.Pod) bool {
 	if s.guessed {
 		return false
@@ -122,7 +158,7 @@ func (s replicaSets) missesOwnerOf(pods []corev1.Pod) bool {
 		if ref == nil || ref.Kind != "ReplicaSet" || !strings.HasPrefix(ref.Name, s.deployment+"-") {
 			continue
 		}
-		if _, known := s.revision[ref.UID]; !known {
+		if _, known := s.revision[ref.UID]; !known && !s.foreign[ref.UID] {
 			return true
 		}
 	}
@@ -154,9 +190,11 @@ func (s replicaSets) owns(p *corev1.Pod) (bool, int64) {
 	return hash != "" && ref.Name == s.deployment+"-"+hash, p.CreationTimestamp.Unix()
 }
 
-// split sorts pods into streamed and skipped and derives the hashes the
-// footer narrows the selector to.
+// split sorts pods into streamed and skipped, derives the hashes the
+// footer narrows the selector to, and records the ReplicaSets seen.
 func (s replicaSets) split(t LogTarget, pods []*corev1.Pod) LogTarget {
+	t.OwnersGuessed = s.guessed
+	t.ReplicaSets = s.refs()
 	rank := map[string]int64{}
 	everyHash := true
 	var finishedPods, otherPods []*corev1.Pod
@@ -168,8 +206,9 @@ func (s replicaSets) split(t LogTarget, pods []*corev1.Pod) LogTarget {
 		case finished(p):
 			finishedPods = append(finishedPods, p)
 		default:
-			hash := p.Labels[hashLabel]
-			t.Pods = append(t.Pods, PodRef{Name: p.Name, Phase: string(p.Status.Phase), Hash: hash})
+			ref := podRef(p)
+			t.Pods = append(t.Pods, ref)
+			hash := ref.Hash
 			if hash == "" {
 				everyHash = false
 				continue
