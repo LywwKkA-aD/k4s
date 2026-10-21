@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -232,5 +234,79 @@ func TestContextSwitchDropsSavedStates(t *testing.T) {
 	next, _ := m.Update(views.ContextSelectedMsg{Name: testContextBeta})
 	if h := next.(Model).history; len(h) != 0 {
 		t.Fatalf("history after :ctx = %+v", h)
+	}
+}
+
+func TestRecentNamespaces(t *testing.T) {
+	t.Parallel()
+
+	many := make([]string, 0, maxRecentNamespaces+5)
+	for i := range maxRecentNamespaces + 5 {
+		many = append(many, fmt.Sprintf("ns-%02d", i))
+	}
+	cases := []struct {
+		name    string
+		current string
+		history []string
+		used    []string
+		want    []string
+	}{
+		{name: "nothing used", want: []string{}},
+		{name: "current alone", current: "demo", want: []string{"demo"}},
+		{
+			name: "current, history newest first, then earlier switches", current: "staging",
+			history: []string{"demo", "", "prod"}, used: []string{"staging", "prod", "shop", "demo"},
+			want: []string{"staging", "prod", "demo", "shop"},
+		},
+		{name: "every namespace is no name", used: []string{"", "demo", ""}, want: []string{"demo"}},
+		{name: "bounded", current: "here", used: many, want: append([]string{"here"}, many[:maxRecentNamespaces-1]...)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := Model{namespace: tc.current, usedNamespaces: tc.used}
+			for _, ns := range tc.history {
+				m.history = append(m.history, historyEntry{view: viewPods, namespace: ns})
+			}
+			if got := m.recentNamespaces(); !slices.Equal(got, tc.want) {
+				t.Errorf("recentNamespaces = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEnterNamespaceRemembersIt: each switch goes in front once, bounded,
+// and an earlier copy of the model keeps what it had.
+func TestEnterNamespaceRemembersIt(t *testing.T) {
+	t.Parallel()
+
+	m := Model{}
+	for _, ns := range []string{"a", "b", "", "a"} {
+		m = m.enterNamespace(ns)
+	}
+	if want := []string{"a", "b"}; !slices.Equal(m.usedNamespaces, want) {
+		t.Fatalf("used = %q, want %q", m.usedNamespaces, want)
+	}
+	before := m
+	for i := range maxRecentNamespaces + 2 {
+		m = m.enterNamespace(fmt.Sprintf("x-%d", i))
+	}
+	if len(m.usedNamespaces) != maxRecentNamespaces {
+		t.Errorf("used holds %d, want %d", len(m.usedNamespaces), maxRecentNamespaces)
+	}
+	if want := []string{"a", "b"}; !slices.Equal(before.usedNamespaces, want) {
+		t.Errorf("an earlier copy changed: %q", before.usedNamespaces)
+	}
+}
+
+// TestContextSwitchForgetsTheNamespacesUsed: they named the old cluster's
+// namespaces.
+func TestContextSwitchForgetsTheNamespacesUsed(t *testing.T) {
+	t.Parallel()
+
+	m := New(tuitest.NewFakeClient(t), nil).enterNamespace("prod")
+	next, _ := m.Update(views.ContextSelectedMsg{Name: testContextBeta})
+	if got := next.(Model).usedNamespaces; len(got) != 0 {
+		t.Errorf("used after :ctx = %q, want none", got)
 	}
 }

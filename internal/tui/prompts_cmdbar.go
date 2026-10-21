@@ -72,7 +72,7 @@ func (m Model) switchNamespace(arg string) (Model, tea.Cmd) {
 		return m.setStatus(status.Info, "already in "+namespaceLabel(ns))
 	}
 	m = m.pushHistory()
-	m.namespace = ns
+	m = m.enterNamespace(ns)
 	m = m.replaceView(view)
 	m, cmd := m.restore(st)
 	return m, tea.Batch(cmd, m.relayoutCmd())

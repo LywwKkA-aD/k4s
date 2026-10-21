@@ -15,9 +15,10 @@ import (
 )
 
 // onContextSelected swaps the active k8s.Client to the chosen context,
-// read from the same kubeconfig files. It drops the navigation history
-// and every saved view state (they reference resources that may not
-// exist in the new cluster), starts in the new context's namespace,
+// read from the same kubeconfig files. It drops the navigation history,
+// every saved view state and the namespaces used so far (they reference
+// resources that may not exist in the new cluster), starts in the new
+// context's namespace,
 // rebuilds the kubectl session and lands on the dashboard. Failures
 // surface in the status row and the previous client stays active. A
 // context with a credential plugin is probed for a login (login.go).
@@ -31,7 +32,7 @@ func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.C
 	}
 	m = m.withClient(client)
 	m.loadErr = nil
-	m.history = nil
+	m.history, m.usedNamespaces = nil, nil
 	m.status = m.status.Clear()
 	m.startup = startup.Session{Source: m.startup.Source, Distro: cluster.Detect("", client.Context, nil)}
 	m, errCmd := m.resetForwards(client)

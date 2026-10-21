@@ -71,8 +71,11 @@ type Model struct {
 	describer      describe.Kubectl
 
 	namespace string // "" = all
-	current   views.View
-	history   []historyEntry
+	// usedNamespaces are the namespaces this session switched to, newest
+	// first; with history they are what recentNamespaces offers.
+	usedNamespaces []string
+	current        views.View
+	history        []historyEntry
 	// build makes the view for a name; nil means newView. Tests use it to
 	// put stub views in history.
 	build func(m Model, name string) views.View

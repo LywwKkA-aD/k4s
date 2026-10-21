@@ -23,6 +23,9 @@ import (
 // maxHistory caps the Esc trail; the oldest entry goes first.
 const maxHistory = 50
 
+// maxRecentNamespaces caps the namespaces the session remembers using.
+const maxRecentNamespaces = 10
+
 // historyEntry is a view Esc can return to: which one, in which namespace
 // and, for a views.Stateful view, how it looked. The rebuildable views
 // (the lists, the dashboard, contexts, forwards) are entries by name;
@@ -34,6 +37,41 @@ type historyEntry struct {
 	namespace string
 	state     views.State
 	ref       views.ResourceRef
+}
+
+// enterNamespace makes ns the namespace views are built in and remembers
+// it as used.
+func (m Model) enterNamespace(ns string) Model {
+	m.namespace = ns
+	m.usedNamespaces = recentFirst(maxRecentNamespaces, ns, m.usedNamespaces...)
+	return m
+}
+
+// recentNamespaces are the namespaces this session used, for the
+// namespaces view to offer when RBAC forbids listing them: the current
+// one, those of the history entries, then the earlier switches; newest
+// first.
+func (m Model) recentNamespaces() []string {
+	names := make([]string, 0, len(m.history)+len(m.usedNamespaces))
+	for i := len(m.history) - 1; i >= 0; i-- {
+		names = append(names, m.history[i].namespace)
+	}
+	return recentFirst(maxRecentNamespaces, m.namespace, append(names, m.usedNamespaces...)...)
+}
+
+// recentFirst is newest followed by older, in a new slice: every name
+// once, in its newest place, "" (every namespace) left out, at most limit.
+func recentFirst(limit int, newest string, older ...string) []string {
+	out := make([]string, 0, min(limit, len(older)+1))
+	for _, ns := range append([]string{newest}, older...) {
+		if len(out) == limit {
+			break
+		}
+		if ns != "" && !slices.Contains(out, ns) {
+			out = append(out, ns)
+		}
+	}
+	return out
 }
 
 // switchTo records the current view in history then constructs the named view.
@@ -124,7 +162,7 @@ func (m Model) newView(name string) views.View {
 	case viewPods:
 		return pods.New(m.client, m.namespace)
 	case viewNamespaces:
-		return namespaces.New(m.client)
+		return namespaces.New(m.client, namespaces.WithRecent(m.recentNamespaces()...))
 	case viewDeployments:
 		return deployments.New(m.client, m.namespace)
 	case viewServices:
@@ -216,7 +254,7 @@ func (m Model) popHistory() (Model, tea.Cmd, bool) {
 	}
 	last := m.history[len(m.history)-1]
 	m.history = slices.Clip(m.history[:len(m.history)-1])
-	m.namespace = last.namespace
+	m = m.enterNamespace(last.namespace)
 	m = m.rebuild(last)
 	m, cmd := m.restore(last.state)
 	return m, cmd, true

@@ -102,7 +102,7 @@ func (m Model) onRelayout() (tea.Model, tea.Cmd) {
 
 func (m Model) onNamespaceSelected(msg views.NamespaceSelectedMsg) (tea.Model, tea.Cmd) {
 	m = m.pushHistory()
-	m.namespace = msg.Namespace
+	m = m.enterNamespace(msg.Namespace)
 	m = m.replaceView(viewPods)
 	return m, m.relayoutCmd()
 }
