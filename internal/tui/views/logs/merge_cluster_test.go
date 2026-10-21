@@ -5,14 +5,22 @@ package logs
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 )
 
+// clusterKubeconfig names the cluster the cluster-tagged tests read. The
+// package's TestMain points KUBECONFIG at a fake, so it has its own
+// variable:
+//
+//	K4S_CLUSTER_KUBECONFIG=$PWD/.kube/config go test -tags cluster ./internal/tui/views/logs/
+const clusterKubeconfig = "K4S_CLUSTER_KUBECONFIG"
+
 func TestMergeClusterSmoke(t *testing.T) {
-	client, err := k8s.LoadFromKubeconfig("")
+	client, err := k8s.LoadFromKubeconfig(os.Getenv(clusterKubeconfig))
 	if err != nil {
 		t.Fatalf("load kubeconfig: %v", err)
 	}
@@ -20,17 +28,26 @@ func TestMergeClusterSmoke(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	pods, err := client.ListPods(ctx, "app")
+	ns := os.Getenv("K4S_CLUSTER_NAMESPACE")
+	if ns == "" {
+		ns = "k4s-demo"
+	}
+	pods, err := client.ListPods(ctx, ns)
 	if err != nil {
 		t.Fatalf("list pods: %v", err)
 	}
-	if len(pods) < 2 {
-		t.Skipf("need >=2 pods in app namespace, got %d", len(pods))
+	var names []string
+	for _, p := range pods {
+		if p.Status == "Running" && len(names) < 2 {
+			names = append(names, p.Name)
+		}
+	}
+	if len(names) < 2 {
+		t.Skipf("need >=2 running pods in %s, got %d", ns, len(names))
 	}
 
-	names := []string{pods[0].Name, pods[1].Name}
 	events := make(chan logEvent, 256)
-	go runMergedStreams(ctx, streamSpec{src: client, namespace: "app", pods: names, tail: 100, crash: defaultCrashLog()}, events)
+	go runMergedStreams(ctx, streamSpec{src: client, namespace: ns, pods: names, tail: 100, crash: defaultCrashLog()}, events)
 
 	counts := make(map[string]int)
 	var first []string
