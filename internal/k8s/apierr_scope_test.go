@@ -58,6 +58,31 @@ func TestClassifyClusterScoped(t *testing.T) {
 	}
 }
 
+func TestKindScope(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		group, kind string
+		want        k8s.Scope
+	}{
+		{kind: "Node", want: k8s.ScopeCluster},
+		{group: "storage.k8s.io", kind: "StorageClass", want: k8s.ScopeCluster},
+		{group: "k3s.cattle.io", kind: "ETCDSnapshotFile", want: k8s.ScopeCluster},
+		{kind: "Pod", want: k8s.ScopeNamespaced},
+		{group: "apps", kind: "Deployment", want: k8s.ScopeNamespaced},
+		{group: "events.k8s.io", kind: "Event", want: k8s.ScopeNamespaced},
+		{group: "helm.cattle.io", kind: "HelmChart", want: k8s.ScopeNamespaced},
+		{group: "example.com", kind: "Pod", want: k8s.ScopeUnknown},
+		{group: "example.com", kind: "Widget", want: k8s.ScopeUnknown},
+		{kind: "StorageClass", want: k8s.ScopeUnknown},
+	}
+	for _, tc := range cases {
+		if got := k8s.KindScope(tc.group, tc.kind); got != tc.want {
+			t.Errorf("KindScope(%q, %q) = %v, want %v", tc.group, tc.kind, got, tc.want)
+		}
+	}
+}
+
 // TestEventAndNodeListsNameTheirScope: a refused list of events or nodes
 // is classified from the call, as RBAC names it: events across every
 // namespace (the views fall back on that) and nodes, which have none.

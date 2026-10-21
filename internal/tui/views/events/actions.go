@@ -2,6 +2,7 @@ package events
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -48,7 +49,7 @@ func (m Model) describe() tea.Cmd {
 	if !ok {
 		return cmd
 	}
-	ref, err := objectRef(e.Object)
+	ref, err := objectRef(e)
 	if err != nil {
 		return statusCmd(status.Warn, "event "+sanitize.Line(e.Name)+" names "+err.Error())
 	}
@@ -57,11 +58,12 @@ func (m Model) describe() tea.Cmd {
 	}
 }
 
-// objectRef is the object o names as kubectl describe takes it. Anyone
+// objectRef is the object e is about as kubectl describe takes it. Anyone
 // who may create events writes involvedObject, so every part is checked:
 // a name that reads as a flag or a kind that is no identifier never
 // reaches kubectl.
-func objectRef(o k8s.EventObject) (views.ResourceRef, error) {
+func objectRef(e k8s.Event) (views.ResourceRef, error) {
+	o := e.Object
 	group := ""
 	if before, _, found := strings.Cut(o.APIVersion, "/"); found {
 		group = before
@@ -69,15 +71,41 @@ func objectRef(o k8s.EventObject) (views.ResourceRef, error) {
 	switch {
 	case !kindPattern.MatchString(o.Kind),
 		group != "" && kubectl.CheckSubdomain("group", group) != nil,
-		kubectl.CheckSubdomain(o.Kind, o.Name) != nil,
-		o.Namespace != "" && kubectl.CheckLabel("namespace", o.Namespace) != nil:
+		kubectl.CheckSubdomain(o.Kind, o.Name) != nil:
 		return views.ResourceRef{}, errNoObject
+	}
+	ns, err := objectNamespace(e, group)
+	if err != nil {
+		return views.ResourceRef{}, err
 	}
 	kind := strings.ToLower(o.Kind)
 	if !plainGroups[group] {
 		kind += "." + group
 	}
-	return views.ResourceRef{Kind: kind, Namespace: o.Namespace, Name: o.Name}, nil
+	return views.ResourceRef{Kind: kind, Namespace: ns, Name: o.Name}, nil
+}
+
+// objectNamespace is the namespace of the object e is about. An
+// involvedObject may leave it out: a namespaced kind then lives in the
+// event's own namespace and a cluster-scoped one in none; a kind k4s does
+// not know cannot be placed, and describing it in the context's namespace
+// would describe another object or none.
+func objectNamespace(e k8s.Event, group string) (string, error) {
+	o := e.Object
+	ns := o.Namespace
+	if ns == "" {
+		switch k8s.KindScope(group, o.Kind) {
+		case k8s.ScopeCluster:
+			return "", nil
+		case k8s.ScopeUnknown:
+			return "", fmt.Errorf("%s/%s without a namespace", o.Kind, o.Name)
+		}
+		ns = e.Namespace
+	}
+	if kubectl.CheckLabel("namespace", ns) != nil {
+		return "", errNoObject
+	}
+	return ns, nil
 }
 
 // Selected implements views.Selection: the event under the cursor, so o
