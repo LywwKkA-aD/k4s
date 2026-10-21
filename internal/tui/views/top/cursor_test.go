@@ -19,8 +19,8 @@ func (c *changing) set(h http.Handler) { c.h.Store(&h) }
 
 func (c *changing) ServeHTTP(w http.ResponseWriter, r *http.Request) { (*c.h.Load()).ServeHTTP(w, r) }
 
-func pod(name, cpu, mem string) k8stest.PodMetrics {
-	return k8stest.PodMetrics{Namespace: "demo", Name: name, Containers: []k8stest.ContainerUsage{{Name: "app", CPU: cpu, Memory: mem}}}
+func pod(name, cpu string) k8stest.PodMetrics {
+	return k8stest.PodMetrics{Namespace: "demo", Name: name, Containers: []k8stest.ContainerUsage{{Name: "app", CPU: cpu, Memory: "1Mi"}}}
 }
 
 func serving(pods ...k8stest.PodMetrics) http.Handler {
@@ -56,14 +56,14 @@ func TestCursorFollowsItsRowAcrossPolls(t *testing.T) {
 	t.Parallel()
 
 	var srv changing
-	srv.set(serving(pod("a", "300m", "1Mi"), pod("b", "200m", "1Mi"), pod("c", "100m", "1Mi")))
+	srv.set(serving(pod("a", "300m"), pod("b", "200m"), pod("c", "100m")))
 	m, clk := clocked(t, k8stest.NewServerClient(t, &srv), "demo")
 	m, _ = tuitest.Drive(t, m, tuitest.Press("down")) // b
 	if got := onRow(m); got != "demo/b" {
 		t.Fatalf("cursor on %q, want demo/b", got)
 	}
 
-	srv.set(serving(pod("a", "100m", "1Mi"), pod("b", "200m", "1Mi"), pod("c", "300m", "1Mi"), pod("d", "400m", "1Mi")))
+	srv.set(serving(pod("a", "100m"), pod("b", "200m"), pod("c", "300m"), pod("d", "400m")))
 	tick, _ := clk.Fire()
 	m, _ = tuitest.Drive(t, m, tick)
 	if got := onRow(m); got != "demo/b" {
@@ -80,18 +80,18 @@ func TestCursorFallsBackToTheClampedIndex(t *testing.T) {
 	t.Parallel()
 
 	var srv changing
-	srv.set(serving(pod("a", "300m", "1Mi"), pod("b", "200m", "1Mi"), pod("c", "100m", "1Mi")))
+	srv.set(serving(pod("a", "300m"), pod("b", "200m"), pod("c", "100m")))
 	m, clk := clocked(t, k8stest.NewServerClient(t, &srv), "demo")
 	m, _ = tuitest.Drive(t, m, tuitest.Press("down"), tuitest.Press("down")) // c, the last
 
-	srv.set(serving(pod("a", "300m", "1Mi"), pod("b", "200m", "1Mi")))
+	srv.set(serving(pod("a", "300m"), pod("b", "200m")))
 	tick, _ := clk.Fire()
 	m, _ = tuitest.Drive(t, m, tick)
 	if got := onRow(m); got != "demo/b" {
 		t.Errorf("with c gone the cursor is on %q, want the last row, demo/b", got)
 	}
 
-	srv.set(serving(pod("a", "300m", "1Mi"), pod("x", "250m", "1Mi"), pod("b", "200m", "1Mi")))
+	srv.set(serving(pod("a", "300m"), pod("x", "250m"), pod("b", "200m")))
 	tick, _ = clk.Fire()
 	m, _ = tuitest.Drive(t, m, tick)
 	if got := onRow(m); got != "demo/b" {

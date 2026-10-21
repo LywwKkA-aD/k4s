@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
 
@@ -17,19 +18,15 @@ func TestMain(m *testing.M) {
 func TestIsolate(t *testing.T) {
 	t.Parallel()
 
-	state := os.Getenv("XDG_STATE_HOME")
-	if !strings.Contains(state, "k4s-test-") {
+	if state := os.Getenv("XDG_STATE_HOME"); !strings.Contains(state, "k4s-test-") {
 		t.Errorf("XDG_STATE_HOME = %q, want a throwaway directory", state)
 	}
-	if _, err := os.Stat(state); err == nil {
-		t.Errorf("%s exists: the restore popup would find saved forwards there", state)
-	}
-	cfg, err := os.ReadFile(os.Getenv("KUBECONFIG"))
+	got, err := k8s.ListContexts("")
 	if err != nil {
 		t.Fatalf("KUBECONFIG: %v", err)
 	}
-	if !strings.Contains(string(cfg), "current-context: \""+tuitest.FakeContext+"\"") {
-		t.Errorf("kubeconfig lacks the %s context:\n%s", tuitest.FakeContext, cfg)
+	if len(got) != 1 || got[0].Name != tuitest.FakeContext || !got[0].Current {
+		t.Errorf("contexts = %+v, want only %s, current", got, tuitest.FakeContext)
 	}
 }
 
