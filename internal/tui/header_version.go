@@ -7,23 +7,45 @@ import (
 	apiversion "k8s.io/apimachinery/pkg/version"
 
 	"github.com/LywwKkA-aD/k4s/internal/cluster"
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 )
 
-// versionTimeout bounds the header's /version request.
+// versionTimeout bounds each of the header's /version requests.
 const versionTimeout = 5 * time.Second
 
-// versionMsg is the reply to the header's /version request.
+// versionRetries are the waits before the header asks again for a version
+// it could not get, one per retry; after the last it stops.
+var versionRetries = [...]time.Duration{15 * time.Second, 30 * time.Second, time.Minute}
+
+// versionMsg is the reply to the header's /version request; attempt counts
+// the asks before it, 0 for the first.
+//
+// It applies itself (see execDoneMsg) because a failed reply arms a retry,
+// and the router keeps the Cmd of a self-applying message only.
 type versionMsg struct {
-	res async.Result[*apiversion.Info]
+	res     async.Result[*apiversion.Info]
+	attempt int
 }
 
-// fetchVersion asks the server for its version once, after the start and
-// after :ctx: it names the distribution and the release in the header.
+// versionRetryMsg is the end of the wait before ask number attempt.
+type versionRetryMsg struct {
+	token   async.Token
+	attempt int
+}
+
+// fetchVersion asks the server for its version, after the start and after
+// :ctx: it names the distribution and the release in the header.
 // Only certificate and token contexts ask here. An exec or auth-provider
 // context got its version from the preflight, and running its plugin
 // under the TUI could prompt where nobody can answer.
 func (m Model) fetchVersion() tea.Cmd {
+	return m.askVersion(0)
+}
+
+// askVersion is ask number attempt under the client's token, or nil when
+// there is nothing to ask (see fetchVersion).
+func (m Model) askVersion(attempt int) tea.Cmd {
 	c := m.client
 	if c == nil || c.NeedsLogin() || m.startup.ServerVersion != nil {
 		return nil
@@ -31,19 +53,55 @@ func (m Model) fetchVersion() tea.Cmd {
 	run := async.Run(m.ident.version, versionTimeout, c.ServerVersion)
 	return func() tea.Msg {
 		res, _ := run().(async.Result[*apiversion.Info])
-		return versionMsg{res: res}
+		return versionMsg{res: res, attempt: attempt}
 	}
 }
 
-// onVersion records the active client's server version. A failure changes
-// nothing, since the dashboard reports an unreachable server, and a reply
-// for a client k4s has switched away from is dropped.
-func (m Model) onVersion(msg versionMsg) Model {
-	info := msg.res.Value
-	if m.client == nil || !m.ident.version.Accept(msg.res.Token) || msg.res.Err != nil || info == nil {
-		return m
+// versionRetryAfter is how long the header waits after a failed ask number
+// attempt before it asks again; false once the retries are spent.
+func versionRetryAfter(attempt int) (time.Duration, bool) {
+	if attempt < 0 || attempt >= len(versionRetries) {
+		return 0, false
 	}
-	m.startup.ServerVersion = info
-	m.startup.Distro = cluster.Detect(info.GitVersion, m.client.Context, nil)
-	return m
+	return versionRetries[attempt], true
+}
+
+// versionRetryable reports whether asking again could get the version: not
+// once the server has answered and refused (401, 403, 404, a login).
+func versionRetryable(err error) bool {
+	switch k8s.Classify(err).Kind {
+	case k8s.KindUnauthorized, k8s.KindForbidden, k8s.KindLogin, k8s.KindNotFound:
+		return false
+	}
+	return true
+}
+
+// apply records the active client's server version. A failure leaves the
+// header as it is, since the dashboard reports an unreachable server, and
+// asks again after a growing wait, so a cluster that was down at the start
+// still gets named. A reply for a client k4s has switched away from is
+// dropped.
+func (v versionMsg) apply(m Model) (tea.Model, tea.Cmd) {
+	if m.client == nil || !m.ident.version.Accept(v.res.Token) {
+		return m, nil
+	}
+	if info := v.res.Value; v.res.Err == nil && info != nil {
+		m.startup.ServerVersion = info
+		m.startup.Distro = cluster.Detect(info.GitVersion, m.client.Context, nil)
+		return m, nil
+	}
+	wait, ok := versionRetryAfter(v.attempt)
+	if !ok || !versionRetryable(v.res.Err) {
+		return m, nil
+	}
+	retry := versionRetryMsg{token: v.res.Token, attempt: v.attempt + 1}
+	return m, tea.Tick(wait, func(time.Time) tea.Msg { return retry })
+}
+
+// apply asks again unless the client changed or the version is known.
+func (r versionRetryMsg) apply(m Model) (tea.Model, tea.Cmd) {
+	if !m.ident.version.Accept(r.token) {
+		return m, nil
+	}
+	return m, m.askVersion(r.attempt)
 }

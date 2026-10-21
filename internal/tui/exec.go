@@ -42,7 +42,9 @@ const (
 // execDoneMsg is a step of a flow the root runs around the terminal: the
 // pod lookup before `kubectl exec`, the shell that came back, and the
 // login flow after :ctx (login.go). The router hands every one of them to
-// onExecDone, and each applies itself to the model.
+// onExecDone, and each applies itself to the model. The header's /version
+// request and its retries (header_version.go) ride on it too, as the
+// other per-client request :ctx starts.
 type execDoneMsg interface {
 	apply(m Model) (tea.Model, tea.Cmd)
 }
