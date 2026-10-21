@@ -55,28 +55,13 @@ func (c *Client) ListDeploymentsAt(ctx context.Context, namespace, resourceVersi
 	return out, nil
 }
 
-// ContainersForDeployment returns the container names defined in the
-// deployment's pod template. Every replica has the same set, so the TUI
-// resolves it once and reuses it for the whole deployment.
-//
-// Superseded by DeploymentLogTarget, which returns the containers with the
-// pods in one resolve. It stays until the deployments view moves over; the
-// formal deprecation marker would fail staticcheck on that caller first.
-func (c *Client) ContainersForDeployment(ctx context.Context, namespace, name string) ([]string, error) {
-	dep, err := c.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("get deployment: %w", err)
-	}
-	return containerNames(&dep.Spec.Template.Spec), nil
-}
-
 // PodsForDeployment returns the names of pods that match the deployment's
-// label selector. Used by the TUI to tail every replica of a deployment in
-// one shot via the logs view's multi-pod streaming.
+// label selector.
 //
 // Superseded by DeploymentLogTarget: the selector alone also matches
 // finished pods and pods of other owners that share the labels, such as a
-// CronJob's. It stays until the deployments view moves over.
+// CronJob's. No view calls it; it stays while the tuitest seed test checks
+// the fake cluster's relations through it.
 func (c *Client) PodsForDeployment(ctx context.Context, namespace, name string) ([]string, error) {
 	dep, err := c.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {

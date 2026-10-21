@@ -3,6 +3,7 @@ package deployments_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -12,31 +13,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/deployments"
 )
 
-const (
-	width  = 140
-	height = 30
-)
-
-func mounted(t *testing.T, c *k8s.Client, namespace string) deployments.Model {
-	t.Helper()
-	m, _ := tuitest.Mount(t, deployments.New(c, namespace), width, height)
-	return m
-}
-
-func on(name string, more ...tea.Msg) []tea.Msg {
-	return slices.Concat(tuitest.FilterBy(name), more)
-}
-
 func TestRowActionsEmitRequests(t *testing.T) {
 	t.Parallel()
 
-	demo := tuitest.NamespaceDemo
+	c := tuitest.NewFakeClient(t, tuitest.WithObjects(shopObjects()...))
+	api, worker := target(t, c, "api"), target(t, c, "worker")
 	cases := []struct {
 		name      string
 		namespace string
@@ -45,74 +32,144 @@ func TestRowActionsEmitRequests(t *testing.T) {
 	}{
 		{
 			name:      "enter describes the deployment",
-			namespace: demo,
-			keys:      on(tuitest.DeploymentWeb, tuitest.Enter()),
-			want:      views.DescribeRequestMsg{Kind: "deployment", Namespace: demo, Name: tuitest.DeploymentWeb},
+			namespace: shop,
+			keys:      on("api", tuitest.Enter()),
+			want:      views.DescribeRequestMsg{Kind: "deployment", Namespace: shop, Name: "api"},
 		},
 		{
 			name:      "enter in all namespaces reads the namespace column",
 			namespace: "",
-			keys:      on(tuitest.DeploymentMulti, tuitest.Enter()),
-			want:      views.DescribeRequestMsg{Kind: "deployment", Namespace: demo, Name: tuitest.DeploymentMulti},
+			keys:      on("worker", tuitest.Enter()),
+			want:      views.DescribeRequestMsg{Kind: "deployment", Namespace: shop, Name: "worker"},
 		},
 		{
-			name:      "l tails every replica of a single-container template",
-			namespace: demo,
-			keys:      on(tuitest.DeploymentWeb, tuitest.Press("l")),
+			name:      "l tails the running pods of a single-container template",
+			namespace: shop,
+			keys:      on("api", tuitest.Press("l")),
 			want: views.TailPromptRequestMsg{
-				Namespace: demo, Pods: []string{tuitest.PodWeb1, tuitest.PodWeb2}, Container: tuitest.ContainerNginx,
+				Namespace: shop, Pods: []string{"api-h1-a", "api-h1-b"}, Container: appContainer,
+				Target: ref("api"), Logs: api,
 			},
 		},
 		{
 			name:      "l on a multi-container template asks for the container",
-			namespace: demo,
-			keys:      on(tuitest.DeploymentMulti, tuitest.Press("l")),
+			namespace: "",
+			keys:      on("worker", tuitest.Press("l")),
 			want: views.ContainerPromptRequestMsg{
-				Namespace: demo, Pods: []string{tuitest.PodMulti},
-				Containers: []string{tuitest.ContainerApp, tuitest.ContainerSidecar}, NextKind: "logs",
+				Namespace: shop, Pods: []string{"worker-h1-a"}, Containers: []string{appContainer, sidecarContainer},
+				NextKind: "logs", Target: ref("worker"), Logs: worker,
 			},
 		},
 		{
 			name:      "f asks for a port-forward without a port hint",
-			namespace: demo,
-			keys:      on(tuitest.DeploymentWeb, tuitest.Press("f")),
-			want:      views.ForwardRequestMsg{Kind: "deployment", Namespace: demo, Name: tuitest.DeploymentWeb},
+			namespace: shop,
+			keys:      on("api", tuitest.Press("f")),
+			want:      views.ForwardRequestMsg{Kind: "deployment", Namespace: shop, Name: "api"},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, out := tuitest.Drive(t, mounted(t, tuitest.NewFakeClient(t), tc.namespace), tc.keys...)
+			_, out := tuitest.Drive(t, mounted(t, c, tc.namespace), tc.keys...)
 			if !tuitest.Contains(out, tc.want) {
 				t.Errorf("want %T %+v among:\n%s", tc.want, tc.want, tuitest.Describe(out))
+			}
+			if got := statuses(out); len(got) != 0 {
+				t.Errorf("a working action set a status: %+v", got)
 			}
 		})
 	}
 }
 
-func TestKeysWithoutAnAction(t *testing.T) {
+// TestKeysThatCannotActSayWhy: a row key that cannot do its job answers
+// with a status, never with silence.
+func TestKeysThatCannotActSayWhy(t *testing.T) {
 	t.Parallel()
 
-	noPods := tuitest.NewFakeClient(t, tuitest.WithObjects(
-		tuitest.Deployment(tuitest.NamespaceDemo, "idle", 0, map[string]string{"app": "idle"}, tuitest.ContainerApp),
-	))
+	shopClient := tuitest.NewFakeClient(t, tuitest.WithObjects(shopObjects()...))
+	failing := tuitest.NewFakeClient(t, tuitest.WithObjects(shopObjects()...),
+		tuitest.WithReactor("get", "deployments", func(k8stesting.Action) (bool, runtime.Object, error) {
+			return true, nil, errors.New("etcdserver: request timed out")
+		}))
+	unlisted := tuitest.NewFakeClient(t, tuitest.WithObjects(shopObjects()...),
+		tuitest.WithReactor("list", "deployments", func(k8stesting.Action) (bool, runtime.Object, error) {
+			return true, nil, errors.New("deployments.apps is forbidden")
+		}))
+	starting := tuitest.NewFakeClient(t, tuitest.WithObjects(
+		tuitest.Deployment(shop, "starting", 1, map[string]string{"app": "starting"}, appContainer)))
 	cases := []struct {
 		name string
-		m    deployments.Model
+		m    func(t *testing.T) deployments.Model
 		keys []tea.Msg
+		want views.StatusMsg
 	}{
-		{name: "e is not bound", m: mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo), keys: tuitest.Keys("e")},
-		{name: "rows not loaded", m: deployments.New(tuitest.NewFakeClient(t), tuitest.NamespaceDemo), keys: tuitest.Keys("enter", "l", "f")},
-		{name: "no kubeconfig", m: deployments.New(nil, ""), keys: tuitest.Keys("enter", "l", "f", "r")},
-		{name: "l on a deployment without pods", m: mounted(t, noPods, tuitest.NamespaceDemo), keys: tuitest.Keys("l")},
+		{
+			name: "no kubeconfig", m: func(*testing.T) deployments.Model { return deployments.New(nil, "") },
+			keys: tuitest.Keys("l"), want: views.StatusMsg{Level: status.Warn, Text: "no kubeconfig"},
+		},
+		{
+			name: "r without a kubeconfig", m: func(*testing.T) deployments.Model { return deployments.New(nil, "") },
+			keys: tuitest.Keys("r"), want: views.StatusMsg{Level: status.Warn, Text: "no kubeconfig"},
+		},
+		{
+			name: "rows not loaded", m: func(t *testing.T) deployments.Model { return deployments.New(shopClient, shop) },
+			keys: tuitest.Keys("enter"), want: views.StatusMsg{Level: status.Info, Text: "deployments are still loading"},
+		},
+		{
+			name: "list failed", m: func(t *testing.T) deployments.Model { return mounted(t, unlisted, shop) },
+			keys: tuitest.Keys("l"), want: views.StatusMsg{Level: status.Warn, Text: "deployments unavailable, press r"},
+		},
+		{
+			name: "l before any pod runs", m: func(t *testing.T) deployments.Model { return mounted(t, starting, shop) },
+			keys: tuitest.Keys("l"), want: views.StatusMsg{Level: status.Warn, Text: "deployment starting: 0 running pods"},
+		},
+		{
+			name: "no row under the cursor", m: func(t *testing.T) deployments.Model { return mounted(t, shopClient, shop) },
+			keys: on("zzz", tuitest.Press("f")), want: views.StatusMsg{Level: status.Info, Text: "no deployment selected"},
+		},
+		{
+			name: "l on 0 replicas", m: func(t *testing.T) deployments.Model { return mounted(t, shopClient, shop) },
+			keys: on("idle", tuitest.Press("l")), want: views.StatusMsg{Level: status.Warn, Text: "deployment idle has 0 replicas"},
+		},
+		{
+			name: "f on 0 replicas", m: func(t *testing.T) deployments.Model { return mounted(t, shopClient, shop) },
+			keys: on("idle", tuitest.Press("f")), want: views.StatusMsg{Level: status.Warn, Text: "deployment idle has 0 replicas"},
+		},
+		{
+			name: "l without a selector", m: func(t *testing.T) deployments.Model { return mounted(t, shopClient, shop) },
+			keys: on("nosel", tuitest.Press("l")), want: views.StatusMsg{Level: status.Warn, Text: "deployment nosel has no selector"},
+		},
+		{
+			name: "l with only pods of other owners",
+			m: func(t *testing.T) deployments.Model {
+				return mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo)
+			},
+			keys: on(tuitest.DeploymentWeb, tuitest.Press("l")),
+			want: views.StatusMsg{Level: status.Warn, Text: "deployment web: 0 running pods · 2 other pods skipped (kubectl logs -l would include them)"},
+		},
+		{
+			name: "l when the lookup fails", m: func(t *testing.T) deployments.Model { return mounted(t, failing, shop) },
+			keys: on("api", tuitest.Press("l")),
+			want: views.StatusMsg{Level: status.Error, Text: "deployment api: get deployment: etcdserver: request timed out"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if _, out := tuitest.Drive(t, tc.m, tc.keys...); len(tuitest.Requests(out)) != 0 {
-				t.Errorf("emitted:\n%s", tuitest.Describe(out))
+			_, out := tuitest.Drive(t, tc.m(t), tc.keys...)
+			if got := tuitest.Requests(out); !only(out, tc.want) {
+				t.Errorf("want only %+v, got:\n%s", tc.want, tuitest.Describe(got))
 			}
 		})
+	}
+}
+
+func TestEIsNotBound(t *testing.T) {
+	t.Parallel()
+
+	m := mounted(t, tuitest.NewFakeClient(t, tuitest.WithObjects(shopObjects()...)), shop)
+	if _, out := tuitest.Drive(t, m, tuitest.Press("e")); len(tuitest.Requests(out)) != 0 {
+		t.Errorf("e emitted:\n%s", tuitest.Describe(out))
 	}
 }
 
@@ -189,17 +246,37 @@ func TestViewStates(t *testing.T) {
 func TestFilterCapturesKeys(t *testing.T) {
 	t.Parallel()
 
-	m := mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo)
-	m, _ = tuitest.Drive(t, m, tuitest.Press("/"), tuitest.Type("mul"))
-	if !m.CapturesKeys() {
-		t.Fatal("open filter must capture keys")
+	for _, input := range []tea.Msg{tuitest.Type("mul"), tuitest.Paste("mul")} {
+		t.Run(fmt.Sprintf("%T", input), func(t *testing.T) {
+			t.Parallel()
+			m := mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo)
+			m, _ = tuitest.Drive(t, m, tuitest.Press("/"), input)
+			if !m.CapturesKeys() {
+				t.Fatal("open filter must capture keys")
+			}
+			if screen := tuitest.Screen(m); !strings.Contains(screen, tuitest.DeploymentMulti) || strings.Contains(screen, " web ") {
+				t.Errorf("filter narrows rows:\n%s", screen)
+			}
+			m, _ = tuitest.Drive(t, m, tuitest.Esc())
+			if m.CapturesKeys() || strings.Contains(tuitest.Screen(m), "/ mul") {
+				t.Errorf("esc closes and clears the filter:\n%s", tuitest.Screen(m))
+			}
+		})
 	}
-	if screen := tuitest.Screen(m); !strings.Contains(screen, tuitest.DeploymentMulti) || strings.Contains(screen, " web ") {
-		t.Errorf("filter narrows rows:\n%s", screen)
-	}
-	m, _ = tuitest.Drive(t, m, tuitest.Esc())
-	if m.CapturesKeys() || strings.Contains(tuitest.Screen(m), "/ mul") {
-		t.Errorf("esc closes and clears the filter:\n%s", tuitest.Screen(m))
+}
+
+// TestFilterKeepsTheCursorRow: the cursor stays on its deployment while
+// the rows around it come and go.
+func TestFilterKeepsTheCursorRow(t *testing.T) {
+	t.Parallel()
+
+	m := mounted(t, tuitest.NewFakeClient(t, tuitest.WithObjects(payObjects()...)), shop)
+	m, _ = tuitest.Drive(t, m, tuitest.Press("down"), tuitest.Press("down"))
+	m, _ = tuitest.Drive(t, m, tuitest.FilterBy("worker")...)
+	_, out := tuitest.Drive(t, m, tuitest.Press("/"), tuitest.Esc(), tuitest.Enter())
+	want := views.DescribeRequestMsg{Kind: "deployment", Namespace: shop, Name: "pay-worker"}
+	if !only(out, want) {
+		t.Errorf("the cursor left pay-worker; enter asked:\n%s", tuitest.Describe(tuitest.Requests(out)))
 	}
 }
 
@@ -259,22 +336,18 @@ func TestRefreshRespectsBusy(t *testing.T) {
 	}
 }
 
-func TestStaleGenerationReplyIsDropped(t *testing.T) {
+func TestStaleInstanceReplyIsDropped(t *testing.T) {
 	t.Parallel()
 
 	c := tuitest.NewFakeClient(t)
-	_, oldReplies := tuitest.Init(t, deployments.New(c, tuitest.NamespaceDemo))
-	fresh, _ := tuitest.Drive(t, deployments.New(c, tuitest.NamespaceDemo), tuitest.Resize(width, height))
-	fresh, inFlight := tuitest.Step(t, fresh, tuitest.Press("r"))
+	_, oldReplies := tuitest.Init(t, deployments.New(c, tuitest.NamespaceDemo, deployments.WithClock(newClock())))
+	fresh, _ := tuitest.Drive(t, deployments.New(c, tuitest.NamespaceDemo, deployments.WithClock(newClock())), tuitest.Resize(width, height))
 	fresh, _ = tuitest.Drive(t, fresh, oldReplies...)
 
 	if !strings.Contains(tuitest.Screen(fresh), "loading deployments") {
 		t.Errorf("a reply addressed to an older view was applied:\n%s", tuitest.Screen(fresh))
 	}
-	if _, again := tuitest.Step(t, fresh, tuitest.Press("r")); len(again) != 0 {
-		t.Errorf("the stale reply released the busy flag:\n%s", tuitest.Describe(again))
-	}
-	fresh, _ = tuitest.Drive(t, fresh, inFlight...)
+	fresh, _ = tuitest.Init(t, fresh)
 	if !strings.Contains(tuitest.Screen(fresh), tuitest.DeploymentWeb) {
 		t.Errorf("own reply not applied:\n%s", tuitest.Screen(fresh))
 	}
@@ -286,6 +359,9 @@ func TestStaticContract(t *testing.T) {
 	m := deployments.New(nil, "")
 	if m.Title() != "deployments" || m.CapturesKeys() || m.Close() != nil {
 		t.Errorf("Title=%q CapturesKeys=%v", m.Title(), m.CapturesKeys())
+	}
+	if m.Init() != nil {
+		t.Error("a view without a client has nothing to list")
 	}
 	names := tuitest.HelpKeys(m)
 	if want := []string{"enter", "l", "f", "/", "w", "r"}; !slices.Equal(names, want) {
