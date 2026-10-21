@@ -18,6 +18,11 @@ const (
 	// MaxEvents bounds what ListEvents keeps: a busy namespace can hold
 	// tens of thousands of events, polled every few seconds.
 	MaxEvents = 10000
+	// maxEventsRead bounds a read in pages. The server lists in key order,
+	// so the newest MaxEvents are known only once every page is read;
+	// twice MaxEvents keeps a refresh of a busy cluster within the list
+	// deadline, and past it the list is cut.
+	maxEventsRead = 2 * MaxEvents
 )
 
 // Event is one core/v1 Event, with what `kubectl events` prints of it.
@@ -51,16 +56,19 @@ type EventObject struct {
 // first.
 type EventList struct {
 	Items []Event
-	// Cut is set when there were more than MaxEvents: reading stopped
-	// there, or only the newest MaxEvents of one whole answer were kept.
+	// Cut is set when there were more than MaxEvents: only the newest
+	// MaxEvents were kept, or reading stopped at maxEventsRead with pages
+	// left.
 	Cut bool
 }
 
 // ListEvents lists the events in namespace, or in all namespaces when
 // namespace is "", newest first: `kubectl events` prints the same events
-// oldest first. It reads in pages of eventsPage and stops at MaxEvents.
-// opts apply to the first page; a continued page takes its resource
-// version from the continue token, as the API requires.
+// oldest first. It reads in pages of eventsPage, up to maxEventsRead, and
+// keeps the newest MaxEvents, as it keeps them of a whole answer from the
+// watch cache: a poll and a refresh show the same events. opts apply to
+// the first page; a continued page takes its resource version from the
+// continue token, as the API requires.
 func (c *Client) ListEvents(ctx context.Context, namespace string, opts ...ListOption) (EventList, error) {
 	o := listOptions(opts)
 	o.Limit = eventsPage
@@ -71,7 +79,7 @@ func (c *Client) ListEvents(ctx context.Context, namespace string, opts ...ListO
 			return EventList{}, listError("events", namespace, err)
 		}
 		raw = append(raw, list.Items...)
-		if list.Continue == "" || len(raw) >= MaxEvents {
+		if list.Continue == "" || len(raw) >= maxEventsRead {
 			return newestEvents(raw, list.Continue != "", time.Now()), nil
 		}
 		o = metav1.ListOptions{Limit: eventsPage, Continue: list.Continue}

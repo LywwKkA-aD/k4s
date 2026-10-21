@@ -6,8 +6,9 @@
 // own YAML, where its whole message is.
 //
 // The list refreshes through an async.Poller and is bounded twice: the
-// API is read in pages up to k8s.MaxEvents, and the table holds the
-// newest maxRows of what W and the filter let through. Everything the
+// newest k8s.MaxEvents are kept, alike from a poll's whole answer and a
+// refresh's pages, and the table holds the newest maxRows of what W and
+// the filter let through. Everything the
 // cluster wrote is made inert before it is laid out: anyone who may
 // create events chooses their reason, message and object.
 //

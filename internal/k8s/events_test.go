@@ -117,10 +117,13 @@ func ptrTo(e corev1.Event) *corev1.Event { return &e }
 // pagedEvents serves total events in pages of the requested Limit, as an
 // apiserver does for a consistent list, and records every request. item
 // makes the i-th event in key order; nil serves e-00000, e-00001, ...
-// about pod/web-1, each a second older than the one before.
+// about pod/web-1, each a second older than the one before. whole answers
+// a list from the watch cache (ResourceVersion "0") with every event at
+// once, whatever its Limit, as the cache does.
 type pagedEvents struct {
 	total int
 	item  func(i int) corev1.Event
+	whole bool
 
 	mu   sync.Mutex
 	seen []metav1.ListOptions
@@ -149,6 +152,9 @@ func (p *pagedEvents) react(a ktesting.Action) (bool, runtime.Object, error) {
 		}
 	}
 	end := min(start+int(o.Limit), p.total)
+	if p.whole && o.ResourceVersion == "0" {
+		end = p.total
+	}
 	list := &corev1.EventList{}
 	for i := start; i < end; i++ {
 		list.Items = append(list.Items, p.at(i))
@@ -166,8 +172,9 @@ func (p *pagedEvents) requests() []metav1.ListOptions {
 }
 
 // TestListEventsReadsInPagesAndStops: every request carries a Limit, a
-// continued one carries no resource version of its own, and reading stops
-// at MaxEvents with the list marked cut.
+// continued one carries no resource version of its own, and reading goes
+// on past MaxEvents to find the newest, stopping at maxEventsRead with the
+// list marked cut.
 func TestListEventsReadsInPagesAndStops(t *testing.T) {
 	t.Parallel()
 
@@ -181,7 +188,8 @@ func TestListEventsReadsInPagesAndStops(t *testing.T) {
 	}{
 		{name: "one page", total: 3, wantRead: 3, wantReqs: 1},
 		{name: "several pages from the cache", total: 1200, opts: []ListOption{FromCache()}, wantRead: 1200, wantReqs: 3},
-		{name: "more than MaxEvents", total: MaxEvents + 700, wantRead: MaxEvents, wantCut: true, wantReqs: MaxEvents / eventsPage},
+		{name: "more than MaxEvents", total: MaxEvents + 700, wantRead: MaxEvents, wantCut: true, wantReqs: (MaxEvents + 700 + eventsPage - 1) / eventsPage},
+		{name: "more than maxEventsRead", total: maxEventsRead + 300, wantRead: MaxEvents, wantCut: true, wantReqs: maxEventsRead / eventsPage},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -213,6 +221,43 @@ func TestListEventsReadsInPagesAndStops(t *testing.T) {
 				t.Errorf("first request from the cache has resource version %q", reqs[0].ResourceVersion)
 			}
 		})
+	}
+}
+
+// TestListEventsPollAndRefreshAgree: a poll from the watch cache gets
+// every event in one answer, a refresh reads them in pages; both keep the
+// same newest MaxEvents. The newest events come last in key order, so a
+// read that stopped at MaxEvents would keep the oldest.
+func TestListEventsPollAndRefreshAgree(t *testing.T) {
+	t.Parallel()
+
+	const total = MaxEvents + 1500
+	newestLast := func(i int) corev1.Event {
+		at := ago(time.Duration(total-i) * time.Second)
+		return event(fmt.Sprintf("e-%05d", i), "Normal", "Pulled", 1, at, at)
+	}
+	read := func(opts ...ListOption) EventList {
+		t.Helper()
+		cs := fake.NewSimpleClientset()
+		cs.PrependReactor("list", "events", (&pagedEvents{total: total, item: newestLast, whole: true}).react)
+		c := &Client{Clientset: cs, Context: "test"}
+		got, err := c.ListEvents(context.Background(), "", opts...)
+		if err != nil {
+			t.Fatalf("ListEvents: %v", err)
+		}
+		return got
+	}
+	poll, refresh := read(FromCache()), read()
+	if !poll.Cut || !refresh.Cut || len(poll.Items) != MaxEvents || len(refresh.Items) != MaxEvents {
+		t.Fatalf("poll kept %d (cut %v), refresh %d (cut %v); want %d cut", len(poll.Items), poll.Cut, len(refresh.Items), refresh.Cut, MaxEvents)
+	}
+	for i := range poll.Items {
+		if poll.Items[i].Name != refresh.Items[i].Name {
+			t.Fatalf("row %d: poll %s, refresh %s", i, poll.Items[i].Name, refresh.Items[i].Name)
+		}
+	}
+	if first, last := refresh.Items[0].Name, refresh.Items[MaxEvents-1].Name; first != fmt.Sprintf("e-%05d", total-1) || last != "e-01500" {
+		t.Errorf("kept %s … %s, want the newest", first, last)
 	}
 }
 
