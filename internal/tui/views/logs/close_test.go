@@ -6,10 +6,13 @@ package logs_test
 // a baseline first.
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/logs"
 )
@@ -72,17 +75,50 @@ func TestCloseStopsStreamGoroutines(t *testing.T) {
 	}
 }
 
-func TestStreamsEndWhenLogsEnd(t *testing.T) {
+// Streams that end leave the pump waiting for reconnects and new pods;
+// Close takes it and every reader down.
+func TestEndedStreamsLeaveNothingAfterClose(t *testing.T) {
 	c := tuitest.NewFakeClient(t, tuitest.WithLogs("one\ntwo\n"))
 	base := tuitest.SettledGoroutines()
 
 	v, out := tuitest.Mount(t, logs.New(c, tuitest.NamespaceDemo, []string{tuitest.PodWeb1}, 100, ""), 100, 20)
 	t.Cleanup(func() { _ = v.Close() })
-	if screen := tuitest.Screen(v); !strings.Contains(screen, "two") || !strings.Contains(screen, "stream closed") {
+	if screen := tuitest.Screen(v); !strings.Contains(screen, "two") {
 		t.Errorf("finished stream screen:\n%s\nmessages:\n%s", screen, tuitest.Describe(out))
+	}
+	if err := v.Close(); err != nil {
+		t.Errorf("Close after the streams ended: %v", err)
 	}
 	tuitest.WaitGoroutines(t, base, 5*time.Second, viewPkg)
 	if err := v.Close(); err != nil {
-		t.Errorf("Close after the streams ended: %v", err)
+		t.Errorf("second Close: %v", err)
+	}
+}
+
+// A following view's re-resolves, ends and reconnects all stop with
+// Close: the goroutines go back to the baseline and the API hears nothing
+// more.
+func TestCloseStopsFollowing(t *testing.T) {
+	c := tuitest.NewFakeClient(t, tuitest.WithLogs("one\n"))
+	target, err := c.ResolveLogTarget(context.Background(), k8s.LogKindDeployment, tuitest.NamespaceDemo, tuitest.DeploymentWeb)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	base := tuitest.SettledGoroutines()
+	clock := asynctest.NewClock(time.Unix(1_700_000_000, 0))
+	v, _ := tuitest.Mount(t, logs.New(c, tuitest.NamespaceDemo, target.PodNames(), 100, "", logs.WithTarget(target), logs.WithClock(clock)), 100, 20)
+	t.Cleanup(func() { _ = v.Close() })
+	for range 3 {
+		v, _ = tuitest.Drive(t, v, clock.Advance(10*time.Second)...)
+	}
+	if err := v.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	tuitest.WaitGoroutines(t, base, 5*time.Second, viewPkg)
+	if pending := clock.Pending(); pending > 0 {
+		v, _ = tuitest.Drive(t, v, clock.Advance(time.Hour)...)
+	}
+	if clock.Pending() != 0 {
+		t.Errorf("a closed view keeps arming timers: %d", clock.Pending())
 	}
 }

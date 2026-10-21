@@ -1,0 +1,9 @@
+[api-7d9f-k7x2p] ○ ended: pod deleted
+[api-7d9f-k7x2p] ○ ended: pod completed (exit 0)
+[api-7d9f-k7x2p] ○ ended: pod failed · Evicted
+[api-7d9f-k7x2p] ○ ended: pod failed · Error (exit 1)
+[api-7d9f-k7x2p] ◇ container restarted (OOMKilled, exit 137) · reattached
+[api-7d9f-k7x2p] ◇ container exited (Error, exit 1) · waiting for a restart
+[api-7d9f-k7x2p] ◇ stream dropped · reconnected
+[api-7d9f-k7x2p] △ waiting: ContainerCreating
+[api-7d9f-k7x2p] ○ end of the previous instance's log

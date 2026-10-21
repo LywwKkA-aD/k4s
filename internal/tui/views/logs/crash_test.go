@@ -10,10 +10,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/logsink"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -51,10 +51,6 @@ func (p panicky) StreamLogs(_ context.Context, _, pod string, _ k8s.LogOptions) 
 	return io.NopCloser(strings.NewReader(p.bodies[pod])), nil
 }
 
-func (panicky) ContainersForPod(context.Context, string, string) ([]string, error) {
-	return nil, nil
-}
-
 type boomReader struct{}
 
 func (boomReader) Read([]byte) (int, error) { panic("reader bug") }
@@ -85,13 +81,13 @@ func TestPanicInAStreamBecomesAnError(t *testing.T) {
 			name:  "single pod",
 			pods:  []string{"web-1"},
 			src:   panicky{boom: map[string]bool{"web-1": true}},
-			shows: []string{"[web-1] stream error: internal error (see the k4s log)"},
+			shows: []string{"[web-1] ○ ended: internal error (see the k4s log)"},
 		},
 		{
 			name:  "one reader of a merge",
 			pods:  []string{"web-1", "web-2"},
 			src:   panicky{bodies: map[string]string{"web-2": "2026-08-24T12:00:01Z still here\n"}, boom: map[string]bool{"web-1": true}},
-			shows: []string{"[web-1] stream error: internal error (see the k4s log)", "still here"},
+			shows: []string{"[web-1] ○ ended: internal error (see the k4s log)", "still here"},
 		},
 	}
 	for _, tc := range cases {
@@ -120,13 +116,14 @@ func TestPanicInTheMergeLoopEndsTheMerge(t *testing.T) {
 
 	logged := &syncBuffer{}
 	crash := crashLog{logger: log.New(logged, "", 0)}
-	incoming := make(chan parsedEvent, 1)
-	incoming <- parsedEvent{pod: "web-1", text: "x", kind: lineLog}
-	events := make(chan logEvent, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	s := newSession(ctx, cancel, async.New(), nil, "demo", crash, 1)
+	s.incoming <- parsedEvent{pod: "web-1", text: "x", kind: lineLog}
 	// A merger without its pods map panics on the first event.
-	mergeGuarded(context.Background(), incoming, events, &merger{}, time.Now, crash)
+	s.merge(&merger{})
 
-	ev, ok := <-events
+	ev, ok := <-s.events
 	var internal internalError
 	if !ok || !errors.As(ev.Err, &internal) {
 		t.Fatalf("event = %+v (open %v), want the internal error", ev, ok)

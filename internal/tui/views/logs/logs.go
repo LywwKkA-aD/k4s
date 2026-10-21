@@ -6,6 +6,11 @@
 // workload writes to its log never reaches the terminal as an escape.
 // Beyond plain tailing the view offers:
 //
+//   - Logs that keep up: a deployment's or a service's pods are resolved
+//     again every 10s, so new pods join (kubectl logs -l does not follow
+//     them), and every stream that ends says why: the pod was deleted,
+//     completed or failed, its container restarted (reattached), or the
+//     stream dropped (reconnected without repeating a line).
 //   - Smart auto-follow: stays glued to the bottom while new lines arrive,
 //     pauses when the user scrolls up, and a paused view keeps its first
 //     visible line while old lines scroll out of the buffer.
@@ -19,15 +24,13 @@
 package logs
 
 import (
-	"fmt"
+	"time"
 
-	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
-	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -52,13 +55,17 @@ const (
 	compactPrefix = "▌"
 )
 
-// lineKind disambiguates the three sources we render: a real log line, a
-// per-pod stream error, or a per-pod "stream closed" notice.
+// lineKind tells apart what the backlog holds and what the streams send:
+// a workload's line, an error, a notice of k4s's own about a stream
+// (muted, or a warning for one that failed), and the end of a stream,
+// which never reaches the backlog as such.
 type lineKind int
 
 const (
 	lineLog lineKind = iota
 	lineStreamErr
+	lineNotice
+	lineAlert
 	lineStreamDone
 )
 
@@ -67,28 +74,42 @@ const (
 // same source rather than the previously-decorated string.
 type logLine struct {
 	pod  string
-	text string // lineLog: the line; lineStreamErr: the error; lineStreamDone: ""
+	text string // the line, the error or the notice
 	kind lineKind
 }
 
 // Model is the streaming logs view.
 type Model struct {
-	// src opens the streams; nil without a kubeconfig.
+	// src opens the streams and res resolves pods again and reads their
+	// state; both nil without a kubeconfig.
 	src       streamer
+	res       resolver
+	clock     async.Clock
 	crash     crashLog
 	namespace string
+	// pods are the pods streamed or waiting to, by name.
 	pods      []string
 	tail      int64
 	container string // "" = kubectl picks default; named container otherwise
 	// target is the deployment or service the pods were resolved from,
 	// zero for a single pod; Command shows its selector.
 	target k8s.LogTarget
+	// multi is set once more than one pod streams: lines carry a prefix.
+	multi bool
 
 	sess session
 	// mint names this view instance; each session and opening takes its
 	// Next, so a reply from another logs view, or from a stream this one
 	// replaced, is never taken.
-	mint async.Token
+	mint    async.Token
+	streams tracker
+	// follow re-resolves a deployment's or a service's pods every 10s;
+	// explain is the check that tells why streams ended.
+	follow  async.Poller
+	explain explainer
+	join    joinState
+	// startup is what Init sends besides the first read.
+	startup tea.Cmd
 	// previous is set while the stream shows the previous instance of the
 	// container; opening is the request for it in flight, if any.
 	previous bool
@@ -115,9 +136,8 @@ type Model struct {
 	width    int
 	bodyH    int
 
-	// podColors maps each streamed pod to its palette colour. Assigned by
-	// position in pods (not hashed) so neighbouring replicas always land on
-	// maximally distinct hues.
+	// podColors maps each pod to its palette colour, dealt in the order
+	// the pods appear so neighbouring replicas land on distinct hues.
 	podColors map[string]styles.PodColorID
 
 	autoFollow   bool
@@ -139,42 +159,47 @@ type Model struct {
 	keys keyMap
 }
 
+// logEvent is what the pump hands the view: a line with its stamp, or the
+// end of one reader, with Err for one that failed. Attempt numbers the
+// reader. An end without a pod is the merge itself failing.
 type logEvent struct {
-	Pod  string
-	Line string
-	Err  error
-	Done bool
+	Pod     string
+	Attempt uint64
+	Line    string
+	TS      time.Time
+	Err     error
+	Done    bool
 }
 
 // logEventsBatch is the result of one drain tick: every event the channel
-// had ready (up to drainBatchCap) plus a flag set when the channel closed
-// during the drain, so the loop knows to stop scheduling more reads. tok
-// names the session it was read from.
+// had ready (up to drainBatchCap). tok names the session it was read from.
 type logEventsBatch struct {
 	tok    async.Token
 	events []logEvent
-	done   bool
 }
-
-// streamsClosedMsg says the session tok has no streams left.
-type streamsClosedMsg struct{ tok async.Token }
 
 // Option changes how New builds the view.
 type Option func(*Model)
 
 // WithTarget names the deployment or service the pods were resolved from,
-// so the footer shows the selector command the stream stands for.
+// so the footer shows the selector command the stream stands for and the
+// view follows the pods it selects.
 func WithTarget(t k8s.LogTarget) Option {
 	return func(m *Model) { m.target = t }
 }
 
+// WithClock arms the view's timers (the re-resolve, the debounce of a
+// stream's end, reconnects) on c, for tests; the root never passes one.
+func WithClock(c async.Clock) Option {
+	return func(m *Model) { m.clock = c }
+}
+
 // New constructs a logs view and *immediately* starts the streaming
-// goroutines. They are torn down on Close(). The shared events channel is
-// closed once every pod's goroutine returns, which signals streamsClosedMsg
-// to the bubbletea loop and prevents leaked Cmd reads.
+// goroutines. They are torn down on Close().
 //
 // The tail is per pod, and clamped so that all pods together start with no
-// more than the buffer holds (views.ClampTail).
+// more than the buffer holds (views.ClampTail). At most maxStreams pods
+// stream at once.
 func New(client *k8s.Client, namespace string, pods []string, tail int64, container string, opts ...Option) Model {
 	if tail <= 0 {
 		tail = defaultTailLines
@@ -188,26 +213,26 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 
 	m := Model{
 		crash:       defaultCrashLog(),
+		clock:       async.RealClock{},
 		namespace:   namespace,
-		pods:        pods,
-		tail:        views.ClampTail(tail, len(pods)),
+		tail:        views.ClampTail(tail, min(len(pods), maxStreams)),
 		container:   container,
 		viewport:    newViewport(),
 		podColors:   assignPodColors(pods),
+		multi:       len(pods) > 1,
 		autoFollow:  true,
 		paintGen:    noPaint + 1,
 		searchInput: si,
 		keys:        newKeyMap(),
 	}
 	if client != nil {
-		m.src = client
+		m.src, m.res = client, client
 	}
 	for _, opt := range opts {
 		opt(&m)
 	}
 	m.mint = async.New().Next()
-	m.sess = startSession(m.mint, m.spec())
-	return m
+	return m.begin(pods)
 }
 
 // withSource streams from src instead of the client, for tests.
@@ -229,9 +254,11 @@ func newViewport() viewport.Model {
 	return vp
 }
 
-// Init starts reading the first session's events.
+// Init starts reading the first session's events, and whatever the view
+// arranged when it was built: the first re-resolve, a pod's restart count
+// to tell a restart by, the status of pods left out.
 func (m Model) Init() tea.Cmd {
-	return waitOrDrainCmd(m.sess)
+	return tea.Batch(waitOrDrainCmd(m.sess), m.startup)
 }
 
 // Update implements views.View.
@@ -241,8 +268,20 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		return m.onWindowSize(msg)
 	case logEventsBatch:
 		return m.onLogEventsBatch(msg)
-	case streamsClosedMsg:
-		return m, nil
+	case async.TickMsg:
+		return m.onFollowTick(msg)
+	case async.Result[k8s.LogTarget]:
+		return m.onReresolved(msg)
+	case async.Result[[]podCheck]:
+		return m.onChecked(msg)
+	case explainDueMsg:
+		return m.onExplainDue(msg)
+	case retryMsg:
+		return m.onRetry(msg)
+	case recheckMsg:
+		return m.onRecheck(msg)
+	case baselineMsg:
+		return m.onBaseline(msg)
 	case previousOpenedMsg:
 		return m.onPreviousOpened(msg)
 	case tea.KeyPressMsg:
@@ -271,75 +310,4 @@ func (m *Model) layoutViewport() {
 	h := m.bodyH - chrome
 	m.viewport.SetWidth(m.width)
 	m.viewport.SetHeight(max(h, minViewportHeight))
-}
-
-// Title implements views.View.
-func (m Model) Title() string {
-	base := "logs"
-	if len(m.pods) == 1 {
-		base += " · " + m.pods[0]
-	} else {
-		base += fmt.Sprintf(" · %d pods", len(m.pods))
-	}
-	if m.container != "" {
-		base += " / " + m.container
-	}
-	if m.previous {
-		base += " · previous"
-	}
-	if m.search.text != "" {
-		if len(m.matches) > 0 {
-			base += fmt.Sprintf(" · /%s · %d/%d", m.search.text, m.matchIdx+1, len(m.matches))
-		} else {
-			base += " · /" + m.search.text + " · no match"
-		}
-	}
-	if !m.autoFollow {
-		base += " · paused"
-	}
-	return base
-}
-
-// Command implements views.View: the stream's kubectl logs command, with
-// --previous instead of -f while the previous instance shows.
-func (m Model) Command() kubectl.Cmd {
-	c := views.LogsCommand(m.namespace, m.pods, m.container, m.tail, m.target)
-	if m.previous {
-		return previousCommand(c)
-	}
-	return c
-}
-
-// Help implements views.View. 't' is only advertised when there is more
-// than one pod and 'p' only for one, where each does something. The
-// horizontal-scroll keys only appear when wrap is off, since they are a
-// no-op in wrap mode.
-func (m Model) Help() []key.Binding {
-	k := m.keys
-	bindings := []key.Binding{k.scroll, k.follow, k.wrap}
-	if !m.wrap {
-		bindings = append(bindings, k.left, k.right)
-	}
-	if len(m.pods) > 1 {
-		bindings = append(bindings, k.tags)
-	}
-	bindings = append(bindings, k.searchOpen, k.next, k.prev, k.clear)
-	if len(m.pods) == 1 {
-		bindings = append(bindings, m.previousKey())
-	}
-	return bindings
-}
-
-// CapturesKeys implements views.View. Returns true while the search prompt
-// is focused so that 'q' / ':' reach the input as text rather than the
-// global navigation.
-func (m Model) CapturesKeys() bool { return m.searchOpen }
-
-// Close cancels the streams, and a previous-instance request in flight,
-// draining the goroutines, which eventually closes the events channel.
-// Idempotent.
-func (m Model) Close() error {
-	m.sess.stop()
-	m.opening.stop()
-	return nil
 }

@@ -1,47 +1,52 @@
 package logs
 
 import (
-	"errors"
 	"sort"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/LywwKkA-aD/k4s/internal/sanitize"
-	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 // onLogEventsBatch applies every event in the batch with a single render
 // at the end: one format per new line and one viewport refresh per drain
 // tick, however many lines a --tail=5000 flood brings. A batch from a
-// session the view has since replaced is dropped. An internal error (a
-// recovered panic) is also said in the status line.
+// session the view has since replaced is dropped. The stamp of each pod's
+// last line is its resume point; the end of a stream is explained by the
+// next check, armed here.
 func (m Model) onLogEventsBatch(msg logEventsBatch) (views.View, tea.Cmd) {
 	if !m.sess.tok.Accept(msg.tok) {
 		return m, nil
 	}
 	first := len(m.rawLines)
-	var said tea.Cmd
+	last := map[string]stamp{}
+	cmds := []tea.Cmd{waitOrDrainCmd(m.sess)}
+	explain := false
 	for _, ev := range msg.events {
-		switch {
-		case ev.Err != nil:
-			m.appendOne(ev.Pod, sanitize.Line(ev.Err.Error()), lineStreamErr)
-			if internal := (internalError{}); errors.As(ev.Err, &internal) {
-				said = statusCmd(status.Error, internal.Error())
-			}
-		case ev.Done:
-			m.appendOne(ev.Pod, "", lineStreamDone)
-		default:
+		if !ev.Done {
 			m.appendOne(ev.Pod, ev.Line, lineLog)
+			if !ev.TS.IsZero() {
+				last[ev.Pod] = stamp{attempt: ev.Attempt, ts: ev.TS}
+			}
+			continue
 		}
+		if st, ok := last[ev.Pod]; ok {
+			m.streams = m.streams.saw(map[string]stamp{ev.Pod: st})
+			delete(last, ev.Pod)
+		}
+		said, ended := m.onEnd(ev)
+		cmds = append(cmds, said)
+		explain = explain || ended
 	}
+	m.streams = m.streams.saw(last)
 	m.matches = append(m.matches, matchesFrom(m.search, m.rawLines, first)...)
 	m.settle(first)
-	if msg.done {
-		// Channel was observed closed mid-drain. No further reads needed.
-		return m, said
+	if explain {
+		var arm tea.Cmd
+		m, arm = m.armExplain()
+		cmds = append(cmds, arm)
 	}
-	return m, tea.Batch(waitOrDrainCmd(m.sess), said)
+	return m, tea.Batch(cmds...)
 }
 
 // settle trims the backlog to views.MaxLogLines and lays it out again. A
@@ -80,7 +85,7 @@ func (m *Model) appendOne(pod, text string, kind lineKind) {
 	ln := logLine{pod: pod, text: text, kind: kind}
 	m.bytes += len(text)
 	m.rawLines = append(m.rawLines, ln)
-	m.rendered = append(m.rendered, formatRawLine(ln, len(m.pods) > 1, m.showPodNames, m.podColors[ln.pod]))
+	m.rendered = append(m.rendered, formatRawLine(ln, m.multi, m.showPodNames, m.podColors[ln.pod]))
 }
 
 // trim drops the oldest lines beyond views.MaxLogLines, or beyond
@@ -134,10 +139,9 @@ func shiftMatches(matches []match, current, drop int) ([]match, int) {
 // It always allocates: Update runs on copies of Model, and writing into the
 // shared backing array would re-format lines an earlier copy still renders.
 func (m *Model) rebuildRendered() {
-	multi := len(m.pods) > 1
 	rendered := make([]string, len(m.rawLines))
 	for i, ln := range m.rawLines {
-		rendered[i] = formatRawLine(ln, multi, m.showPodNames, m.podColors[ln.pod])
+		rendered[i] = formatRawLine(ln, m.multi, m.showPodNames, m.podColors[ln.pod])
 	}
 	m.rendered = rendered
 	m.cells = nil

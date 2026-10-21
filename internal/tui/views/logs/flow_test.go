@@ -1,14 +1,20 @@
 package logs_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stesting "k8s.io/client-go/testing"
 
+	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/logs"
 )
@@ -33,17 +39,41 @@ func requireTitle(t *testing.T, m logs.Model, want string) {
 	}
 }
 
-func TestLinesArriveAndStreamCloses(t *testing.T) {
+// fire delivers every timer of clock due within d, and what they bring.
+func fire(t *testing.T, m logs.Model, clock *asynctest.Clock, d time.Duration) logs.Model {
+	t.Helper()
+	m, _ = tuitest.Drive(t, m, clock.Advance(d)...)
+	return m
+}
+
+func TestLinesArriveAndAnEndedStreamSaysWhy(t *testing.T) {
 	t.Parallel()
 
-	m := streaming(t, sample, 20, tuitest.PodWeb1)
+	c := tuitest.NewFakeClient(t, tuitest.WithLogs(sample))
+	clock := asynctest.NewClock(time.Unix(1_700_000_000, 0))
+	m, _ := tuitest.Mount(t, logs.New(c, tuitest.NamespaceDemo, []string{tuitest.PodWeb1}, 100, "", logs.WithClock(clock)), logsWidth, 20)
+	t.Cleanup(func() { _ = m.Close() })
 	screen := tuitest.Screen(m)
-	for _, w := range []string{"alpha one", "beta two", "alpha three", "[web-1] stream closed"} {
+	for _, w := range []string{"alpha one", "beta two", "alpha three"} {
 		if !strings.Contains(screen, w) {
 			t.Errorf("screen lacks %q:\n%s", w, screen)
 		}
 	}
+	if strings.Contains(screen, "ended") {
+		t.Errorf("the end is told before it is known:\n%s", screen)
+	}
 	requireTitle(t, m, "logs · web-1")
+
+	if err := c.Clientset.CoreV1().Pods(tuitest.NamespaceDemo).Delete(context.Background(), tuitest.PodWeb1, metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	m = fire(t, m, clock, time.Second)
+	if screen := tuitest.Screen(m); !strings.Contains(screen, "[web-1] ○ ended: pod deleted") {
+		t.Errorf("the end does not say why:\n%s", screen)
+	}
+	if got := m.Command().String(); got != "kubectl logs -f web-1 --tail=100 -n demo" {
+		t.Errorf("the ended pod's command = %q", got)
+	}
 }
 
 func TestSearchFlow(t *testing.T) {
@@ -185,14 +215,17 @@ func TestStreamErrorsAndPlaceholders(t *testing.T) {
 		if a.GetSubresource() != "log" {
 			return false, nil, nil
 		}
-		return true, nil, errors.New("container is waiting to start")
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "pods/log"}, tuitest.PodCrash, errors.New("not allowed"))
 	})
-	failing, _ := tuitest.Mount(t, logs.New(tuitest.NewFakeClient(t, refused), tuitest.NamespaceDemo, []string{tuitest.PodCrash}, 0, ""), 100, 20)
-	if screen := tuitest.Screen(failing); !strings.Contains(screen, "[crash-0] stream error: ") {
+	clock := asynctest.NewClock(time.Unix(1_700_000_000, 0))
+	failing, _ := tuitest.Mount(t, logs.New(tuitest.NewFakeClient(t, refused), tuitest.NamespaceDemo, []string{tuitest.PodCrash}, 0, "", logs.WithClock(clock)), 100, 20)
+	t.Cleanup(func() { _ = failing.Close() })
+	failing = fire(t, failing, clock, time.Second)
+	if screen := tuitest.Screen(failing); !strings.Contains(screen, `[crash-0] ○ ended: pods/log "crash-0" is forbidden: not allowed`) {
 		t.Errorf("stream error screen:\n%s", screen)
 	}
-	failing, _ = tuitest.Drive(t, failing, tuitest.Press("/"), tuitest.Type("waiting to start"), tuitest.Enter())
-	requireTitle(t, failing, "logs · crash-0 · /waiting to start · 1/1 · paused")
+	failing, _ = tuitest.Drive(t, failing, tuitest.Press("/"), tuitest.Type("forbidden"), tuitest.Enter())
+	requireTitle(t, failing, "logs · crash-0 · /forbidden · 1/1 · paused")
 
 	offline, out := tuitest.Init(t, logs.New(nil, tuitest.NamespaceDemo, []string{tuitest.PodWeb1}, 0, ""))
 	if screen := tuitest.Screen(offline); !strings.Contains(screen, "no kubeconfig") {

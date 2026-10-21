@@ -60,15 +60,14 @@ func TestFormatRawLineStreamErrorAlwaysShowsPodName(t *testing.T) {
 	}
 }
 
-func TestFormatRawLineStreamDoneAlwaysShowsPodName(t *testing.T) {
+func TestFormatRawLineNoticeAlwaysShowsPodName(t *testing.T) {
 	t.Parallel()
 
-	got := formatRawLine(logLine{pod: "nginx-aaa", kind: lineStreamDone}, true, false, "#7D56F4")
-	if !strings.Contains(got, "nginx-aaa") {
-		t.Errorf("compact-mode stream-closed should still name the pod, got %q", got)
-	}
-	if !strings.Contains(got, "stream closed") {
-		t.Errorf("stream closed marker missing: %q", got)
+	for _, kind := range []lineKind{lineNotice, lineAlert} {
+		got := formatRawLine(logLine{pod: "nginx-aaa", text: noteDeleted, kind: kind}, true, false, "#7D56F4")
+		if !strings.Contains(got, "nginx-aaa") || !strings.Contains(got, noteDeleted) {
+			t.Errorf("compact-mode notice should name the pod and say why, got %q", got)
+		}
 	}
 }
 
@@ -132,11 +131,14 @@ func TestCloseIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestNewWithNoClientClosesChannelImmediately(t *testing.T) {
+func TestNewWithNoClientStreamsNothing(t *testing.T) {
 	t.Parallel()
 	m := New(nil, "ns", []string{"foo"}, 100, "")
-	if _, ok := <-m.sess.events; ok {
-		t.Errorf("expected closed events channel when client is nil")
+	if m.Init() != nil || m.sess.live() || m.sess.events != nil {
+		t.Errorf("a view without a client started streams")
+	}
+	if got := m.View(); !strings.Contains(got, "no kubeconfig") {
+		t.Errorf("view = %q", got)
 	}
 }
 

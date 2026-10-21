@@ -19,16 +19,18 @@ const noCurrent = -1
 //   - multi && !full: a coloured "▌" bar — minimal but tells replicas apart.
 //   - multi && full: the canonical "[pod-name] line" prefix.
 //
-// Stream-error and stream-closed notices keep the pod name inline so they
-// remain readable regardless of the prefix mode. A log line's text is its
-// plain end, which is how painted lines reuse the prefix and how a match's
-// column is found again.
+// Stream errors and notices keep the pod name inline so they remain
+// readable regardless of the prefix mode. A line's text is its plain end,
+// which is how painted lines reuse the prefix and how a match's column is
+// found again.
 func formatRawLine(ln logLine, multi, full bool, colour styles.PodColorID) string {
 	switch ln.kind {
 	case lineStreamErr:
 		return styles.Warn.Render(errorPrefix(ln.pod)) + styles.Warn.Render(ln.text)
-	case lineStreamDone:
-		return styles.Hint.Render("[" + ln.pod + "] stream closed")
+	case lineNotice:
+		return styles.Hint.Render(noticePrefix(ln.pod)) + styles.Hint.Render(ln.text)
+	case lineAlert:
+		return styles.Warn.Render(noticePrefix(ln.pod)) + styles.Warn.Render(ln.text)
 	}
 	if !multi {
 		return ln.text
@@ -47,6 +49,11 @@ func errorPrefix(pod string) string {
 		return "stream error: "
 	}
 	return "[" + pod + "] stream error: "
+}
+
+// noticePrefix heads k4s's own line about a pod's stream.
+func noticePrefix(pod string) string {
+	return "[" + pod + "] "
 }
 
 // marks are the escape sequences that turn a style on and off.
@@ -79,7 +86,7 @@ func (k marks) wrap(b *strings.Builder, s string) {
 // prefix, so a match can never land inside a colour code. One is built
 // per layout, from the styles of the active theme.
 type painter struct {
-	match, current, warn marks
+	match, current, warn, hint marks
 }
 
 func newPainter() painter {
@@ -87,6 +94,7 @@ func newPainter() painter {
 		match:   marksOf(styles.Highlight),
 		current: marksOf(styles.Highlight.Underline(true)),
 		warn:    marksOf(styles.Warn),
+		hint:    marksOf(styles.Hint),
 	}
 }
 
@@ -99,6 +107,10 @@ func (p painter) line(ln logLine, rendered string, spans []span, current int) st
 		return strings.TrimSuffix(rendered, ln.text) + p.paint(ln.text, marks{}, spans, current)
 	case lineStreamErr:
 		return styles.Warn.Render(errorPrefix(ln.pod)) + p.paint(ln.text, p.warn, spans, current)
+	case lineNotice:
+		return styles.Hint.Render(noticePrefix(ln.pod)) + p.paint(ln.text, p.hint, spans, current)
+	case lineAlert:
+		return styles.Warn.Render(noticePrefix(ln.pod)) + p.paint(ln.text, p.warn, spans, current)
 	}
 	return rendered
 }

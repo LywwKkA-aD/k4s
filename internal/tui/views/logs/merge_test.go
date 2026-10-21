@@ -2,22 +2,15 @@ package logs
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 )
-
-// twoPods is the merge of pod-a and pod-b from src, 100 lines a pod.
-func twoPods(src streamer, container string) streamSpec {
-	return streamSpec{
-		src: src, namespace: "ns", pods: []string{"pod-a", "pod-b"}, tail: 100,
-		container: container, crash: defaultCrashLog(),
-	}
-}
 
 type fakeStreamer map[string]string
 
@@ -25,94 +18,56 @@ func (f fakeStreamer) StreamLogs(_ context.Context, _, podName string, _ k8s.Log
 	return io.NopCloser(strings.NewReader(f[podName])), nil
 }
 
-func (f fakeStreamer) ContainersForPod(ctx context.Context, namespace, name string) ([]string, error) {
-	return nil, nil
-}
-
-// recordingStreamer remembers which container each pod was streamed with, so
-// tests can assert the per-pod fallback behaviour.
-type recordingStreamer struct {
-	logs       map[string]string
-	containers map[string][]string
-	mu         sync.Mutex
-	used       map[string]string
-}
-
-func (r *recordingStreamer) StreamLogs(_ context.Context, _, podName string, opts k8s.LogOptions) (io.ReadCloser, error) {
-	r.mu.Lock()
-	r.used[podName] = opts.Container
-	r.mu.Unlock()
-	return io.NopCloser(strings.NewReader(r.logs[podName])), nil
-}
-
-func (r *recordingStreamer) ContainersForPod(ctx context.Context, namespace, name string) ([]string, error) {
-	return r.containers[name], nil
-}
-
-func TestRunMergedStreamsFallsBackToPodContainer(t *testing.T) {
-	t.Parallel()
-
-	client := &recordingStreamer{
-		logs: map[string]string{
-			"pod-a": "2020-01-01T00:00:01.000000000Z a-1\n",
-			"pod-b": "2020-01-01T00:00:02.000000000Z b-1\n",
-		},
-		containers: map[string][]string{
-			"pod-a": {"app"},
-			"pod-b": {"worker"}, // no "app" container on this pod
-		},
-		used: map[string]string{},
+// merged runs a merged session over src, one reader a pod, and returns
+// its events up to every reader's end. The session stays open, as the
+// view's does, until the test ends.
+func merged(t *testing.T, src streamer, pods ...string) []logEvent {
+	t.Helper()
+	s := startSession(async.New(), src, "ns", defaultCrashLog(), pumpMerged, pods, 100)
+	t.Cleanup(s.stop)
+	for i, pod := range pods {
+		s.attach(attachReq{pod: pod, attempt: uint64(i + 1), opts: k8s.LogOptions{Tail: 100}})
 	}
-
-	events := make(chan logEvent, 64)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	runMergedStreams(ctx, twoPods(client, "app"), events)
-	for range events {
+	var out []logEvent
+	timeout := time.After(5 * time.Second)
+	for ends := 0; ends < len(pods); {
+		select {
+		case ev := <-s.events:
+			out = append(out, ev)
+			if ev.Done {
+				ends++
+			}
+		case <-timeout:
+			t.Fatalf("the streams never ended, got %+v", out)
+		}
 	}
-
-	if client.used["pod-a"] != "app" {
-		t.Errorf("pod-a container = %q, want %q", client.used["pod-a"], "app")
-	}
-	if client.used["pod-b"] != "worker" {
-		t.Errorf("pod-b should fall back to its own container, got %q", client.used["pod-b"])
-	}
+	return out
 }
 
-func TestRunMergedStreamsOrdersHistoryByTimestamp(t *testing.T) {
+func lineTexts(evs []logEvent) []string {
+	var out []string
+	for _, ev := range evs {
+		if !ev.Done {
+			out = append(out, ev.Line)
+		}
+	}
+	return out
+}
+
+func TestMergeOrdersHistoryByTimestamp(t *testing.T) {
 	t.Parallel()
 
 	client := fakeStreamer{
 		"pod-a": "2026-08-24T12:00:01.000000000Z a-1\n2026-08-24T12:00:03.000000000Z a-2\n2026-08-24T12:00:05.000000000Z a-3\n",
 		"pod-b": "2026-08-24T12:00:02.000000000Z b-1\n2026-08-24T12:00:04.000000000Z b-2\n2026-08-24T12:00:06.000000000Z b-3\n",
 	}
-
-	events := make(chan logEvent, 64)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	runMergedStreams(ctx, twoPods(client, ""), events)
-
-	var got []string
-	for ev := range events {
-		if ev.Line != "" {
-			got = append(got, ev.Line)
-		}
-	}
-
-	want := []string{"a-1", "b-1", "a-2", "b-2", "a-3", "b-3"}
-	if len(got) != len(want) {
-		t.Fatalf("got %d lines, want %d: %v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("line %d: got %q, want %q", i, got[i], want[i])
-		}
+	got := lineTexts(merged(t, client, "pod-a", "pod-b"))
+	if want := "a-1 b-1 a-2 b-2 a-3 b-3"; strings.Join(got, " ") != want {
+		t.Fatalf("lines = %v, want %s", got, want)
 	}
 }
 
-func TestRunMergedStreamsSortsWhateverTheNodeClockSays(t *testing.T) {
+func TestMergeSortsWhateverTheNodeClockSays(t *testing.T) {
 	t.Parallel()
 
 	// The old merge took a line stamped after the stream opened as live
@@ -129,56 +84,35 @@ func TestRunMergedStreamsSortsWhateverTheNodeClockSays(t *testing.T) {
 				"pod-a": stamp(1*time.Second, "a-1") + stamp(3*time.Second, "a-2"),
 				"pod-b": stamp(2*time.Second, "b-1") + stamp(4*time.Second, "b-2"),
 			}
-			events := make(chan logEvent, 64)
-			runMergedStreams(context.Background(), twoPods(client, ""), events)
-
-			var got []string
-			for ev := range events {
-				if ev.Line != "" {
-					got = append(got, ev.Line)
-				}
-			}
-			if strings.Join(got, " ") != "a-1 b-1 a-2 b-2" {
+			if got := lineTexts(merged(t, client, "pod-a", "pod-b")); strings.Join(got, " ") != "a-1 b-1 a-2 b-2" {
 				t.Fatalf("lines = %v, want them in time order", got)
 			}
 		})
 	}
 }
 
-func TestRunMergedStreamsEmitsErrors(t *testing.T) {
+func TestMergeSendsEachReadersEnd(t *testing.T) {
 	t.Parallel()
 
-	client := fakeStreamer{
-		"pod-a": "",
-		"pod-b": "2020-01-01T00:00:01.000000000Z b-1\n",
-	}
-
-	events := make(chan logEvent, 64)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	runMergedStreams(ctx, twoPods(client, ""), events)
-
-	var lines, errs, dones int
-	for ev := range events {
+	client := fakeStreamer{"pod-a": "", "pod-b": "2020-01-01T00:00:01.000000000Z b-1\n"}
+	evs := merged(t, client, "pod-a", "pod-b")
+	var lines, errs int
+	ends := map[string]uint64{}
+	for _, ev := range evs {
 		switch {
 		case ev.Err != nil:
 			errs++
 		case ev.Done:
-			dones++
+			ends[ev.Pod] = ev.Attempt
 		default:
 			lines++
+			if !ev.TS.Equal(time.Date(2020, 1, 1, 0, 0, 1, 0, time.UTC)) || ev.Attempt != 2 {
+				t.Errorf("line %+v lost its stamp or its reader", ev)
+			}
 		}
 	}
-
-	if lines != 1 {
-		t.Errorf("lines = %d, want 1", lines)
-	}
-	if dones != 2 {
-		t.Errorf("done markers = %d, want 2", dones)
-	}
-	if errs != 0 {
-		t.Errorf("unexpected errors: %d", errs)
+	if lines != 1 || errs != 0 || ends["pod-a"] != 1 || ends["pod-b"] != 2 {
+		t.Fatalf("lines %d, errors %d, ends %v", lines, errs, ends)
 	}
 }
 
@@ -190,10 +124,6 @@ func (f openStreamer) StreamLogs(ctx context.Context, _, podName string, _ k8s.L
 	return io.NopCloser(io.MultiReader(strings.NewReader(f[podName]), untilDone{ctx})), nil
 }
 
-func (openStreamer) ContainersForPod(context.Context, string, string) ([]string, error) {
-	return nil, nil
-}
-
 type untilDone struct{ ctx context.Context }
 
 func (u untilDone) Read([]byte) (int, error) {
@@ -201,22 +131,23 @@ func (u untilDone) Read([]byte) (int, error) {
 	return 0, io.EOF
 }
 
-func TestRunMergedStreamsFlushesAQuietPodsHistory(t *testing.T) {
+func TestMergeFlushesAQuietPodsHistory(t *testing.T) {
 	t.Parallel()
 
 	client := openStreamer{
 		"pod-a": "2026-08-24T12:00:02.000000000Z a-2\n2026-08-24T12:00:01.000000000Z a-1\n",
 		"pod-b": "",
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	events := make(chan logEvent, 64)
+	s := startSession(async.New(), client, "ns", defaultCrashLog(), pumpMerged, []string{"pod-a", "pod-b"}, 100)
+	t.Cleanup(s.stop)
 	start := time.Now()
-	go runMergedStreams(ctx, twoPods(client, ""), events)
+	s.attach(attachReq{pod: "pod-a", attempt: 1})
+	s.attach(attachReq{pod: "pod-b", attempt: 2})
 
 	var got []string
 	for len(got) < 2 {
 		select {
-		case ev := <-events:
+		case ev := <-s.events:
 			got = append(got, ev.Line)
 		case <-time.After(5 * time.Second):
 			t.Fatalf("history never went out, got %v", got)
@@ -230,7 +161,61 @@ func TestRunMergedStreamsFlushesAQuietPodsHistory(t *testing.T) {
 	if strings.Join(got, " ") != "a-1 a-2" {
 		t.Errorf("history = %v, want it in time order", got)
 	}
-	cancel()
-	for range events {
+}
+
+// A reconnect asks from the second its last line fell in; the lines up to
+// that line's own stamp were shown and are dropped, the rest kept.
+func TestReaderDropsWhatItHasShown(t *testing.T) {
+	t.Parallel()
+
+	after := time.Date(2026, 10, 21, 12, 0, 5, 500, time.UTC)
+	body := "2026-10-21T12:00:05.000000400Z shown\n" +
+		"2026-10-21T12:00:05.000000500Z shown too\n" +
+		"2026-10-21T12:00:05.000000600Z new\n" +
+		"no stamp\n"
+	out := make(chan parsedEvent, 8)
+	readOpen(context.Background(), io.NopCloser(strings.NewReader(body)), attachReq{pod: "p", attempt: 3, after: after}, out)
+	close(out)
+	var got []string
+	for ev := range out {
+		if ev.attempt != 3 {
+			t.Errorf("event of attempt %d", ev.attempt)
+		}
+		got = append(got, ev.text)
+	}
+	if want := "new|no stamp|"; strings.Join(got, "|") != want {
+		t.Fatalf("lines = %q, want %q", got, want)
+	}
+}
+
+// cutStream serves body, then fails as a dropped connection does.
+type cutStream struct{ io.Reader }
+
+func (c cutStream) Read(p []byte) (int, error) {
+	n, err := c.Reader.Read(p)
+	if err == io.EOF {
+		return n, io.ErrUnexpectedEOF
+	}
+	return n, err
+}
+
+func TestReaderDropsALineCutShort(t *testing.T) {
+	t.Parallel()
+
+	body := "2026-10-21T12:00:01Z whole\n2026-10-21T12:00:02Z cut sh"
+	out := make(chan parsedEvent, 8)
+	readOpen(context.Background(), io.NopCloser(cutStream{strings.NewReader(body)}), attachReq{pod: "p"}, out)
+	close(out)
+	var got []string
+	var ended error
+	for ev := range out {
+		if ev.kind == lineStreamErr {
+			ended = ev.err
+			continue
+		}
+		got = append(got, ev.text)
+	}
+	if strings.Join(got, "|") != "whole" || !errors.Is(ended, io.ErrUnexpectedEOF) {
+		t.Fatalf("lines = %q, end %v", got, ended)
 	}
 }

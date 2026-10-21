@@ -35,7 +35,6 @@ func TestTagsToggleLeavesEarlierModelUntouched(t *testing.T) {
 	before := send(m, size, logEventsBatch{
 		tok:    m.sess.tok,
 		events: []logEvent{{Pod: "alpha", Line: "hello"}},
-		done:   true,
 	})
 	if got := screen(before); strings.Contains(got, "[alpha]") {
 		t.Fatalf("tags should start off, screen:\n%s", got)

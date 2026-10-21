@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
@@ -40,7 +41,9 @@ type previousOpenedMsg struct {
 }
 
 // togglePrevious is p: a single pod's stream switches to the previous
-// instance of its container and back.
+// instance of its container and back. The previous instance's log has
+// ended, so it is read once and never reconnected, and a following view
+// stops re-resolving while it shows.
 func (m Model) togglePrevious() (Model, tea.Cmd) {
 	switch {
 	case m.src == nil:
@@ -51,36 +54,51 @@ func (m Model) togglePrevious() (Model, tea.Cmd) {
 		return m, statusCmd(status.Info, "opening the previous instance…")
 	case m.previous:
 		m.previous = false
-		m.mint = m.mint.Next()
-		return m.restart(startSession(m.mint, m.spec()))
+		m.sess.stop()
+		m.autoFollow = true
+		m.clearLogs()
+		m = m.begin(m.pods)
+		return m, tea.Batch(waitOrDrainCmd(m.sess), m.startup)
 	}
 	m.mint = m.mint.Next()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.opening = opening{tok: m.mint, cancel: cancel}
-	return m, openPrevious(ctx, cancel, m.mint, m.spec())
+	pod := m.pods[0]
+	container := m.container
+	if s, ok := m.streams.pods[pod]; ok {
+		container = s.container
+	}
+	opts := k8s.LogOptions{Container: container, Tail: m.tail, Previous: true, Timestamps: true}
+	return m, openPrevious(ctx, cancel, m.mint, m.sessionOf(pod), opts)
+}
+
+// sessionOf is what a session for pod's previous log needs from the view.
+func (m Model) sessionOf(pod string) previousSpec {
+	return previousSpec{src: m.src, namespace: m.namespace, pod: pod, crash: m.crash}
+}
+
+// previousSpec is where the previous instance's log is read from.
+type previousSpec struct {
+	src       streamer
+	namespace string
+	pod       string
+	crash     crashLog
 }
 
 // openPrevious opens the previous instance's log and starts reading it.
 // The stream is opened before the view gives up the current one, so an
 // error leaves the view as it was.
-func openPrevious(ctx context.Context, cancel context.CancelFunc, tok async.Token, spec streamSpec) tea.Cmd {
-	pod, opts := spec.pods[0], spec.options()
-	opts.Previous = true
+func openPrevious(ctx context.Context, cancel context.CancelFunc, tok async.Token, spec previousSpec, opts k8s.LogOptions) tea.Cmd {
 	return func() tea.Msg {
-		stream, err := spec.src.StreamLogs(ctx, spec.namespace, pod, opts)
+		stream, err := spec.src.StreamLogs(ctx, spec.namespace, spec.pod, opts)
 		if err != nil {
 			cancel()
 			return previousOpenedMsg{tok: tok, err: err}
 		}
-		events := make(chan logEvent, eventBufferSize)
-		go func() {
-			defer close(events)
-			defer spec.crash.guard("the previous log of pod "+pod, func(err error) {
-				send(ctx, events, logEvent{Pod: pod, Err: err, Done: true})
-			})
-			readOnePod(ctx, stream, pod, events)
-		}()
-		return previousOpenedMsg{tok: tok, sess: session{tok: tok, events: events, cancel: cancel}}
+		s := newSession(ctx, cancel, tok, spec.src, spec.namespace, spec.crash, 1)
+		go s.pump(pumpDirect, nil, 0)
+		s.attachOpen(attachReq{pod: spec.pod}, stream)
+		return previousOpenedMsg{tok: tok, sess: s}
 	}
 }
 
@@ -94,18 +112,16 @@ func (m Model) onPreviousOpened(msg previousOpenedMsg) (views.View, tea.Cmd) {
 		return m, previousFailed(m.namespace, m.pods[0], m.container, msg.err)
 	}
 	m.previous = true
-	return m.restart(msg.sess)
-}
-
-// restart moves the view onto s. The old streams stop and the buffer
-// starts empty: the log it showed is not the one s reads. The search
-// stays and applies to the new lines.
-func (m Model) restart(s session) (Model, tea.Cmd) {
+	m.follow, _ = m.follow.WithActive(false)
+	// The current streams stop: nothing of theirs is explained, retried or
+	// joined while the previous instance shows.
+	m.streams = tracker{attempts: m.streams.attempts, ends: m.streams.ends}
+	m.explain = explainer{gen: m.explain.gen}
 	m.sess.stop()
-	m.sess = s
+	m.sess = msg.sess
 	m.autoFollow = true
 	m.clearLogs()
-	return m, waitOrDrainCmd(s)
+	return m, waitOrDrainCmd(m.sess)
 }
 
 // previousFailed says why the previous instance's log could not be

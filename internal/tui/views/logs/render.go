@@ -93,8 +93,12 @@ func (m Model) statusLine() string {
 	} else if m.xOffset > 0 {
 		bits = append(bits, styles.Hint.Render(fmt.Sprintf("[→ %d cols]", m.xOffset)))
 	}
-	if len(m.pods) > 1 && m.showPodNames {
+	if m.multi && m.showPodNames {
 		bits = append(bits, styles.Hint.Render("[tags on — press t to compact]"))
+	}
+	if note := m.follow.Status(); note != "" && m.following() {
+		// The re-resolve is backed off: "refresh 20s (slow API)".
+		bits = append(bits, styles.Hint.Render("[pods: "+note+"]"))
 	}
 	switch {
 	case m.search.text != "" && len(m.matches) > 0:

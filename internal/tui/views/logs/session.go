@@ -2,6 +2,8 @@ package logs
 
 import (
 	"context"
+	"io"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -9,67 +11,136 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 )
 
-// session is one run of the streams behind the view. Its events channel
-// closes once every stream has ended. Batches carry the session's Token,
-// so the reads a replaced session, or another logs view, left in flight
-// never land here.
+// session is one run of the streams behind the view: a pump that hands
+// their lines to the view, and the readers the view attaches to it as pods
+// start, join or reconnect. Several pods are merged by line time (see
+// merger); one pod's lines pass straight through. Everything stops with
+// the session (Close, or the switch to a container's previous instance).
+// Batches carry the session's Token, so the reads a replaced session or
+// another logs view left in flight never land here.
 type session struct {
-	tok    async.Token
-	events chan logEvent
-	cancel context.CancelFunc
+	tok      async.Token
+	ctx      context.Context
+	cancel   context.CancelFunc
+	incoming chan parsedEvent
+	events   chan logEvent
+	src      streamer
+	ns       string
+	crash    crashLog
 }
 
-// stop cancels the session's streams; the zero session has none.
+// pumpMode is how a session hands its lines on.
+type pumpMode int
+
+const (
+	pumpDirect pumpMode = iota
+	pumpMerged
+)
+
+// attachReq opens one reader: pod's log as opts says, without the lines
+// stamped at or before after, under the view's attempt number.
+type attachReq struct {
+	pod     string
+	attempt uint64
+	opts    k8s.LogOptions
+	after   time.Time
+}
+
+// startSession starts a session's pump. Merged, its history phase waits
+// for pods (each sending up to tail lines) before lines go out in order.
+func startSession(tok async.Token, src streamer, ns string, crash crashLog, mode pumpMode, pods []string, tail int64) session {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := newSession(ctx, cancel, tok, src, ns, crash, len(pods))
+	go s.pump(mode, pods, tail)
+	return s
+}
+
+// newSession is a session over ctx, whose inbox holds a few events for
+// each of pods pods before a reader waits.
+func newSession(ctx context.Context, cancel context.CancelFunc, tok async.Token, src streamer, ns string, crash crashLog, pods int) session {
+	return session{
+		tok:      tok,
+		ctx:      ctx,
+		cancel:   cancel,
+		incoming: make(chan parsedEvent, max(pods, 1)*mergeIncomingBufferCap),
+		events:   make(chan logEvent, eventBufferSize),
+		src:      src,
+		ns:       ns,
+		crash:    crash,
+	}
+}
+
+// stop ends the session's pump and readers; the zero session has none.
 func (s session) stop() {
 	if s.cancel != nil {
 		s.cancel()
 	}
 }
 
-// streamSpec is what a session streams, and where a panic in one of its
-// goroutines is logged.
-type streamSpec struct {
-	src       streamer
-	namespace string
-	pods      []string
-	tail      int64 // per pod
-	container string
-	crash     crashLog
+// live reports a session that has not been stopped.
+func (s session) live() bool {
+	return s.ctx != nil && s.ctx.Err() == nil
 }
 
-func (m Model) spec() streamSpec {
-	return streamSpec{
-		src: m.src, namespace: m.namespace, pods: m.pods, tail: m.tail, container: m.container, crash: m.crash,
+// pump hands the readers' events on. A panic in it ends the pump with an
+// internal error, and the view's streams with it.
+func (s session) pump(mode pumpMode, pods []string, tail int64) {
+	if mode == pumpDirect {
+		defer s.crash.guard("the log stream", s.pumpFailed)
+		passLoop(s.ctx, s.incoming, s.events)
+		return
+	}
+	s.merge(newMerger(pods, tail, time.Now()))
+}
+
+// merge runs the merge loop over g.
+func (s session) merge(g *merger) {
+	defer s.crash.guard("the log merge", s.pumpFailed)
+	mergeLoop(s.ctx, s.incoming, s.events, g, time.Now)
+}
+
+func (s session) pumpFailed(err error) {
+	send(s.ctx, s.events, logEvent{Err: err, Done: true})
+}
+
+// attach opens r's reader on its own goroutine. A panic in it ends that
+// pod's stream with an internal error.
+func (s session) attach(r attachReq) {
+	if !s.live() {
+		return
+	}
+	go func() {
+		defer s.crash.guard("the log stream of pod "+r.pod, s.readerFailed(r))
+		readStream(s.ctx, s.src, s.ns, r, s.incoming)
+	}()
+}
+
+// attachOpen reads r's stream, already open, on its own goroutine.
+func (s session) attachOpen(r attachReq, stream io.ReadCloser) {
+	go func() {
+		defer s.crash.guard("the log stream of pod "+r.pod, s.readerFailed(r))
+		readOpen(s.ctx, stream, r, s.incoming)
+	}()
+}
+
+// readerFailed ends r's stream with err, a recovered panic.
+func (s session) readerFailed(r attachReq) func(error) {
+	return func(err error) {
+		sendParsed(s.ctx, s.incoming, parsedEvent{pod: r.pod, attempt: r.attempt, kind: lineStreamErr, err: err})
 	}
 }
 
-// options are the log options of one pod's current log.
-func (s streamSpec) options() k8s.LogOptions {
-	return k8s.LogOptions{Container: s.container, Tail: s.tail}
-}
-
-// startSession starts the streams of spec: one pod is read as it comes,
-// several are merged (see runMergedStreams). Without a client or pods the
-// events channel is closed at once.
-func startSession(tok async.Token, spec streamSpec) session {
-	ctx, cancel := context.WithCancel(context.Background())
-	events := make(chan logEvent, eventBufferSize)
-	switch {
-	case spec.src == nil || len(spec.pods) == 0:
-		close(events)
-	case len(spec.pods) == 1:
-		pod := spec.pods[0]
-		go func() {
-			defer close(events)
-			defer spec.crash.guard("the log stream of pod "+pod, func(err error) {
-				send(ctx, events, logEvent{Pod: pod, Err: err, Done: true})
-			})
-			streamOnePod(ctx, spec.src, spec.namespace, pod, spec.options(), events)
-		}()
-	default:
-		go runMergedStreams(ctx, spec, events)
+// attachCmd opens the readers of reqs; it answers nothing.
+func attachCmd(s session, reqs []attachReq) tea.Cmd {
+	if len(reqs) == 0 {
+		return nil
 	}
-	return session{tok: tok, events: events, cancel: cancel}
+	return func() tea.Msg {
+		for _, r := range reqs {
+			s.attach(r)
+		}
+		return nil
+	}
 }
 
 // drainEvents pulls every event the channel currently has ready (no
@@ -97,21 +168,26 @@ func drainEvents(ch <-chan logEvent, max int) ([]logEvent, bool) {
 	return batch, false
 }
 
-// waitOrDrainCmd blocks on the session's first event (so the bubbletea
+// waitOrDrainCmd blocks on the session's next event (so the bubbletea
 // loop stays quiet while no logs flow) then drains everything else the
 // channel has queued in one go. One Update tick rebuilds the viewport once
-// instead of 5000 times when --tail=5000 arrives in a flood.
+// instead of 5000 times when --tail=5000 arrives in a flood. A stopped
+// session answers nothing.
 func waitOrDrainCmd(s session) tea.Cmd {
-	ch, tok := s.events, s.tok
+	if s.events == nil {
+		return nil
+	}
+	ch, tok, done := s.events, s.tok, s.ctx.Done()
 	return func() tea.Msg {
-		first, ok := <-ch
-		if !ok {
-			return streamsClosedMsg{tok: tok}
+		select {
+		case <-done:
+			return nil
+		case first := <-ch:
+			rest, _ := drainEvents(ch, drainBatchCap-1)
+			batch := make([]logEvent, 0, 1+len(rest))
+			batch = append(batch, first)
+			batch = append(batch, rest...)
+			return logEventsBatch{tok: tok, events: batch}
 		}
-		rest, done := drainEvents(ch, drainBatchCap-1)
-		batch := make([]logEvent, 0, 1+len(rest))
-		batch = append(batch, first)
-		batch = append(batch, rest...)
-		return logEventsBatch{tok: tok, events: batch, done: done}
 	}
 }

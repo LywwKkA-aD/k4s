@@ -30,16 +30,17 @@ const (
 	maxHeld     = drainBatchCap
 )
 
-// parsedEvent is one item from a pod's reader: a line with the time the
-// API server stamped on it, or the end of the pod's stream, with err for
-// one that failed.
+// parsedEvent is one item from a pod's reader, numbered by the view's
+// attempt: a line with the time the API server stamped on it, or the end
+// of the pod's stream, with err for one that failed.
 type parsedEvent struct {
-	pod  string
-	text string
-	ts   time.Time
-	kind lineKind
-	err  error
-	seq  uint64 // arrival order, which breaks ties in time
+	pod     string
+	attempt uint64
+	text    string
+	ts      time.Time
+	kind    lineKind
+	err     error
+	seq     uint64 // arrival order, which breaks ties in time
 }
 
 // podProgress is how far a pod's history has come.

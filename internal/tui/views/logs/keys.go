@@ -21,6 +21,9 @@ type keyMap struct {
 	clear      key.Binding
 	previous   key.Binding
 	scroll     key.Binding
+	// newPods has no key: it tells, in the help, that a following view
+	// picks up new pods.
+	newPods key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -39,6 +42,7 @@ func newKeyMap() keyMap {
 			key.WithKeys("up", "down", "pgup", "pgdown"),
 			key.WithHelp("↑↓/pgup/pgdn", "scroll"),
 		),
+		newPods: key.NewBinding(key.WithHelp("new pods", followNote)),
 	}
 }
 
@@ -70,7 +74,7 @@ func (m Model) handleViewKey(msg tea.KeyPressMsg) (views.View, tea.Cmd, bool) {
 	case key.Matches(msg, k.tags):
 		// No-op for single-pod views — the prefix is suppressed there
 		// regardless of this flag, so flipping it is just visual noise.
-		if len(m.pods) > 1 {
+		if m.multi {
 			m.showPodNames = !m.showPodNames
 			m.rebuildRendered()
 			m.syncViewport()
