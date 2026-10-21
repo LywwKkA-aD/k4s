@@ -112,13 +112,25 @@ func (s State) Save() error {
 }
 
 // saveTo writes s to path through a synced temp file and a rename, then
-// syncs the directory so the rename itself survives a power cut. The
-// directory is kept to its owner: the file names the user's namespaces,
-// pods and clusters.
+// syncs the directory so the rename itself survives a power cut. A
+// directory it had to create is an entry in its parent, so each parent
+// of one is synced too. The directory is kept to its owner: the file
+// names the user's namespaces, pods and clusters.
 func (s State) saveTo(path string) error {
+	return s.saveWith(path, syncDir)
+}
+
+// saveWith is saveTo with sync flushing a directory's entries.
+func (s State) saveWith(path string, sync func(dir string) error) error {
 	dir := filepath.Dir(path)
+	created := missingDirs(dir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create state dir: %w", err)
+	}
+	for _, d := range created {
+		if err := sync(filepath.Dir(d)); err != nil {
+			return err
+		}
 	}
 	if err := ownerOnly(dir); err != nil {
 		return err
@@ -140,7 +152,22 @@ func (s State) saveTo(path string) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("rename state: %w", err)
 	}
-	return syncDir(dir)
+	return sync(dir)
+}
+
+// missingDirs lists dir and each of its ancestors that does not exist yet,
+// deepest first: what MkdirAll is about to create.
+func missingDirs(dir string) []string {
+	var out []string
+	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
+		if _, err := os.Lstat(d); !errors.Is(err, os.ErrNotExist) {
+			return out
+		}
+		out = append(out, d)
+		if filepath.Dir(d) == d {
+			return out
+		}
+	}
 }
 
 // ownerOnly strips group and other permissions from dir. MkdirAll leaves
