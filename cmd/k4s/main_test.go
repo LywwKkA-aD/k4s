@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -8,9 +9,13 @@ import (
 	"syscall"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/LywwKkA-aD/k4s/internal/cli"
 	"github.com/LywwKkA-aD/k4s/internal/startup"
+	"github.com/LywwKkA-aD/k4s/internal/tui"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 func TestRunError(t *testing.T) {
@@ -63,6 +68,35 @@ func TestExitCode(t *testing.T) {
 			t.Parallel()
 			if got := exitCode(tc.err); got != tc.want {
 				t.Fatalf("exitCode(%v) = %d, want %d", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPrintRecap changes XDG_STATE_HOME, so it does not run in parallel:
+// tui.New reads the saved port-forwards from there.
+func TestPrintRecap(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	execed, _ := tui.New(nil, nil).Update(views.ExecRequestMsg{Namespace: "demo", Pod: "web-1"})
+	recap := "kubectl commands from this k4s session:\n  kubectl exec -it -n demo web-1 -- sh\n"
+	cases := []struct {
+		name  string
+		opts  cli.Options
+		final tea.Model
+		want  string
+	}{
+		{name: "the session's commands", final: execed, want: recap},
+		{name: "--no-recap prints nothing", opts: cli.Options{NoRecap: true}, final: execed, want: ""},
+		{name: "a session without commands", final: tui.New(nil, nil), want: ""},
+		{name: "a program that never started", final: nil, want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			printRecap(&out, tc.opts, tc.final)
+			if got := out.String(); got != tc.want {
+				t.Fatalf("printed %q, want %q", got, tc.want)
 			}
 		})
 	}

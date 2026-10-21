@@ -78,6 +78,8 @@ type Model struct {
 
 	// ident is what the header says about the cluster (header.go).
 	ident identity
+	// recap collects the commands main prints on exit (recap.go).
+	recap recap
 }
 
 // Option changes how New builds the root model.

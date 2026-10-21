@@ -138,6 +138,7 @@ func (m Model) swap(next views.View) Model {
 		_ = m.current.Close()
 	}
 	m.current = next
+	m.recap = m.recap.add(m.decorate(next.Command()))
 	return m
 }
 

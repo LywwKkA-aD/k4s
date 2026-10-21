@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/signal"
@@ -61,15 +62,27 @@ func run(opts cli.Options) error {
 	}
 	root := tui.New(sess.Client, sess.LoadErr, tui.WithSession(sess), tui.WithFlags(opts))
 	p := tea.NewProgram(root, progOpts...)
-	_, err = p.Run()
+	final, err := p.Run()
 	err = runError(err)
 
 	// The TUI has released the terminal: show what was held back.
+	printRecap(os.Stdout, opts, final)
 	_ = logsink.FlushPluginStderr(os.Stderr)
 	if msg := sink.Summary(); msg != "" {
 		fmt.Fprintln(os.Stderr, msg)
 	}
 	return err
+}
+
+// printRecap prints the kubectl commands the session led to, so they stay in
+// the shell's scrollback, unless --no-recap or K4S_NO_RECAP. final is the
+// model the program ended with; nil when it never started.
+func printRecap(w io.Writer, opts cli.Options, final tea.Model) {
+	m, ok := final.(tui.Model)
+	if !ok || opts.NoRecap {
+		return
+	}
+	_ = tui.WriteRecap(w, m.Recap())
 }
 
 // openSession loads the kubeconfig and, unless --no-preflight, lets a

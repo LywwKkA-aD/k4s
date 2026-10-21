@@ -22,8 +22,8 @@ func TestParseExits(t *testing.T) {
 	versionOut := fmt.Sprintf("k4s %s (%s %s/%s)\n", version.String(), runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	usageParts := []string{
 		"k4s ", "Usage:", "--version", "-h, --help", "--kubeconfig", "--context",
-		"-n, --namespace", "-A, --all-namespaces", "--theme", "--no-preflight",
-		"KUBECONFIG", "K4S_THEME", "K4S_NO_PREFLIGHT", "NO_COLOR", "/etc/rancher/k3s/k3s.yaml",
+		"-n, --namespace", "-A, --all-namespaces", "--theme", "--no-preflight", "--no-recap",
+		"KUBECONFIG", "K4S_THEME", "K4S_NO_PREFLIGHT", "K4S_NO_RECAP", "NO_COLOR", "/etc/rancher/k3s/k3s.yaml",
 	}
 
 	cases := []struct {
@@ -120,6 +120,21 @@ func TestParseOptions(t *testing.T) {
 			args: []string{"--no-preflight=false"},
 			env:  map[string]string{"K4S_NO_PREFLIGHT": "1"},
 			want: Options{},
+		},
+		{name: "no-recap flag", args: []string{"--no-recap"}, want: Options{NoRecap: true}},
+		{name: "no-recap from env", env: map[string]string{"K4S_NO_RECAP": "1"}, want: Options{NoRecap: true}},
+		{name: "no-recap env off", env: map[string]string{"K4S_NO_RECAP": "off"}, want: Options{}},
+		{
+			name: "no-recap flag beats env",
+			args: []string{"--no-recap=false"},
+			env:  map[string]string{"K4S_NO_RECAP": "true"},
+			want: Options{},
+		},
+		{
+			name: "the two switches are separate",
+			env:  map[string]string{"K4S_NO_PREFLIGHT": "1"},
+			args: []string{"--no-recap"},
+			want: Options{NoPreflight: true, NoRecap: true},
 		},
 		// kubectl users type a resource first; flags after it still count.
 		{

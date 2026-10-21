@@ -1,0 +1,6 @@
+kubectl commands from this k4s session:
+  kubectl describe pod web-1 -n demo
+  kubectl logs -f web-1 --tail=100 -n demo
+  kubectl exec -it -n demo -c nginx web-1 -- sh
+  kubectl get deployments -A
+  kubectl get pods -A

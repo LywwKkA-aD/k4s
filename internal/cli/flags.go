@@ -10,8 +10,11 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 )
 
-// envNoPreflight is the environment switch behind --no-preflight.
-const envNoPreflight = "K4S_NO_PREFLIGHT"
+// Environment switches behind --no-preflight and --no-recap.
+const (
+	envNoPreflight = "K4S_NO_PREFLIGHT"
+	envNoRecap     = "K4S_NO_RECAP"
+)
 
 // themes are the --theme values; styles.ParseMode accepts the same set
 // from K4S_THEME (a test in cmd/k4s keeps the two in step).
@@ -38,6 +41,7 @@ func newFlagSet(o *Options, stderr io.Writer) *flag.FlagSet {
 	fs.BoolVar(&o.AllNamespaces, "all-namespaces", false, "start in all namespaces")
 	fs.Var(themeValue{&o.Theme}, "theme", "colour theme")
 	fs.BoolVar(&o.NoPreflight, "no-preflight", o.NoPreflight, "skip the credential plugin preflight")
+	fs.BoolVar(&o.NoRecap, "no-recap", o.NoRecap, "print no kubectl commands on exit")
 	return fs
 }
 

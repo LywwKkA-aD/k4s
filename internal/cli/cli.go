@@ -33,6 +33,7 @@ Flags:
                             K4S_THEME and NO_COLOR
       --no-preflight        do not run the credential plugin (SSO, MFA) on the plain
                             terminal before the TUI starts
+      --no-recap            do not print the session's kubectl commands on exit
   -h, --help                show this help and exit
       --version             print the version and exit
 
@@ -40,6 +41,7 @@ Environment:
   KUBECONFIG         kubeconfig file list to load (default ~/.kube/config)
   K4S_THEME          colour theme: auto, dark, light or mono (default auto)
   K4S_NO_PREFLIGHT   when set to anything but 0 or false, same as --no-preflight
+  K4S_NO_RECAP       when set to anything but 0 or false, same as --no-recap
   NO_COLOR           when set, disable colour (same as K4S_THEME=mono)
 `
 
@@ -59,15 +61,21 @@ type Options struct {
 	// NoPreflight is --no-preflight, or K4S_NO_PREFLIGHT when the flag is
 	// not given.
 	NoPreflight bool
+	// NoRecap is --no-recap, or K4S_NO_RECAP when the flag is not given:
+	// no kubectl commands are printed on exit.
+	NoRecap bool
 }
 
 // Parse handles args (the command line without the program name), reading
-// K4S_NO_PREFLIGHT through getenv. It returns proceed=true when the TUI
+// K4S_NO_PREFLIGHT and K4S_NO_RECAP through getenv. It returns proceed=true when the TUI
 // should start. Otherwise the caller must exit with code; any version, help
 // or error text has already been written. Stray positional arguments are
 // ignored, as in earlier releases.
 func Parse(args []string, getenv func(string) string, stdout, stderr io.Writer) (opts Options, proceed bool, code int) {
-	opts = Options{NoPreflight: envSwitch(getenv(envNoPreflight))}
+	opts = Options{
+		NoPreflight: envSwitch(getenv(envNoPreflight)),
+		NoRecap:     envSwitch(getenv(envNoRecap)),
+	}
 	fs := newFlagSet(&opts, stderr)
 	showVersion := fs.Bool("version", false, "print the version and exit")
 
