@@ -151,7 +151,9 @@ func TestCtrlCQuitsFromAnywhere(t *testing.T) {
 	}
 }
 
-func TestLeafViewsAreSkippedByHistory(t *testing.T) {
+// TestLogsAreSkippedByHistory: Esc from logs goes back to what opened
+// them, a describe here, and never reopens a stream.
+func TestLogsAreSkippedByHistory(t *testing.T) {
 	t.Parallel()
 
 	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), colon("pods")...)
@@ -166,6 +168,8 @@ func TestLeafViewsAreSkippedByHistory(t *testing.T) {
 	requireView(t, m, "logs · web-1")
 	requireScreen(t, m, "fake logs")
 
+	m, _ = tuitest.Drive(t, m, tuitest.Esc())
+	requireView(t, m, "pod · web-1 · built-in")
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())
 	requireView(t, m, "pods")
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())

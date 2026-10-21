@@ -98,11 +98,19 @@ type ResourceRef struct {
 }
 
 // Selection is implemented by views that show one object or have a row
-// under the cursor, for the root to act on. ok is false while the list is
-// empty or still loading, or on a row that is no object (the namespaces
-// view's <all>); the root then says so in the status row.
+// under the cursor, for the root to act on: o opens that object's YAML.
+// ok is false while the list is empty or still loading, or on a row that
+// is no object (the namespaces view's <all>); the root then says so in the
+// status row.
 type Selection interface {
 	Selected() (ref ResourceRef, ok bool)
+}
+
+// YAMLRequestMsg asks the root to open the YAML view of Ref: `kubectl get
+// <kind> <name> -n <ns> -o yaml`. The root sends it to itself on o, for
+// the current view's Selection.
+type YAMLRequestMsg struct {
+	Ref ResourceRef
 }
 
 // TailPromptRequestMsg asks the root model to open the tail-lines prompt for

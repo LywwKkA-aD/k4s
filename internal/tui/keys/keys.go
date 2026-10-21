@@ -12,6 +12,7 @@ type Map struct {
 	Command   key.Binding
 	Back      key.Binding
 	Copy      key.Binding
+	YAML      key.Binding
 }
 
 // Default returns the baseline keymap.
@@ -19,7 +20,8 @@ type Map struct {
 // q is "go home, then quit" — the first press takes you back to the
 // dashboard, the second press (now on the dashboard) exits. ctrl+c is the
 // always-quit escape hatch and works even inside the command bar. y copies
-// the footer's kubectl command; in a text prompt it is just a letter.
+// the footer's kubectl command and o opens the YAML of the object the view
+// shows or has under its cursor; in a text prompt both are just letters.
 func Default() Map {
 	return Map{
 		Quit: key.NewBinding(
@@ -45,6 +47,10 @@ func Default() Map {
 		Copy: key.NewBinding(
 			key.WithKeys("y"),
 			key.WithHelp("y", "copy"),
+		),
+		YAML: key.NewBinding(
+			key.WithKeys("o"),
+			key.WithHelp("o", "yaml"),
 		),
 	}
 }

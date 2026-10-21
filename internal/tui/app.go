@@ -31,6 +31,10 @@ const (
 	viewContexts    = "contexts"
 	viewTop         = "top"
 	viewForwards    = "forwards"
+	// The views of one object are history entries by these names and
+	// their object; their titles name the object instead.
+	viewDescribe = "describe"
+	viewYAML     = "yaml"
 )
 
 // relayoutMsg is an internal signal that says "re-send the current view a

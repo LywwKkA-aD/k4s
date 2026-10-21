@@ -25,6 +25,7 @@ func TestDefaultBindings(t *testing.T) {
 		{name: "command", binding: km.Command, keys: []string{":"}, help: ":"},
 		{name: "back", binding: km.Back, keys: []string{"esc"}, help: "esc"},
 		{name: "copy", binding: km.Copy, keys: []string{"y"}, help: "y"},
+		{name: "yaml", binding: km.YAML, keys: []string{"o"}, help: "o"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

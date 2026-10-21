@@ -9,24 +9,29 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/contexts"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/deployments"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
 	forwardsview "github.com/LywwKkA-aD/k4s/internal/tui/views/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/namespaces"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/pods"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/services"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/top"
+	yamlview "github.com/LywwKkA-aD/k4s/internal/tui/views/yaml"
 )
 
 // maxHistory caps the Esc trail; the oldest entry goes first.
 const maxHistory = 50
 
 // historyEntry is a view Esc can return to: which one, in which namespace
-// and, for a views.Stateful view, how it looked. Only rebuildable views
-// (the lists, the dashboard, contexts, forwards) end up here: describe and
-// logs push their parent on entry but are never entries themselves.
+// and, for a views.Stateful view, how it looked. The rebuildable views
+// (the lists, the dashboard, contexts, forwards) are entries by name;
+// describe and YAML by name and the object they show, in ref. Logs push
+// their parent on entry but are never entries themselves: a stream is
+// not reopened behind the user's back.
 type historyEntry struct {
 	view      string
 	namespace string
 	state     views.State
+	ref       views.ResourceRef
 }
 
 // switchTo records the current view in history then constructs the named view.
@@ -37,27 +42,42 @@ func (m Model) switchTo(name string) Model {
 	return m.replaceView(name)
 }
 
-// pushHistory saves the current rebuildable view, with its State, so Esc
-// can return to it. Leaf views (describe, logs) have dynamic titles and
-// cannot be rebuilt from a title alone, so they are skipped.
+// pushHistory saves the current view, if Esc can bring it back, so that
+// it does.
 func (m Model) pushHistory() Model {
-	if m.current == nil || !isRebuildableView(m.current.Title()) {
+	e, ok := m.entryOf(m.current)
+	if !ok {
 		return m
 	}
-	m.history = pushEntry(m.history, historyEntry{
-		view:      m.current.Title(),
-		namespace: m.namespace,
-		state:     stateOf(m.current),
-	})
+	m.history = pushEntry(m.history, e)
 	return m
 }
 
+// entryOf is the history entry that brings v back, false for a view that
+// cannot be rebuilt.
+func (m Model) entryOf(v views.View) (historyEntry, bool) {
+	switch v := v.(type) {
+	case nil:
+		return historyEntry{}, false
+	case describe.Model:
+		ref, _ := v.Selected()
+		return historyEntry{view: viewDescribe, namespace: m.namespace, ref: ref}, true
+	case yamlview.Model:
+		ref, _ := v.Selected()
+		return historyEntry{view: viewYAML, namespace: m.namespace, ref: ref}, true
+	}
+	if !isRebuildableView(v.Title()) {
+		return historyEntry{}, false
+	}
+	return historyEntry{view: v.Title(), namespace: m.namespace, state: stateOf(v)}, true
+}
+
 // pushEntry returns h with e on top in a new backing array, so no other
-// copy of the model sees the change. The same view and namespace as the
-// top entry replaces it, with the newer state; past maxHistory the oldest
-// entries go.
+// copy of the model sees the change. The same view, namespace and object
+// as the top entry replaces it, with the newer state; past maxHistory the
+// oldest entries go.
 func pushEntry(h []historyEntry, e historyEntry) []historyEntry {
-	if n := len(h); n > 0 && h[n-1].view == e.view && h[n-1].namespace == e.namespace {
+	if n := len(h); n > 0 && h[n-1].view == e.view && h[n-1].namespace == e.namespace && h[n-1].ref == e.ref {
 		out := slices.Clone(h)
 		out[n-1] = e
 		return out
@@ -119,6 +139,22 @@ func (m Model) newView(name string) views.View {
 	return nil
 }
 
+// rebuild builds the view of history entry e without touching history.
+func (m Model) rebuild(e historyEntry) Model {
+	switch e.view {
+	case viewDescribe:
+		return m.swap(m.describeView(e.ref))
+	case viewYAML:
+		return m.swap(yamlview.New(m.client, e.ref))
+	}
+	return m.replaceView(e.view)
+}
+
+// describeView describes ref through the session's kubectl.
+func (m Model) describeView(ref views.ResourceRef) views.View {
+	return describe.New(m.client, describe.Kind(ref.Kind), ref.Namespace, ref.Name, describe.WithKubectl(m.describer))
+}
+
 // restore hands st back to a freshly built view (see views.Restorer). The
 // zero State is a fresh view and is not handed over.
 func (m Model) restore(st views.State) (Model, tea.Cmd) {
@@ -175,7 +211,7 @@ func (m Model) popHistory() (Model, tea.Cmd, bool) {
 	last := m.history[len(m.history)-1]
 	m.history = slices.Clip(m.history[:len(m.history)-1])
 	m.namespace = last.namespace
-	m = m.replaceView(last.view)
+	m = m.rebuild(last)
 	m, cmd := m.restore(last.state)
 	return m, cmd, true
 }

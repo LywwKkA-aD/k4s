@@ -9,8 +9,8 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
-	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/logs"
+	yamlview "github.com/LywwKkA-aD/k4s/internal/tui/views/yaml"
 )
 
 // Update is the message router. Heavy lifting is split into per-message
@@ -57,6 +57,8 @@ func (m Model) onRequest(msg tea.Msg) (next tea.Model, cmd tea.Cmd, ok bool) {
 		next, cmd = m.onContextSelected(msg)
 	case views.DescribeRequestMsg:
 		next, cmd = m.onDescribeRequest(msg)
+	case views.YAMLRequestMsg:
+		next, cmd = m.onYAMLRequest(msg)
 	case views.TailPromptRequestMsg:
 		next = m.onTailPromptRequest(msg)
 	case views.ContainerPromptRequestMsg:
@@ -107,7 +109,35 @@ func (m Model) onNamespaceSelected(msg views.NamespaceSelectedMsg) (tea.Model, t
 
 func (m Model) onDescribeRequest(msg views.DescribeRequestMsg) (tea.Model, tea.Cmd) {
 	m = m.pushHistory()
-	m = m.swap(describe.New(m.client, describe.Kind(msg.Kind), msg.Namespace, msg.Name, describe.WithKubectl(m.describer)))
+	m = m.swap(m.describeView(views.ResourceRef(msg)))
+	return m, m.relayoutCmd()
+}
+
+// openYAML is o: the YAML of the object the current view shows or has
+// under its cursor, or a status that says why there is none.
+func (m Model) openYAML() (tea.Model, tea.Cmd) {
+	sel, ok := m.current.(views.Selection)
+	if !ok {
+		return m.setStatus(status.Info, "yaml: nothing to show here")
+	}
+	ref, ok := sel.Selected()
+	switch {
+	case ok:
+		return m.onYAMLRequest(views.YAMLRequestMsg{Ref: ref})
+	case m.client == nil:
+		return m.setStatus(status.Warn, "yaml: no kubeconfig")
+	}
+	return m.setStatus(status.Info, "yaml: no row selected")
+}
+
+// onYAMLRequest opens the YAML view of msg.Ref. Asked again for the YAML
+// already shown, it fetches it again in place rather than stacking a copy
+// under Esc.
+func (m Model) onYAMLRequest(msg views.YAMLRequestMsg) (tea.Model, tea.Cmd) {
+	if e, ok := m.entryOf(m.current); !ok || e.view != viewYAML || e.ref != msg.Ref {
+		m = m.pushHistory()
+	}
+	m = m.swap(yamlview.New(m.client, msg.Ref))
 	return m, m.relayoutCmd()
 }
 
@@ -150,6 +180,8 @@ func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.back()
 	case key.Matches(msg, m.keys.Copy):
 		return m.copyCommand()
+	case key.Matches(msg, m.keys.YAML):
+		return m.openYAML()
 	}
 	return m.forwardToView(msg)
 }
