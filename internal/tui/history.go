@@ -10,6 +10,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/deployments"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views/events"
 	forwardsview "github.com/LywwKkA-aD/k4s/internal/tui/views/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/namespaces"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/pods"
@@ -98,7 +99,7 @@ func stateOf(v views.View) views.State {
 
 func isRebuildableView(title string) bool {
 	switch title {
-	case viewDashboard, viewPods, viewNamespaces, viewDeployments, viewServices, viewContexts, viewTop, viewForwards:
+	case viewDashboard, viewPods, viewNamespaces, viewDeployments, viewServices, viewEvents, viewContexts, viewTop, viewForwards:
 		return true
 	}
 	return false
@@ -127,6 +128,8 @@ func (m Model) newView(name string) views.View {
 		return deployments.New(m.client, m.namespace)
 	case viewServices:
 		return services.New(m.client, m.namespace)
+	case viewEvents:
+		return events.New(m.client, m.namespace)
 	case viewDashboard:
 		return dashboard.New(m.client, m.loadErr)
 	case viewContexts:

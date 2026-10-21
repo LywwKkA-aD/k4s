@@ -28,6 +28,7 @@ const (
 	viewNamespaces  = "namespaces"
 	viewDeployments = "deployments"
 	viewServices    = "services"
+	viewEvents      = "events"
 	viewContexts    = "contexts"
 	viewTop         = "top"
 	viewForwards    = "forwards"

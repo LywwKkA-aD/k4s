@@ -89,7 +89,7 @@ func namespaceLabel(ns string) string {
 // isNamespacedList reports a view that lists one namespace at a time.
 func isNamespacedList(title string) bool {
 	switch title {
-	case viewPods, viewDeployments, viewServices, viewTop:
+	case viewPods, viewDeployments, viewServices, viewEvents, viewTop:
 		return true
 	}
 	return false

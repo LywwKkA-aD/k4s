@@ -1,0 +1,2 @@
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  enter describe object  ·  W warnings only  ·  / filter  ·  w watch 5s  ·  r refresh
+ kubectl events -A
