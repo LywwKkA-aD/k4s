@@ -56,8 +56,11 @@ func (m Model) frame() frame {
 		paused:   !m.poll.Enabled(),
 		pausedAt: m.mem.pausedAt,
 		changed:  m.mem.changed,
-		th:       themeOf(ds),
-		ds:       ds,
+		prog:     1,
+
+		topByMemory: m.mem.topByMemory,
+		th:          themeOf(ds),
+		ds:          ds,
 	}
 	// The fast tier is the pulse: when pods time out, the cluster is gone.
 	if u := m.mem.snap.Ledger[dash.Pods]; u.State == dash.StateStale {
@@ -153,8 +156,12 @@ func bodyOf(f frame, p dash.Panel, w, h int) panelBody {
 		return workloadsBody(f, w, h)
 	case dash.PanelEvents:
 		return eventsBody(f, w, h)
+	case dash.PanelK3s:
+		return k3sBody(f, h)
+	case dash.PanelTopPods:
+		return topBody(f, w, h)
 	}
-	return summaryBody(f, p)
+	return panelBody{}
 }
 
 // drawLine is a panel as one summary line: "   1 cluster    ● api ready
@@ -188,6 +195,9 @@ func summaryOf(f frame, p dash.Panel) string {
 	case dash.PanelEvents:
 		return eventsSummary(f)
 	case dash.PanelK3s:
+		if f.kind == kindMedium {
+			return k3sStrip(f)
+		}
 		return k3sSummary(f)
 	case dash.PanelTopPods:
 		return topPodsSummary(f)

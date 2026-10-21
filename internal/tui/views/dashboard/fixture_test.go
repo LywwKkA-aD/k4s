@@ -62,19 +62,8 @@ func busyK3s() dash.Snapshot {
 	s.Pods = busyPods()
 	s.Workloads = busyWorkloads()
 	s.Events = busyEvents()
-	s.K3s = dash.K3sPanel{
-		Shown: true, Cmd: kc("get", "deploy,ds", "-n", "kube-system"),
-		Components: []dash.Component{{Present: true, Ready: 1, Desired: 1}, {Present: true, Ready: 1, Desired: 1}, {Present: true, Ready: 1, Desired: 1}, {Present: true, Ready: 1, Desired: 1}},
-		Etcd:       dash.EtcdRow{Shown: true, Known: true, Ago: 4 * hour, Node: "k3s-cp-1"},
-	}
-	s.TopPods = dash.TopPodsPanel{
-		Avail: ok(), CmdCPU: kc("top", "pods", "-A", "--sort-by=cpu"), Reporting: 76,
-		ByCPU: []dash.PodUsage{
-			{Key: podKey("monitoring", "prometheus-k8s-0"), CPUMilli: 1420},
-			{Key: podKey("shop", "payments-api-5f7b8c9d4-tq8vn"), CPUMilli: 910},
-			{Key: podKey("growlytics", "ingest-6d8c7b5f9-m2kzp"), CPUMilli: 770},
-		},
-	}
+	s.K3s = busyK3sPanel()
+	s.TopPods = busyTopPods()
 	s.Verdict = dash.Verdict{
 		Focus: dash.PanelPods, Cmd: approxCmd("get", "nodes,pods,deploy,sts,ds", "-A"),
 		Chips: []dash.Chip{

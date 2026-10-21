@@ -35,6 +35,10 @@ type frame struct {
 	// changed is the wall time of the last snapshot that showed something
 	// new.
 	changed time.Time
+	// prog is how far the bars have sprung up, 0 to 1.
+	prog float64
+	// topByMemory sorts panel 7 by memory instead of CPU.
+	topByMemory bool
 	// kind is the layout drawn: the narrow ones say less per line.
 	kind layoutKind
 	th   viz.Theme

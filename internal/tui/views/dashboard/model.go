@@ -140,7 +140,7 @@ func (m Model) focusedCmd() dash.Cmd {
 	if r, ok := f.selected(m.rows(f.panel)); ok && !r.cmd.IsZero() {
 		return r.cmd
 	}
-	return panelCmd(f.panel, m.mem.snap)
+	return m.panelCommand(f.panel)
 }
 
 // Help implements views.View: the context hints for the footer. Enter is
@@ -153,6 +153,13 @@ func (m Model) Help() []key.Binding {
 	if m.logsHint() {
 		out = append(out, m.keys.logs)
 	}
+	if _, ok := m.lay.placeOf(dash.PanelTopPods); ok && m.mem.focus.panel == dash.PanelTopPods {
+		by := "memory"
+		if m.mem.topByMemory {
+			by = "cpu"
+		}
+		out = append(out, key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort by "+by)))
+	}
 	return append(out, m.keys.refresh, key.NewBinding(key.WithKeys("w"), key.WithHelp("w", m.watchHint())))
 }
 
@@ -164,7 +171,7 @@ func (m Model) HelpMap() []key.Binding {
 	out := make([]key.Binding, 0, len(panels))
 	for _, p := range panels {
 		k := strconv.Itoa(int(p))
-		desc := panelNames[p] + " · " + kubectl.Decorate(toKubectl(panelCmd(p, m.mem.snap)), m.session).Display()
+		desc := panelNames[p] + " · " + kubectl.Decorate(toKubectl(m.panelCommand(p)), m.session).Display()
 		out = append(out, key.NewBinding(key.WithKeys(k), key.WithHelp(k, desc)))
 	}
 	return out
@@ -247,7 +254,7 @@ func (m Model) reflow() (Model, string) {
 // rows lists the rows the cursor can stand on in panel p, as this layout
 // draws them.
 func (m Model) rows(p dash.Panel) []row {
-	return rowsOf(p, m.mem.snap, m.lay)
+	return rowsOf(p, m.mem.snap, m.lay, m.mem.topByMemory)
 }
 
 func (m Model) resized(w, h int) Model {

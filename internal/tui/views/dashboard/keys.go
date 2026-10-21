@@ -12,6 +12,7 @@ type keyMap struct {
 	up, down    key.Binding
 	enter       key.Binding
 	logs        key.Binding
+	sort        key.Binding
 	refresh     key.Binding
 	watch       key.Binding
 
@@ -30,6 +31,7 @@ func newKeyMap() keyMap {
 		down:    key.NewBinding(key.WithKeys("down", "j")),
 		enter:   key.NewBinding(key.WithKeys("enter")),
 		logs:    key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "logs")),
+		sort:    key.NewBinding(key.WithKeys("s")),
 		refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		watch:   key.NewBinding(key.WithKeys("w")),
 		panel:   key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab/0-7", "panel")),
