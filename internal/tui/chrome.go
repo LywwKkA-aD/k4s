@@ -112,10 +112,11 @@ func (m Model) footerTopRow(width int) string {
 	return styles.Hint.Render(ansi.Truncate(strings.Join(m.footerBindings(), "  ·  "), width, "…"))
 }
 
-// footerCommandRow is the active command as the user would paste it, with
+// footerCommandRow is the active command as the user would paste it:
+// with the --context and --kubeconfig it needs to reach this cluster, and
 // ApproxMark in front when k4s does not do exactly what it says.
 func (m Model) footerCommandRow(width int) string {
-	shown := m.activeCommand().Display()
+	shown := m.decorate(m.activeCommand()).Display()
 	if shown == "" {
 		return ""
 	}

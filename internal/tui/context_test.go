@@ -25,8 +25,9 @@ func TestContextSwitchFromThePicker(t *testing.T) {
 		t.Fatalf("picker did not select beta:\n%s", tuitest.Describe(out))
 	}
 	requireView(t, m, "dashboard")
+	// The new context's own namespace, as kubectl would use it.
 	h := header(m)
-	if !strings.Contains(h, "ctx: beta") || !strings.Contains(h, "ns: ALL") {
+	if !strings.Contains(h, "ctx: beta") || !strings.Contains(h, "ns: "+tuitest.NamespaceDemo) {
 		t.Errorf("header after the switch = %q", h)
 	}
 

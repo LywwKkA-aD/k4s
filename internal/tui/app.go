@@ -3,12 +3,16 @@
 package tui
 
 import (
+	"os"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"k8s.io/client-go/util/homedir"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/startup"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
@@ -45,6 +49,14 @@ type Model struct {
 	width      int
 	height     int
 
+	// startup is what startup found besides the client (see WithSession);
+	// flags are the --context and --kubeconfig the user passed.
+	startup startup.Session
+	flags   sessionFlags
+	// kubectlSession tells kubectl.Decorate how a pasted command reaches
+	// this cluster. It follows the client through :ctx.
+	kubectlSession kubectl.Session
+
 	namespace string // "" = all
 	current   views.View
 	history   []historyEntry
@@ -69,9 +81,10 @@ func WithClock(now func() time.Time) Option {
 	return func(m *Model) { m.now = now }
 }
 
-// New constructs the root model with the dashboard as the landing screen.
-// loadErr is the kubeconfig load failure behind a nil client; the dashboard
-// shows it instead of the cluster counters.
+// New constructs the root model with the dashboard as the landing screen,
+// in the client's starting namespace. loadErr is the kubeconfig load
+// failure behind a nil client; the dashboard shows it instead of the
+// cluster counters.
 //
 // The port-forward Manager is best-effort: if state loading fails (bad
 // JSON, permission error) we keep the manager nil so the rest of k4s
@@ -87,7 +100,6 @@ func New(client *k8s.Client, loadErr error, opts ...Option) Model {
 	}
 
 	model := Model{
-		client:     client,
 		loadErr:    loadErr,
 		forwardMgr: mgr,
 		keys:       keys.Default(),
@@ -97,15 +109,30 @@ func New(client *k8s.Client, loadErr error, opts ...Option) Model {
 	for _, opt := range opts {
 		opt(&model)
 	}
+	model = model.withClient(client)
 	if restore > 0 {
 		model.overlay = overlay.NewRestore(restore, model.now)
 	}
 	return model
 }
 
-// Init starts the active view.
+// withClient makes c the active client: its starting namespace and the
+// kubectl session footer commands are decorated with.
+func (m Model) withClient(c *k8s.Client) Model {
+	m.client = c
+	m.namespace = clientNamespace(c)
+	m.kubectlSession = newKubectlSession(c, m.flags, os.Getenv, homedir.HomeDir())
+	return m
+}
+
+// Init starts the active view and reports a failed preflight.
 func (m Model) Init() tea.Cmd {
-	return m.current.Init()
+	initCmd := m.current.Init()
+	if m.startup.PreflightErr == nil {
+		return initCmd
+	}
+	warn := views.StatusMsg{Level: status.Warn, Text: preflightText(m.startup.PreflightErr)}
+	return tea.Batch(initCmd, func() tea.Msg { return warn })
 }
 
 // currentContextName is a small helper so the contexts view can render the

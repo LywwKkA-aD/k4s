@@ -74,7 +74,7 @@ func (m Model) replaceView(name string) Model {
 	case viewDashboard:
 		return m.swap(dashboard.New(m.client, m.loadErr))
 	case viewContexts:
-		return m.swap(contexts.New(currentContextName(m.client)))
+		return m.swap(contexts.New(currentContextName(m.client), m.kubeconfigSource()))
 	case viewTop:
 		return m.swap(top.New(m.client, m.namespace))
 	case viewForwards:

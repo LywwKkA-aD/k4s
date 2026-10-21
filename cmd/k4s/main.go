@@ -59,7 +59,8 @@ func run(opts cli.Options) error {
 	if profile, ok := styles.ColorProfile(); ok {
 		progOpts = append(progOpts, tea.WithColorProfile(profile))
 	}
-	p := tea.NewProgram(tui.New(sess.Client, sess.LoadErr), progOpts...)
+	root := tui.New(sess.Client, sess.LoadErr, tui.WithSession(sess), tui.WithFlags(opts))
+	p := tea.NewProgram(root, progOpts...)
 	_, err = p.Run()
 	err = runError(err)
 

@@ -5,12 +5,9 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/LywwKkA-aD/k4s/internal/forwards"
-	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
-	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/logs"
 )
@@ -94,41 +91,6 @@ func (m Model) onRelayout() (tea.Model, tea.Cmd) {
 	}
 	bodyMsg := tea.WindowSizeMsg{Width: m.width, Height: m.bodyHeight()}
 	return m.forwardToView(bodyMsg)
-}
-
-// onContextSelected swaps the active k8s.Client to the chosen context. We
-// drop the navigation history (its entries reference resources that may not
-// exist in the new cluster) and the active namespace (likewise) and land
-// the user back on the dashboard. Failures surface in the status row so
-// the user gets feedback without losing their place — the previous client
-// stays active.
-func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.Cmd) {
-	client, err := k8s.LoadFromKubeconfigContext("", msg.Name)
-	if err != nil {
-		return m.setError("context: " + err.Error())
-	}
-	if m.current != nil {
-		_ = m.current.Close()
-	}
-	m.client = client
-	m.loadErr = nil
-	m.namespace = ""
-	m.history = nil
-	m.status = m.status.Clear()
-	// Tear down live forwards for the old cluster before swapping managers;
-	// otherwise local ports stay bound and SPDY goroutines leak until exit.
-	if m.forwardMgr != nil {
-		_ = m.forwardMgr.StopAll()
-	}
-	var errCmd tea.Cmd
-	if mgr, err := forwards.NewManager(client); err == nil {
-		m.forwardMgr = mgr
-	} else {
-		m.forwardMgr = nil
-		m, errCmd = m.setError("forwards: " + err.Error())
-	}
-	m.current = dashboard.New(m.client, nil)
-	return m, tea.Batch(m.relayoutCmd(), errCmd)
 }
 
 func (m Model) onNamespaceSelected(msg views.NamespaceSelectedMsg) (tea.Model, tea.Cmd) {
