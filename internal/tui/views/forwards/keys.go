@@ -50,23 +50,23 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (next Model, cmd tea.Cmd, handled 
 	if m.manager == nil {
 		return m, statusCmd(views.StatusMsg{Level: status.Warn, Text: unavailable}), true
 	}
-	f, ok := m.selected()
+	a, ok := m.selected()
 	if !ok {
 		return m, statusCmd(views.StatusMsg{Level: status.Warn, Text: "no port-forward selected"}), true
 	}
-	if _, running := m.busy[f.ID]; running {
+	if _, running := m.busy[a.Forward.ID]; running {
 		return m, nil, true
 	}
-	m.busy = with(m.busy, f.ID)
+	m.busy = with(m.busy, a.Forward.ID)
 	switch {
 	case key.Matches(msg, m.keys.start):
-		return m, startCmd(m.manager, f), true
+		return m, startCmd(m.manager, a), true
 	case key.Matches(msg, m.keys.stop):
-		return m, stopCmd(m.manager, f), true
+		return m, stopCmd(m.manager, a.Forward), true
 	case key.Matches(msg, m.keys.restart):
-		return m, restartCmd(m.manager, f), true
+		return m, restartCmd(m.manager, a), true
 	}
-	return m, removeCmd(m.manager, f), true
+	return m, removeCmd(m.manager, a.Forward), true
 }
 
 func with(set map[string]struct{}, id string) map[string]struct{} {

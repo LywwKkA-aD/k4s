@@ -20,25 +20,6 @@ type Tunneler interface {
 
 var _ Tunneler = (*k8s.Client)(nil)
 
-// cluster names the cluster a Manager serves. It is read once from the
-// client instead of through Tunneler methods because *k8s.Client already
-// has an exported Context field, which rules out a Context() method.
-type cluster struct {
-	contextName string
-	server      string
-}
-
-func clusterOf(c *k8s.Client) cluster {
-	if c == nil {
-		return cluster{}
-	}
-	id := cluster{contextName: c.Context}
-	if c.RestConfig != nil {
-		id.server = c.RestConfig.Host
-	}
-	return id
-}
-
 // deps are the Manager's collaborators. NewManager fills them from a
 // *k8s.Client and its options; tests swap in fakes and a temporary state
 // file.

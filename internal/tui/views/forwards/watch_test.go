@@ -25,7 +25,7 @@ func testManager(t *testing.T) *forwards.Manager {
 
 func register(t *testing.T, mgr *forwards.Manager, name string) {
 	t.Helper()
-	f := forwards.Forward{ID: forwards.NewID(), Namespace: "demo", Kind: "pod", Name: name, LocalPort: 18080, RemotePort: 80}
+	f := forwards.Forward{ID: forwards.NewID(), Context: "fake", Namespace: "demo", Kind: "pod", Name: name, LocalPort: 18080, RemotePort: 80}
 	if err := mgr.Register(f); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -50,8 +50,8 @@ func mustReturn(t *testing.T, cmd tea.Cmd) tea.Msg {
 }
 
 func shows(m Model, name string) bool {
-	for _, f := range m.shown {
-		if f.Name == name {
+	for _, a := range m.shown {
+		if a.Forward.Name == name {
 			return true
 		}
 	}

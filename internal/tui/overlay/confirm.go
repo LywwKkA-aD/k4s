@@ -2,6 +2,7 @@ package overlay
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -34,15 +35,22 @@ func NewConfirm(spec Confirm, now func() time.Time) Overlay {
 }
 
 // NewRestore asks whether to revive count port-forwards saved by an earlier
-// session; the answer is a RestoreDecisionMsg.
-func NewRestore(count int, now func() time.Time) Overlay {
+// session; the answer is a RestoreDecisionMsg. clusters, when given, name
+// the clusters they were saved for, one "ctx · host" line each, so the
+// user sees which cluster a stock "default" context means.
+func NewRestore(count int, now func() time.Time, clusters ...string) Overlay {
 	noun := "forwards"
 	if count == 1 {
 		noun = "forward"
 	}
+	question := fmt.Sprintf("Found %d saved %s from a previous session.", count, noun)
+	if len(clusters) > 0 {
+		question = fmt.Sprintf("Found %d saved %s from a previous session, for:\n  %s",
+			count, noun, strings.Join(clusters, "\n  "))
+	}
 	return NewConfirm(Confirm{
 		Title:    "restore port-forwards",
-		Question: fmt.Sprintf("Found %d saved %s from a previous session.", count, noun),
+		Question: question,
 		Hint:     "Enter revive all · n / Esc skip · :pf to manage later",
 		Yes:      RestoreDecisionMsg{Revive: true},
 		No:       RestoreDecisionMsg{Revive: false},

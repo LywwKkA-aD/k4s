@@ -26,20 +26,20 @@ func isolatedState(t *testing.T) string {
 	return dir
 }
 
+// saveForwards leaves the state an earlier session would: one forward per
+// context, saved without a server, "" for one saved before contexts were
+// recorded.
 func saveForwards(t *testing.T, contexts ...string) {
 	t.Helper()
-	mgr, err := forwards.NewManager(nil)
-	if err != nil {
-		t.Fatalf("NewManager: %v", err)
-	}
+	saved := make([]forwards.Forward, 0, len(contexts))
 	for i, ctx := range contexts {
-		f := forwards.Forward{
+		saved = append(saved, forwards.Forward{
 			ID: forwards.NewID(), Context: ctx, Namespace: tuitest.NamespaceDemo,
 			Kind: "pod", Name: tuitest.PodWeb1, LocalPort: uint16(19000 + i), RemotePort: 80,
-		}
-		if err := mgr.Register(f); err != nil {
-			t.Fatalf("Register: %v", err)
-		}
+		})
+	}
+	if err := (forwards.State{Forwards: saved}).Save(); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 }
 

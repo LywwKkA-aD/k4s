@@ -100,6 +100,21 @@ func TestRestoreConfirmView(t *testing.T) {
 	}
 }
 
+func TestRestoreListsTheClusters(t *testing.T) {
+	t.Parallel()
+
+	o := overlay.NewRestore(3, newClock().Now, "default · 127.0.0.1:6443", "default · unknown cluster, confirm")
+	requireShows(t, o,
+		"Found 3 saved forwards from a previous session, for:",
+		"\n  default · 127.0.0.1:6443\n",
+		"\n  default · unknown cluster, confirm\n",
+		"Enter revive all · n / Esc skip",
+	)
+	for width := 1; width <= 80; width++ {
+		requireNarrow(t, o, width)
+	}
+}
+
 func TestConfirmIgnoresOtherMessages(t *testing.T) {
 	t.Parallel()
 

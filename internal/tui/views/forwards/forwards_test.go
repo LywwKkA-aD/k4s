@@ -52,7 +52,7 @@ func managerWith(t *testing.T, opts []forwards.Option, fwds ...forwards.Forward)
 
 func forward(kind, name string, local, remote uint16) forwards.Forward {
 	return forwards.Forward{
-		ID: forwards.NewID(), Namespace: tuitest.NamespaceDemo,
+		ID: forwards.NewID(), Context: tuitest.FakeContext, Namespace: tuitest.NamespaceDemo,
 		Kind: kind, Name: name, LocalPort: local, RemotePort: remote,
 	}
 }

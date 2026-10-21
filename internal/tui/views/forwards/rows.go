@@ -7,6 +7,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 )
 
 func columns() []table.Column {
@@ -24,44 +25,52 @@ func columns() []table.Column {
 // on while that forward is listed, else on the same index, clamped.
 func (m *Model) show(list []forwards.Active) {
 	prev, _ := m.selected()
-	shown := make([]forwards.Forward, 0, len(list))
 	rows := make([]table.Row, 0, len(list))
 	cursor := m.table.Cursor()
 	for i, a := range list {
-		shown = append(shown, a.Forward)
 		rows = append(rows, rowFor(a))
-		if prev.ID != "" && a.Forward.ID == prev.ID {
+		if prev.Forward.ID != "" && a.Forward.ID == prev.Forward.ID {
 			cursor = i
 		}
 	}
-	m.shown = shown
+	m.shown = list
 	m.table.SetRows(rows)
 	// SetRows leaves the cursor at -1 once the table was empty.
 	m.table.SetCursor(cursor)
 }
 
 // selected is the forward under the cursor, as shown.
-func (m Model) selected() (forwards.Forward, bool) {
+func (m Model) selected() (forwards.Active, bool) {
 	i := m.table.Cursor()
 	if i < 0 || i >= len(m.shown) {
-		return forwards.Forward{}, false
+		return forwards.Active{}, false
 	}
 	return m.shown[i], true
 }
 
+// rowFor lays out one forward. Names come from the state file and errors
+// from the cluster, so every cell is sanitized.
 func rowFor(a forwards.Active) table.Row {
-	detail := ""
-	if a.Err != nil {
-		detail = a.Err.Error()
-	}
 	return table.Row{
 		a.Status.String(),
-		a.Forward.Kind,
-		a.Forward.Namespace,
-		a.Forward.Name,
+		sanitize.Line(a.Forward.Kind),
+		sanitize.Line(a.Forward.Namespace),
+		sanitize.Line(a.Forward.Name),
 		ports(a.Forward),
-		detail,
+		detail(a),
 	}
+}
+
+// detail is the error a failed forward hit, or asks the user to confirm a
+// forward saved before k4s recorded which cluster it was for.
+func detail(a forwards.Active) string {
+	switch {
+	case a.Err != nil:
+		return sanitize.Line(a.Err.Error())
+	case a.Unbound:
+		return forwards.UnknownCluster
+	}
+	return ""
 }
 
 func ports(f forwards.Forward) string {

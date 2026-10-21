@@ -22,8 +22,13 @@ import (
 // stable across restarts; tests rely on the comparison being structural,
 // so add fields with care.
 type Forward struct {
-	ID         string `json:"id"`
-	Context    string `json:"context"`
+	ID      string `json:"id"`
+	Context string `json:"context"`
+	// Server and CA name the cluster behind Context when the forward was
+	// saved: its API server address and the fingerprint of the CA the
+	// client trusted. Forwards saved before k4s recorded them have neither.
+	Server     string `json:"server,omitempty"`
+	CA         string `json:"ca,omitempty"`
 	Namespace  string `json:"namespace"`
 	Kind       string `json:"kind"` // "pod" | "service" | "deployment"
 	Name       string `json:"name"`
@@ -37,6 +42,8 @@ func (f Forward) Validate() error {
 	switch {
 	case f.ID == "":
 		return errors.New("forward id is empty")
+	case f.Context == "":
+		return errors.New("context is empty")
 	case f.Namespace == "":
 		return errors.New("namespace is empty")
 	case f.Name == "":

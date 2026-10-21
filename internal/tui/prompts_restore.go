@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -27,26 +28,57 @@ func (m Model) onRestoreDecision(msg overlay.RestoreDecisionMsg) (Model, tea.Cmd
 	return m, nil
 }
 
-// reviveAll kicks off Start for every forward in state that belongs to the
-// current context. Each Start blocks briefly on its own goroutine; we don't
-// wait. The Manager's change channel will refresh the forwards view automatically.
+// reviveAll kicks off Revive for every forward the restore question
+// offered. Each one blocks briefly on its own goroutine; we don't wait.
+// The Manager's change channel will refresh the forwards view
+// automatically. A forward saved before k4s recorded servers is saved for
+// this cluster as it starts: answering the question confirmed it.
 func (m Model) reviveAll() {
 	if m.forwardMgr == nil {
 		return
 	}
 	mgr := m.forwardMgr
-	ctxName := currentContextName(m.client)
-	for _, fwd := range mgr.State().Forwards {
-		if fwd.Context != "" && fwd.Context != ctxName {
-			continue
-		}
-		id := fwd.ID
+	for _, a := range restorable(mgr, currentContextName(m.client)) {
+		id := a.Forward.ID
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			_ = mgr.Start(ctx, id)
+			_ = mgr.Revive(ctx, id)
 		}()
 	}
+}
+
+// restoreOverlay asks whether to revive the forwards saved for this
+// cluster, naming the clusters they were saved for; nil when there are
+// none to offer.
+func restoreOverlay(mgr *forwards.Manager, ctx string, now func() time.Time) overlay.Overlay {
+	if mgr == nil {
+		return nil
+	}
+	offered := restorable(mgr, ctx)
+	if len(offered) == 0 {
+		return nil
+	}
+	clusters := make([]string, 0, 2)
+	for _, a := range offered {
+		if w := a.Where(); !slices.Contains(clusters, w) {
+			clusters = append(clusters, w)
+		}
+	}
+	return overlay.NewRestore(len(offered), now, clusters...)
+}
+
+// restorable is what the restore question offers: the forwards the Manager
+// lists for its cluster, saved under the context ctx or under none.
+func restorable(mgr *forwards.Manager, ctx string) []forwards.Active {
+	list := mgr.List()
+	out := make([]forwards.Active, 0, len(list))
+	for _, a := range list {
+		if a.Forward.Context == "" || a.Forward.Context == ctx {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // forwardsForContext counts persisted forwards that belong to the named

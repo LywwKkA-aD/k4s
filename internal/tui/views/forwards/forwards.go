@@ -32,7 +32,7 @@ type Model struct {
 	// shown are the forwards behind the table rows, in row order. The
 	// cursor, the keys and Command read them, never a fresh List, so a key
 	// acts on the row the user sees.
-	shown []forwards.Forward
+	shown []forwards.Active
 	// busy holds the ids whose operation is running. A key on such a row is
 	// ignored until the result lands: a repeat would run the operation twice
 	// and report a delete the user wanted as a gone forward. Rebuilt, never
@@ -158,7 +158,7 @@ func (m Model) Command() kubectl.Cmd {
 	if !ok {
 		return kubectl.Cmd{}
 	}
-	return portForwardCmd(f)
+	return portForwardCmd(f.Forward)
 }
 
 // Help implements views.View.

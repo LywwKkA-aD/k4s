@@ -60,16 +60,15 @@ func TestRegisterRejectsInvalidForward(t *testing.T) {
 
 func TestListFiltersByContextAndSorts(t *testing.T) {
 	t.Parallel()
-	m := newTestManager(t, deps{})
 	other := testForward("other", "pod", 1)
 	other.Context = "prod"
-	shared := testForward("shared", "pod", 2)
+	shared := unbound(testForward("shared", "pod", 2))
 	shared.Context = ""
 	b := testForward("b", "service", 3)
 	a := testForward("a", "pod", 4)
 	a.Namespace = "aaa"
 	c := testForward("c", "pod", 5)
-	mustRegister(t, m, other, shared, b, a, c)
+	m := newTestManager(t, deps{statePath: seedState(t, other, shared, b, a, c)})
 
 	list := m.List()
 	got := make([]string, 0, len(list))
@@ -309,14 +308,14 @@ func TestNewManagerFailsOnCorruptState(t *testing.T) {
 // XDG_STATE_HOME at a temporary directory.
 func TestNewManagerFromClient(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	seed := State{Forwards: []Forward{testForward("dev1", "pod", 18080), {
+	seed := State{Forwards: []Forward{cluster{contextName: testContext, server: testServer}.bind(testForward("dev1", "pod", 18080)), {
 		ID: "prod1", Context: "prod", Namespace: testNamespace, Kind: "pod", Name: "db", LocalPort: 15432, RemotePort: 5432,
 	}}}
 	if err := seed.Save(); err != nil {
 		t.Fatalf("seed state: %v", err)
 	}
 
-	client := &k8s.Client{Context: testContext, RestConfig: &rest.Config{Host: "https://127.0.0.1:6443"}}
+	client := &k8s.Client{Context: testContext, RestConfig: &rest.Config{Host: testServer}}
 	m, err := NewManager(client)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)

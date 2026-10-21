@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -53,6 +52,10 @@ type Active struct {
 	Forward Forward
 	Status  Status
 	Err     error
+	// Unbound marks a forward saved before k4s recorded servers, under this
+	// context's name or none. It may belong to another cluster, so it is
+	// started only through Revive, which binds it to this one.
+	Unbound bool
 	session *k8s.PortForwardSession
 	// attempt numbers the Start calls for this forward. A Start that is
 	// still resolving when the user stops and restarts the forward must
@@ -149,19 +152,20 @@ func (m *Manager) notify() {
 	m.changeCh = make(chan struct{})
 }
 
-// List returns a snapshot copy of every known forward for the active
-// context, sorted by (Namespace, Kind, Name, LocalPort) for a stable
-// display order — the UI's selection cursor would otherwise jump on every
-// render since map iteration is undefined.
+// List returns a snapshot copy of every known forward for this cluster,
+// the unbound ones included, sorted by (Namespace, Kind, Name, LocalPort)
+// for a stable display order — the UI's selection cursor would otherwise
+// jump on every render since map iteration is undefined.
 func (m *Manager) List() []Active {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]Active, 0, len(m.active))
 	for _, a := range m.active {
-		if !m.matchesContext(a.Forward.Context) {
+		rel := m.cluster.relation(a.Forward)
+		if rel == otherCluster {
 			continue
 		}
-		out = append(out, Active{Forward: a.Forward, Status: a.Status, Err: a.Err})
+		out = append(out, Active{Forward: a.Forward, Status: a.Status, Err: a.Err, Unbound: rel == unboundCluster})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		ai, aj := out[i].Forward, out[j].Forward
@@ -179,16 +183,37 @@ func (m *Manager) List() []Active {
 	return out
 }
 
-func (m *Manager) matchesContext(ctx string) bool {
-	return m.cluster.contextName == "" || ctx == "" || ctx == m.cluster.contextName
-}
-
 // State returns a copy of the persisted intent. Useful for restore prompts
 // at startup or sanity-check tests; not what the UI uses for rendering.
+// Forwards saved for another cluster under this one's context name are
+// left out: a caller that tells forwards apart by context name would take
+// them for this cluster's.
 func (m *Manager) State() State {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return State{Forwards: slices.Clone(m.state.Forwards)}
+	out := make([]Forward, 0, len(m.state.Forwards))
+	for _, f := range m.state.Forwards {
+		if f.Context == m.cluster.contextName && m.cluster.relation(f) == otherCluster {
+			continue
+		}
+		out = append(out, f)
+	}
+	return State{Forwards: out}
+}
+
+// Where names the cluster this Manager serves, "ctx · host".
+func (m *Manager) Where() string { return m.cluster.where() }
+
+// Where names the cluster the forward is saved for, "ctx · host", or says
+// it is unknown when the forward predates k4s recording servers.
+func (a Active) Where() string {
+	if !a.Unbound {
+		return where(a.Forward.Context, a.Forward.Server)
+	}
+	if a.Forward.Context == "" {
+		return UnknownCluster
+	}
+	return where(a.Forward.Context, "") + " · " + UnknownCluster
 }
 
 // NewID generates a short opaque ID for a new forward. Eight bytes of
@@ -205,7 +230,8 @@ func NewID() string {
 // Register adds (or updates) a forward in the State and pushes the
 // stopped entry into the runtime map. It does not start the forward.
 // The caller is expected to chain Start when they want it live. It is
-// refused with ErrStopping while the Manager is Blocked.
+// refused with ErrStopping while the Manager is Blocked. A forward for
+// this context that names no server is saved for this cluster.
 func (m *Manager) Register(f Forward) error {
 	if err := f.Validate(); err != nil {
 		return err
@@ -215,6 +241,9 @@ func (m *Manager) Register(f Forward) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if f.Server == "" && f.Context == m.cluster.contextName {
+		f = m.cluster.bind(f)
+	}
 	m.state = m.state.Upsert(f)
 	if existing, ok := m.active[f.ID]; ok {
 		existing.Forward = f

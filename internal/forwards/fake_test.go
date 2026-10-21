@@ -232,7 +232,7 @@ func newTestManager(t *testing.T, d deps) *Manager {
 		d.statePath = filepath.Join(t.TempDir(), "portforwards.json")
 	}
 	if d.cluster == (cluster{}) {
-		d.cluster = cluster{contextName: testContext, server: "https://127.0.0.1:6443"}
+		d.cluster = thisCluster
 	}
 	m, err := newManager(d)
 	if err != nil {
@@ -241,16 +241,22 @@ func newTestManager(t *testing.T, d deps) *Manager {
 	return m
 }
 
+// testForward is a forward saved for thisCluster, as Register saves it.
 func testForward(id, kind string, local uint16) Forward {
-	return Forward{
+	return thisCluster.bind(Forward{
 		ID:         id,
-		Context:    testContext,
 		Namespace:  testNamespace,
 		Kind:       kind,
 		Name:       "web",
 		LocalPort:  local,
 		RemotePort: 80,
-	}
+	})
+}
+
+// unbound is f as k4s saved it before it recorded servers.
+func unbound(f Forward) Forward {
+	f.Server, f.CA = "", ""
+	return f
 }
 
 func mustRegister(t *testing.T, m *Manager, fwds ...Forward) {

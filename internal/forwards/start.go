@@ -45,12 +45,16 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 }
 
 // beginAttempt moves the forward to StatusStarting and numbers this Start.
+// A forward that may belong to another cluster is refused as it stands.
 func (m *Manager) beginAttempt(id string) (Forward, uint64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	a, ok := m.active[id]
 	if !ok {
 		return Forward{}, 0, notFound(id)
+	}
+	if err := m.refuseForeign(a.Forward); err != nil {
+		return Forward{}, 0, err
 	}
 	if a.Status == StatusRunning || a.Status == StatusStarting {
 		return Forward{}, 0, errors.New("already running")

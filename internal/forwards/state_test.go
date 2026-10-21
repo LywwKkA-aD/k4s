@@ -15,12 +15,13 @@ func TestValidateRejectsEmptyFields(t *testing.T) {
 		f    Forward
 		want string
 	}{
-		{"empty id", Forward{Namespace: "n", Kind: "pod", Name: "x", LocalPort: 1, RemotePort: 1}, "id"},
-		{"empty namespace", Forward{ID: "a", Kind: "pod", Name: "x", LocalPort: 1, RemotePort: 1}, "namespace"},
-		{"empty name", Forward{ID: "a", Namespace: "n", Kind: "pod", LocalPort: 1, RemotePort: 1}, "name"},
-		{"bad kind", Forward{ID: "a", Namespace: "n", Kind: "junk", Name: "x", LocalPort: 1, RemotePort: 1}, "kind"},
-		{"zero local port", Forward{ID: "a", Namespace: "n", Kind: "pod", Name: "x", RemotePort: 1}, "local port"},
-		{"zero remote port", Forward{ID: "a", Namespace: "n", Kind: "pod", Name: "x", LocalPort: 1}, "remote port"},
+		{"empty id", Forward{Context: "c", Namespace: "n", Kind: "pod", Name: "x", LocalPort: 1, RemotePort: 1}, "id"},
+		{"empty context", Forward{ID: "a", Namespace: "n", Kind: "pod", Name: "x", LocalPort: 1, RemotePort: 1}, "context"},
+		{"empty namespace", Forward{ID: "a", Context: "c", Kind: "pod", Name: "x", LocalPort: 1, RemotePort: 1}, "namespace"},
+		{"empty name", Forward{ID: "a", Context: "c", Namespace: "n", Kind: "pod", LocalPort: 1, RemotePort: 1}, "name"},
+		{"bad kind", Forward{ID: "a", Context: "c", Namespace: "n", Kind: "junk", Name: "x", LocalPort: 1, RemotePort: 1}, "kind"},
+		{"zero local port", Forward{ID: "a", Context: "c", Namespace: "n", Kind: "pod", Name: "x", RemotePort: 1}, "local port"},
+		{"zero remote port", Forward{ID: "a", Context: "c", Namespace: "n", Kind: "pod", Name: "x", LocalPort: 1}, "remote port"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -41,7 +42,7 @@ func TestValidateAcceptsAllKnownKinds(t *testing.T) {
 	for _, kind := range []string{"pod", "service", "deployment"} {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
-			f := Forward{ID: "a", Namespace: "n", Kind: kind, Name: "x", LocalPort: 8080, RemotePort: 80}
+			f := Forward{ID: "a", Context: "c", Namespace: "n", Kind: kind, Name: "x", LocalPort: 8080, RemotePort: 80}
 			if err := f.Validate(); err != nil {
 				t.Errorf("kind=%s should validate, got %v", kind, err)
 			}
