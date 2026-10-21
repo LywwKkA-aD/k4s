@@ -112,7 +112,7 @@ func deriveK3s(st store, led Ledger, scope Scope, distro string, now time.Time) 
 	for _, name := range k3sComponents {
 		p.Components = append(p.Components, component(name, byName))
 	}
-	p.ServiceLB = serviceLB(found, st)
+	p.ServiceLB = serviceLB(found, st, scope)
 	p.Helm = helmSummary(st, led, scope)
 	p.Etcd = etcdRow(st, led, now)
 	return p
@@ -145,8 +145,8 @@ func kubeSystemComponents(st store, scope Scope) []placedComponent {
 	return out
 }
 
-func serviceLB(found []placedComponent, st store) ServiceLBRow {
-	row := ServiceLBRow{Cmd: kubectl("get", "svc", "-A", "--field-selector", "spec.type=LoadBalancer")}
+func serviceLB(found []placedComponent, st store, scope Scope) ServiceLBRow {
+	row := ServiceLBRow{Cmd: withScope(scope.Namespace, "get", "svc", "--field-selector", "spec.type=LoadBalancer")}
 	for _, c := range found {
 		if c.kind != "daemonset" || !strings.HasPrefix(c.row.name, svclbPrefix) {
 			continue
@@ -159,7 +159,7 @@ func serviceLB(found []placedComponent, st store) ServiceLBRow {
 	lbs := st.lbs
 	if st.lbFallback {
 		lbs = st.services
-		row.Cmd = approx(kubectl("get", "svc", "-A"))
+		row.Cmd = approx(withScope(scope.Namespace, "get", "svc"))
 	}
 	for _, s := range lbs {
 		if s.pending {
