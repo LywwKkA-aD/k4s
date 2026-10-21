@@ -9,7 +9,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
@@ -271,18 +270,6 @@ func TestIsRebuildableView(t *testing.T) {
 	}
 	if isRebuildableView("pod · nginx") {
 		t.Error("dynamic describe title should not be rebuildable")
-	}
-}
-
-func TestForwardsForContext(t *testing.T) {
-	t.Parallel()
-	fwd := func(ctx string) forwards.Forward { return forwards.Forward{Context: ctx} }
-	forwards := []forwards.Forward{fwd("prod"), fwd("dev"), fwd(""), fwd("prod")}
-	if got := forwardsForContext(forwards, "prod"); got != 3 {
-		t.Errorf("prod count = %d, want 3", got)
-	}
-	if got := forwardsForContext(forwards, "dev"); got != 2 {
-		t.Errorf("dev count = %d, want 2", got)
 	}
 }
 

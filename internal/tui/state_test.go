@@ -70,7 +70,7 @@ func TestRestorePromptCountsSavedForwards(t *testing.T) {
 		{
 			name: "only the current context and context-less ones count", withFake: true,
 			saved: []string{tuitest.FakeContext, "", "elsewhere"},
-			want:  "Found 2 saved forwards from a previous session.",
+			want:  "Found 2 saved forwards from a previous session, for:",
 		},
 	}
 	for _, tc := range cases {

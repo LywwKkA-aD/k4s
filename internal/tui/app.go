@@ -121,14 +121,12 @@ func WithRunnerConfig(cfg kubectl.RunnerConfig) Option {
 // The port-forward Manager is best-effort: if state loading fails (bad
 // JSON, permission error) we keep the manager nil so the rest of k4s
 // stays usable, and the forwards view will show an "unavailable" hint.
-// When the state file holds forwards for the current context, the model
-// opens asking whether to revive them.
+// When the state file holds forwards for this cluster, the model opens
+// asking whether to revive them (restoreOverlay).
 func New(client *k8s.Client, loadErr error, opts ...Option) Model {
 	var mgr *forwards.Manager
-	restore := 0
 	if m, err := forwards.NewManager(client); err == nil {
 		mgr = m
-		restore = forwardsForContext(mgr.State().Forwards, currentContextName(client))
 	}
 
 	model := Model{
@@ -142,9 +140,7 @@ func New(client *k8s.Client, loadErr error, opts ...Option) Model {
 		opt(&model)
 	}
 	model = model.withClient(client)
-	if restore > 0 {
-		model.overlay = overlay.NewRestore(restore, model.now)
-	}
+	model.overlay = restoreOverlay(mgr, currentContextName(client), model.now)
 	return model
 }
 

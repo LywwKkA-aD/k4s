@@ -50,7 +50,8 @@ func (m Model) reviveAll() {
 
 // restoreOverlay asks whether to revive the forwards saved for this
 // cluster, naming the clusters they were saved for; nil when there are
-// none to offer.
+// none to offer. The count is what reviveAll starts. A forward saved
+// without a context, for a client that knows no server, names nothing.
 func restoreOverlay(mgr *forwards.Manager, ctx string, now func() time.Time) overlay.Overlay {
 	if mgr == nil {
 		return nil
@@ -61,7 +62,7 @@ func restoreOverlay(mgr *forwards.Manager, ctx string, now func() time.Time) ove
 	}
 	clusters := make([]string, 0, 2)
 	for _, a := range offered {
-		if w := a.Where(); !slices.Contains(clusters, w) {
+		if w := a.Where(); w != "" && !slices.Contains(clusters, w) {
 			clusters = append(clusters, w)
 		}
 	}
@@ -79,18 +80,4 @@ func restorable(mgr *forwards.Manager, ctx string) []forwards.Active {
 		}
 	}
 	return out
-}
-
-// forwardsForContext counts persisted forwards that belong to the named
-// context. Forwards with an empty context are treated as belonging to every
-// context for backward compatibility with state files written before the
-// context field was enforced.
-func forwardsForContext(forwards []forwards.Forward, ctx string) int {
-	n := 0
-	for _, f := range forwards {
-		if f.Context == "" || f.Context == ctx {
-			n++
-		}
-	}
-	return n
 }

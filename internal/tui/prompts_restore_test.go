@@ -10,10 +10,12 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"k8s.io/client-go/rest"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
 
 const restoreServer = "https://127.0.0.1:6443"
@@ -54,9 +56,6 @@ func TestRestoreOffersOnlyThisClustersForwards(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	if got := forwardsForContext(mgr.State().Forwards, client.Context); got != 2 {
-		t.Errorf("forwardsForContext = %d, want 2: the other server's forward is not this cluster's", got)
-	}
 	o := restoreOverlay(mgr, client.Context, time.Now)
 	if o == nil {
 		t.Fatal("no restore question for two saved forwards")
@@ -73,6 +72,30 @@ func TestRestoreOffersOnlyThisClustersForwards(t *testing.T) {
 	}
 	if strings.Contains(screen, "10.0.0.") {
 		t.Errorf("restore question offers another cluster:\n%s", screen)
+	}
+}
+
+// The question New opens at startup is restoreOverlay's: it names the
+// clusters and counts what the revival would start.
+func TestStartupAsksToRestoreNamingTheClusters(t *testing.T) {
+	seedRestoreState(t)
+	m := New(stockK3s(), nil)
+	if m.overlay == nil {
+		t.Fatal("New opened no restore question for two saved forwards")
+	}
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	screen := tuitest.Screen(next)
+	for _, want := range []string{
+		"Found 2 saved forwards from a previous session, for:",
+		"default · 127.0.0.1:6443",
+		"default · unknown cluster, confirm",
+	} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("startup question lacks %q:\n%s", want, screen)
+		}
+	}
+	if strings.Contains(screen, "10.0.0.") {
+		t.Errorf("startup question offers another cluster:\n%s", screen)
 	}
 }
 
