@@ -216,6 +216,33 @@ func TestClassify(t *testing.T) {
 			hint:  "r retries",
 		},
 		{
+			name:  "dial timeout to a black-holed address",
+			err:   listCall("pods", "", dial("https://10.9.9.9:6443/api/v1/pods", timeoutErr{})),
+			kind:  k8s.KindTimeout,
+			short: "API slow: list pods timed out",
+			hint:  "r retries",
+		},
+		{
+			name:  "deadline during connect",
+			err:   dial("https://10.9.9.9:6443/version", context.DeadlineExceeded),
+			kind:  k8s.KindTimeout,
+			short: "API slow: request timed out",
+			hint:  "r retries",
+		},
+		{
+			name:  "dns timeout",
+			err:   &url.Error{Op: "Get", URL: "https://k8s.example.com/version", Err: &net.DNSError{Name: "k8s.example.com", Err: "i/o timeout", IsTimeout: true}},
+			kind:  k8s.KindTimeout,
+			short: "API slow: request timed out",
+			hint:  "r retries",
+		},
+		{
+			name:  "a dial that failed otherwise",
+			err:   dial("https://10.0.0.5:6443/version", errors.New("socket: too many open files")),
+			kind:  k8s.KindOther,
+			short: `Get "https://10.0.0.5:6443/version": dial tcp: socket: too many open files`,
+		},
+		{
 			name:  "refused",
 			err:   listCall("pods", "", dial("https://10.0.0.5:6443/api/v1/pods?limit=500", syscall.ECONNREFUSED)),
 			kind:  k8s.KindUnreachable,

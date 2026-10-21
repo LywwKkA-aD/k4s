@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
-	"syscall"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -200,16 +200,16 @@ func slowCall(err error) string {
 	return "request timed out"
 }
 
-// unreachable reports a failed dial: a refused connection, an unknown host
-// or no route. A dial that timed out counts too: nothing answers there.
+// unreachable reports a dial that found nothing to talk to: a refused
+// connection, no route to the host or its network, or a name DNS does not
+// know. A dial that timed out is not one: a black-holed address and a slow
+// API look the same from here, so timedOut has it.
 func unreachable(err error) bool {
-	var op *net.OpError
 	var dns *net.DNSError
-	switch {
-	case errors.As(err, &op) && op.Op == "dial", errors.As(err, &dns):
-		return true
+	if errors.As(err, &dns) {
+		return dns.IsNotFound
 	}
-	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.EHOSTUNREACH) || errors.Is(err, syscall.ENETUNREACH)
+	return slices.ContainsFunc(unreachableErrnos, func(target error) bool { return errors.Is(err, target) })
 }
 
 // apiHost is the host:port the failed request went to, "" when err does
