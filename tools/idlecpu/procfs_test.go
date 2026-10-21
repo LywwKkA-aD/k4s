@@ -96,3 +96,29 @@ func checkErr(t *testing.T, err error, want string) {
 		t.Fatalf("error = %v, want one containing %q", err, want)
 	}
 }
+
+func TestParseStatusHWM(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		in      string
+		want    int64
+		wantErr string
+	}{
+		{name: "VmHWM in kB", in: statusText, want: 29012 * 1024},
+		{name: "absent is unknown", in: "Name:\tk4s\nVmRSS:\t12 kB\n", want: 0},
+		{name: "unit is not kB", in: "VmHWM:\t12 MB\n", wantErr: "VmHWM is"},
+		{name: "value not a number", in: "VmHWM:\tlots kB\n", wantErr: "parse VmHWM"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := parseStatusHWM([]byte(tc.in))
+			checkErr(t, err, tc.wantErr)
+			if tc.wantErr == "" && got != tc.want {
+				t.Fatalf("hwm = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

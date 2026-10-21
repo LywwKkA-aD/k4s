@@ -22,7 +22,8 @@ const (
 	stimeField = 15 - 3
 )
 
-// readProcSample reads the CPU time and resident set of pid from /proc.
+// readProcSample reads the CPU time, resident set and peak resident set of
+// pid from /proc.
 func readProcSample(_ context.Context, pid int) (sample, error) {
 	// G703: the path is /proc plus an int, nothing a caller can steer.
 	dir := "/proc/" + strconv.Itoa(pid)
@@ -42,7 +43,11 @@ func readProcSample(_ context.Context, pid int) (sample, error) {
 	if err != nil {
 		return sample{}, err
 	}
-	return sample{cpu: cpu, rss: rss}, nil
+	hwm, err := parseStatusHWM(status)
+	if err != nil {
+		return sample{}, err
+	}
+	return sample{cpu: cpu, rss: rss, hwm: hwm}, nil
 }
 
 // parseProcStat returns utime+stime from a /proc/<pid>/stat line.
@@ -81,20 +86,41 @@ func parseTicks(s string) (int64, error) {
 
 // parseStatusRSS returns VmRSS, in bytes, from /proc/<pid>/status.
 func parseStatusRSS(data []byte) (int64, error) {
+	kb, ok, err := statusKB(data, "VmRSS")
+	if err != nil {
+		return 0, err
+	}
+	if !ok {
+		return 0, errors.New("parse status: no VmRSS line")
+	}
+	return kb * 1024, nil
+}
+
+// parseStatusHWM returns VmHWM, the peak resident set the kernel has seen
+// for the process, in bytes. A status without the line gives 0: the peak of
+// the samples then stands alone.
+func parseStatusHWM(data []byte) (int64, error) {
+	kb, _, err := statusKB(data, "VmHWM")
+	return kb * 1024, err
+}
+
+// statusKB reads a "<field>:\t<n> kB" line of /proc/<pid>/status; ok is
+// false when the line is absent.
+func statusKB(data []byte, field string) (kb int64, ok bool, err error) {
 	for line := range strings.Lines(string(data)) {
-		rest, ok := strings.CutPrefix(line, "VmRSS:")
-		if !ok {
+		rest, found := strings.CutPrefix(line, field+":")
+		if !found {
 			continue
 		}
 		f := strings.Fields(rest)
 		if len(f) != 2 || f[1] != "kB" {
-			return 0, fmt.Errorf("parse status: VmRSS is %q, want <n> kB", strings.TrimSpace(rest))
+			return 0, false, fmt.Errorf("parse status: %s is %q, want <n> kB", field, strings.TrimSpace(rest))
 		}
-		kb, err := strconv.ParseInt(f[0], 10, 64)
+		kb, err = strconv.ParseInt(f[0], 10, 64)
 		if err != nil || kb < 0 {
-			return 0, fmt.Errorf("parse VmRSS %q: want a count of kB", f[0])
+			return 0, false, fmt.Errorf("parse %s %q: want a count of kB", field, f[0])
 		}
-		return kb * 1024, nil
+		return kb, true, nil
 	}
-	return 0, errors.New("parse status: no VmRSS line")
+	return 0, false, nil
 }

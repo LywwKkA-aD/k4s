@@ -58,6 +58,17 @@ func TestSummarize(t *testing.T) {
 			},
 		},
 		{
+			name: "high-water mark above every sample",
+			in: []sample{
+				{at: at(0), rss: 25 * mib, hwm: 26 * mib},
+				{at: at(40), cpu: 100 * time.Millisecond, rss: 24 * mib, hwm: 33 * mib},
+			},
+			want: windowStats{
+				wall: 40 * time.Second, cpu: 100 * time.Millisecond, cpuPct: 0.25,
+				peakRSS: 33 * mib, finalRSS: 24 * mib, samples: 2,
+			},
+		},
+		{
 			name: "two samples",
 			in:   []sample{{at: at(0), rss: mib}, {at: at(10), cpu: 100 * time.Millisecond, rss: 2 * mib}},
 			want: windowStats{

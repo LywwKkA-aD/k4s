@@ -11,6 +11,7 @@ type sample struct {
 	at  time.Time
 	cpu time.Duration // utime+stime since the process started
 	rss int64         // resident set, bytes
+	hwm int64         // peak resident set since start, bytes; 0 when unknown (VmHWM, Linux)
 }
 
 // windowStats sums up the samples taken over the measurement window.
@@ -24,7 +25,8 @@ type windowStats struct {
 }
 
 // summarize turns the samples of one window, oldest first, into its CPU
-// share and RSS figures.
+// share and RSS figures. The peak is the larger of the sampled resident sets
+// and the kernel's high-water mark, so a spike between two samples counts.
 func summarize(samples []sample) (windowStats, error) {
 	if len(samples) < 2 {
 		return windowStats{}, fmt.Errorf("summarize window: %d samples, want at least 2 samples", len(samples))
@@ -40,7 +42,7 @@ func summarize(samples []sample) (windowStats, error) {
 	}
 	peak := int64(0)
 	for _, s := range samples {
-		peak = max(peak, s.rss)
+		peak = max(peak, s.rss, s.hwm)
 	}
 	return windowStats{
 		wall:     wall,
