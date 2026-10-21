@@ -80,16 +80,29 @@ type DescribeRequestMsg struct {
 	Name      string
 }
 
+// ResourceRef names the object a request was made for: the row the user
+// acted on, which may stand for several pods.
+type ResourceRef struct {
+	Kind      string // "pod", "deployment" or "service"
+	Namespace string
+	Name      string
+}
+
 // TailPromptRequestMsg asks the root model to open the tail-lines prompt for
 // the given pods. Container is forwarded through to the eventual
 // LogsRequestMsg — list views that already know the target container (e.g.
 // pods view after a successful container picker round-trip) populate it,
 // list views that don't (single-container pods) leave it empty so kubectl
 // picks the default container.
+//
+// Target is the row the logs were asked for; the prompt's title names it
+// ("tail lines · deployment/web · ns demo"). Left zero, the title names
+// the pods instead.
 type TailPromptRequestMsg struct {
 	Namespace string
 	Pods      []string
 	Container string
+	Target    ResourceRef
 }
 
 // LogsRequestMsg is dispatched (by the root, after the tail prompt closes)
@@ -106,16 +119,18 @@ type LogsRequestMsg struct {
 // than one container). Once the user picks one, the root dispatches the
 // next msg according to NextKind:
 //
-//	"logs"  → views.TailPromptRequestMsg{Namespace, Pods, Container}
+//	"logs"  → views.TailPromptRequestMsg{Namespace, Pods, Container, Target}
 //	"exec"  → views.ExecRequestMsg{Namespace, Pod: Pods[0], Container}
 //
 // list views with only one container should bypass this message entirely
-// and emit the next-kind msg directly.
+// and emit the next-kind msg directly. Target names the row in the
+// picker's title and is carried on to the tail prompt.
 type ContainerPromptRequestMsg struct {
 	Namespace  string
 	Pods       []string
 	Containers []string
 	NextKind   string // "logs" or "exec"
+	Target     ResourceRef
 }
 
 // ExecRequestMsg drops the user into a kubectl-exec shell against the named
