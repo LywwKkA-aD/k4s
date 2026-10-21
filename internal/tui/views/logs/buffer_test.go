@@ -179,6 +179,32 @@ func TestAPreviousReplyForAnotherViewIsDropped(t *testing.T) {
 	}
 }
 
+func TestCounterEqualsHighlights(t *testing.T) {
+	t.Parallel()
+
+	p := newPainter()
+	for _, query := range []string{"a", "alpha", "ALPHA", "p"} {
+		for _, wrap := range []bool{false, true} {
+			m := sized(t)
+			if wrap {
+				m = press(t, m, "w")
+			}
+			m = fed(t, m, "alpha alpha", "beta ALPHA", "gamma", strings.Repeat("alpha ", 40))
+			keys := make([]string, 0, len(query)+2)
+			keys = append(keys, "/")
+			for _, r := range query {
+				keys = append(keys, string(r))
+			}
+			m = press(t, m, append(keys, "enter")...)
+			content := m.viewport.GetContent()
+			painted := strings.Count(content, p.match.on) + strings.Count(content, p.current.on)
+			if painted != len(m.matches) || len(m.matches) == 0 {
+				t.Errorf("query %q, wrap %v: %d matches counted, %d painted", query, wrap, len(m.matches), painted)
+			}
+		}
+	}
+}
+
 func TestMatchesFollowNewLines(t *testing.T) {
 	t.Parallel()
 
