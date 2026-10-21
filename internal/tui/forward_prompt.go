@@ -17,12 +17,26 @@ import (
 // loaded, so nothing can be registered.
 var errForwardsUnavailable = errors.New("state subsystem unavailable")
 
+// msgForwardsStopping is what a refused forward request or revival says
+// while the previous context's sessions are still winding down.
+const msgForwardsStopping = "previous context's forwards are still stopping"
+
+// forwardsStopping reports whether the forwards Manager still refuses to
+// register or start a forward, so the root can say so before it asks the
+// user for anything.
+func (m Model) forwardsStopping() bool {
+	return m.forwardMgr != nil && m.forwardMgr.Blocked() != nil
+}
+
 // onForwardRequest opens the port prompt. The prompt parses the pair and
 // probes the local port itself, so a typo or a busy port keeps it open with
 // the error shown; only a usable pair comes back as ForwardChosenMsg.
 func (m Model) onForwardRequest(msg views.ForwardRequestMsg) (tea.Model, tea.Cmd) {
 	if m.forwardMgr == nil {
 		return m.setError("port-forward: " + errForwardsUnavailable.Error())
+	}
+	if m.forwardsStopping() {
+		return m.setError(msgForwardsStopping)
 	}
 	m.status = m.status.Clear()
 	m.overlay = overlay.NewForward(msg, checkLocalPort)

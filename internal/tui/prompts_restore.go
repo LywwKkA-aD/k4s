@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 )
@@ -14,11 +16,15 @@ import (
 // port-availability pre-check, so entries whose local port is now
 // occupied (or privileged) end up in Error status and the user can
 // retry from the forwards view.
-func (m Model) onRestoreDecision(msg overlay.RestoreDecisionMsg) Model {
-	if msg.Revive {
-		m.reviveAll()
+func (m Model) onRestoreDecision(msg overlay.RestoreDecisionMsg) (Model, tea.Cmd) {
+	if !msg.Revive {
+		return m, nil
 	}
-	return m
+	if m.forwardsStopping() {
+		return m.setError(msgForwardsStopping)
+	}
+	m.reviveAll()
+	return m, nil
 }
 
 // reviveAll kicks off Start for every forward in state that belongs to the

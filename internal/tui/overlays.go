@@ -32,7 +32,7 @@ func (m Model) onOverlayResult(msg tea.Msg) (next tea.Model, cmd tea.Cmd, ok boo
 	case overlay.ForwardChosenMsg:
 		next, cmd = m.onForwardChosen(msg)
 	case overlay.RestoreDecisionMsg:
-		next, cmd = m.onRestoreDecision(msg), nil
+		next, cmd = m.onRestoreDecision(msg)
 	default:
 		return m, nil, false
 	}
