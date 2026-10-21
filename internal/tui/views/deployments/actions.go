@@ -44,7 +44,7 @@ func (m Model) refresh() (Model, tea.Cmd) {
 	}
 	var ok bool
 	if m.poll, ok = m.poll.Begin(); !ok {
-		return m, nil
+		return m, statusCmd(status.Info, "refresh already running")
 	}
 	return m, m.list()
 }
@@ -81,7 +81,7 @@ func (m Model) target() (k8s.Deployment, tea.Cmd) {
 		return k8s.Deployment{}, statusCmd(status.Warn, "no kubeconfig")
 	case !m.loaded:
 		return k8s.Deployment{}, statusCmd(status.Info, "deployments are still loading")
-	case m.err != nil:
+	case m.health.Failed():
 		return k8s.Deployment{}, statusCmd(status.Warn, "deployments unavailable, press r")
 	}
 	d, ok := m.selected()

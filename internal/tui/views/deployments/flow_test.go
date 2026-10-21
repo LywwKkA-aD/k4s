@@ -317,8 +317,8 @@ func TestRefreshRespectsBusy(t *testing.T) {
 		t.Fatalf("r should issue one fetch:\n%s", tuitest.Describe(first))
 	}
 	m, second := tuitest.Step(t, m, tuitest.Press("r"))
-	if len(second) != 0 {
-		t.Fatalf("r while busy must not fetch again:\n%s", tuitest.Describe(second))
+	if want := (views.StatusMsg{Level: status.Info, Text: "refresh already running"}); len(second) != 1 || second[0] != want {
+		t.Fatalf("r while busy must only say so, not fetch again:\n%s", tuitest.Describe(second))
 	}
 
 	err := c.Clientset.AppsV1().Deployments(tuitest.NamespaceDemo).Delete(context.Background(), tuitest.DeploymentMulti, metav1.DeleteOptions{})
