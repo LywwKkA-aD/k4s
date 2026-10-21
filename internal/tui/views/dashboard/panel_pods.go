@@ -2,7 +2,6 @@ package dashboard
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 )
@@ -22,11 +21,7 @@ func podItems(s dash.Snapshot) []podItem {
 	seen := map[string]int{}
 	out := make([]podItem, 0, len(all))
 	for _, p := range all {
-		key := p.Key.String()
-		seen[key]++
-		if n := seen[key]; n > 1 {
-			key += "#" + strconv.Itoa(n)
-		}
+		key := distinct(seen, p.Key.String())
 		out = append(out, podItem{row: row{key: key, cmd: p.Cmd, target: p.Key, placed: p.Resolved}, pod: p})
 	}
 	return out

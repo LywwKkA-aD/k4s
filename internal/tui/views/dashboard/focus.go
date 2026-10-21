@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
@@ -142,11 +143,42 @@ func (f focus) indexIn(rows []row) int {
 }
 
 // goneText is the status line for a row that left under the cursor:
-// "pod shop/payments-0 is gone" for the key "pod/shop/payments-0".
+// "pod shop/payments-0 is gone" for the key "pod/shop/payments-0". The
+// key is cluster text, so it is cleaned, and the suffix that tells
+// same-named rows apart is not part of the object's name.
 func goneText(key string) string {
+	key = clean(objectOf(key))
 	kind, name, ok := strings.Cut(key, "/")
 	if !ok {
 		return key + " is gone"
 	}
 	return kind + " " + name + " is gone"
+}
+
+// dupMark separates a row key from the count that tells same-named rows
+// apart: two pods "api" not yet placed in a namespace are "pod/api" and
+// "pod/api#2".
+const dupMark = "#"
+
+// distinct returns key for its first use in seen and key#n for the n-th,
+// counting it in seen.
+func distinct(seen map[string]int, key string) string {
+	seen[key]++
+	if n := seen[key]; n > 1 {
+		return key + dupMark + strconv.Itoa(n)
+	}
+	return key
+}
+
+// objectOf is a row key without the "#2" a second row for the same name
+// carries (see distinct). Object names cannot hold '#'.
+func objectOf(key string) string {
+	i := strings.LastIndex(key, dupMark)
+	if i < 0 || i == len(key)-1 {
+		return key
+	}
+	if strings.Trim(key[i+1:], "0123456789") != "" {
+		return key
+	}
+	return key[:i]
 }
