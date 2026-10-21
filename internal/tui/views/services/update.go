@@ -62,22 +62,23 @@ func (m Model) onTick(msg async.TickMsg) (Model, tea.Cmd) {
 }
 
 // onList folds a list reply in and arms the next tick. A failed refresh
-// keeps the rows it had, but the view shows the error.
+// keeps the rows it had under a stale banner and says the error once.
 func (m Model) onList(msg async.Result[[]k8s.Service]) (Model, tea.Cmd) {
 	if !m.poll.Accept(msg.Token) {
 		return m, nil
 	}
-	var cmd tea.Cmd
+	var cmd, said tea.Cmd
 	m.poll, cmd = m.poll.Done(msg.Token, msg.Err)
-	m.err = msg.Err
+	m.health, said = m.health.Fold(msg.Err)
 	m.loaded = true
+	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	if msg.Err != nil {
-		return m, cmd
+		return m, tea.Batch(cmd, said)
 	}
 	m.raw = msg.Value
 	m.applyFilter(m.selectedKey())
 	m, gone := m.settlePending()
-	return m, tea.Batch(cmd, gone)
+	return m, tea.Batch(cmd, said, gone)
 }
 
 func (m Model) onKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
@@ -120,16 +121,22 @@ func (m Model) refresh() (Model, tea.Cmd) {
 	}
 	var ok bool
 	if m.poll, ok = m.poll.Begin(); !ok {
-		return m, nil
+		return m, statusCmd(status.Info, "refresh already running")
 	}
 	return m, m.list()
 }
 
+// tableHeight is the body less the lines above the table: the filter bar
+// and the stale banner.
 func (m Model) tableHeight() int {
+	h := m.bodyH
 	if m.filter.Active() {
-		return m.bodyH - 1
+		h--
 	}
-	return m.bodyH
+	if m.health.Stale() {
+		h--
+	}
+	return h
 }
 
 // feedFilter hands a key press or a paste to the open filter and refilters

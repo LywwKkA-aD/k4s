@@ -18,6 +18,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -37,9 +38,11 @@ type Model struct {
 	namespace string
 	clock     async.Clock
 
-	table  table.Model
-	raw    []k8s.Service
-	err    error
+	table table.Model
+	raw   []k8s.Service
+	// health is the last list answer: an error over earlier rows is a stale
+	// view, one before any rows is the body.
+	health stale.Health
 	loaded bool
 	bodyH  int
 	filter filter.Model

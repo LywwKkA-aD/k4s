@@ -221,6 +221,12 @@ func TestWatchToggleKeepsTheCommand(t *testing.T) {
 	}
 }
 
+// onlyRefreshNotice reports that msgs are the one status r gives while a
+// list is in flight, with no fetch behind it.
+func onlyRefreshNotice(msgs []tea.Msg) bool {
+	return len(msgs) == 1 && msgs[0] == views.StatusMsg{Level: status.Info, Text: "refresh already running"}
+}
+
 func TestRefreshRespectsBusy(t *testing.T) {
 	t.Parallel()
 
@@ -231,8 +237,8 @@ func TestRefreshRespectsBusy(t *testing.T) {
 		t.Fatalf("r should issue one fetch:\n%s", tuitest.Describe(first))
 	}
 	m, second := tuitest.Step(t, m, tuitest.Press("r"))
-	if len(second) != 0 {
-		t.Fatalf("r while busy must not fetch again:\n%s", tuitest.Describe(second))
+	if !onlyRefreshNotice(second) {
+		t.Fatalf("r while busy must only say so, not fetch again:\n%s", tuitest.Describe(second))
 	}
 	deleteService(t, c, tuitest.NamespaceDemo, tuitest.ServiceMulti)
 	m, _ = tuitest.Drive(t, m, first...)
@@ -260,7 +266,7 @@ func TestAnotherViewsReplyIsDropped(t *testing.T) {
 	if !strings.Contains(tuitest.Screen(fresh), "loading services") {
 		t.Errorf("a reply addressed to an older view was applied:\n%s", tuitest.Screen(fresh))
 	}
-	if _, again := tuitest.Step(t, fresh, tuitest.Press("r")); len(again) != 0 {
+	if _, again := tuitest.Step(t, fresh, tuitest.Press("r")); !onlyRefreshNotice(again) {
 		t.Errorf("the stale reply released the busy flag:\n%s", tuitest.Describe(again))
 	}
 	fresh, _ = tuitest.Drive(t, fresh, inFlight...)
