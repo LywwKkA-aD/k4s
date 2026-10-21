@@ -83,9 +83,9 @@ func (mem Memory) rescoped(ns string) Memory {
 	return mem
 }
 
-// with folds in a new snapshot. gone names the row that left from under
-// the cursor, "" when the cursor kept its row.
-func (mem Memory) with(s dash.Snapshot) (Memory, string) {
+// with folds in a new snapshot. The cursor is put back on its row by the
+// model, which knows which rows the layout draws.
+func (mem Memory) with(s dash.Snapshot) Memory {
 	mem.snap = s
 	mem.hist = mem.hist.fold(s)
 	mem.since = allClearSince(mem.since, s)
@@ -93,9 +93,7 @@ func (mem Memory) with(s dash.Snapshot) (Memory, string) {
 		mem.focus.expanded = firstOpen(s)
 	}
 	mem.loaded = true
-	var gone string
-	mem.focus, gone = mem.focus.anchor(rowsOf(mem.focus.panel, s))
-	return mem, gone
+	return mem
 }
 
 // allClearSince keeps the time of the first all-clear snapshot while the

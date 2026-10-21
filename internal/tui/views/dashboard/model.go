@@ -134,7 +134,7 @@ func (m Model) Command() kubectl.Cmd {
 
 func (m Model) focusedCmd() dash.Cmd {
 	f := m.mem.focus
-	if r, ok := f.selected(rowsOf(f.panel, m.mem.snap)); ok && !r.cmd.IsZero() {
+	if r, ok := f.selected(m.rows(f.panel)); ok && !r.cmd.IsZero() {
 		return r.cmd
 	}
 	return panelCmd(f.panel, m.mem.snap)
@@ -206,21 +206,38 @@ func (m Model) shown() shown {
 	return shown{k3s: m.mem.snap.K3s.Shown, top: m.mem.snap.Caps.Metrics}
 }
 
-// relayout rebuilds the layout when its inputs changed: the size, the
-// optional panels, or the accordion's open panel. Focus on a panel this
-// layout hides goes back to the banner; before the first size there is no
-// layout to judge by, and remembered focus stays.
+// relayout is reflow for callers that already know the cursor's row is
+// still there.
 func (m Model) relayout() Model {
+	m, _ = m.reflow()
+	return m
+}
+
+// reflow rebuilds the layout when its inputs changed: the size, the
+// optional panels, or the accordion's open panel. Focus on a panel this
+// layout hides goes back to the banner, and a cursor whose row a new
+// snapshot or a shorter panel took away moves to its neighbour; gone names
+// that row. Before the first size there is no layout to judge by, and
+// remembered focus stays.
+func (m Model) reflow() (Model, string) {
 	if sh, open := m.shown(), m.mem.focus.expanded; sh != m.lay.sh || open != m.lay.open {
 		m.lay = buildLayout(m.lay.w, m.lay.h, sh, open)
 	}
 	if m.lay.w == 0 || m.lay.h == 0 {
-		return m
+		return m, ""
 	}
 	if _, ok := m.lay.placeOf(m.mem.focus.panel); !ok && m.mem.focus.panel != dash.PanelOverview {
 		m.mem.focus = m.mem.focus.at(dash.PanelOverview)
 	}
-	return m
+	var gone string
+	m.mem.focus, gone = m.mem.focus.anchor(m.rows(m.mem.focus.panel))
+	return m, gone
+}
+
+// rows lists the rows the cursor can stand on in panel p, as this layout
+// draws them.
+func (m Model) rows(p dash.Panel) []row {
+	return rowsOf(p, m.mem.snap, m.lay)
 }
 
 func (m Model) resized(w, h int) Model {

@@ -83,8 +83,8 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 	var note tea.Cmd
 	if msg.Err == nil {
 		var gone string
-		m.mem, gone = m.mem.with(msg.Value.snap)
-		m = m.relayout()
+		m.mem = m.mem.with(msg.Value.snap)
+		m, gone = m.reflow()
 		if gone != "" {
 			note = statusCmd(status.Info, goneText(gone))
 		}
@@ -186,9 +186,9 @@ func (m Model) move(msg tea.KeyPressMsg) (views.View, tea.Cmd) {
 	case key.Matches(msg, m.keys.right):
 		f = f.at(m.lay.neighbour(f.panel, +1))
 	case key.Matches(msg, m.keys.up):
-		f = f.up(rowsOf(f.panel, m.mem.snap))
+		f = f.up(m.rows(f.panel))
 	case key.Matches(msg, m.keys.down):
-		f = f.down(rowsOf(f.panel, m.mem.snap))
+		f = f.down(m.rows(f.panel))
 	case key.Matches(msg, m.keys.jump):
 		return m.jump(dash.Panel(msg.Code - '0'))
 	default:
@@ -237,7 +237,7 @@ func (m Model) onEnter() (views.View, tea.Cmd) {
 	if f.panel == dash.PanelOverview && m.mem.snap.Verdict.Focus != dash.PanelOverview {
 		return m.jump(m.mem.snap.Verdict.Focus)
 	}
-	r, ok := f.selected(rowsOf(f.panel, m.mem.snap))
+	r, ok := f.selected(m.rows(f.panel))
 	if ok && r.target.Kind == "pod" && r.placed {
 		req := views.DescribeRequestMsg{Kind: "pod", Namespace: r.target.Namespace, Name: r.target.Name}
 		return m, func() tea.Msg { return req }
@@ -252,7 +252,7 @@ func (m Model) enterHint() string {
 	if f.panel == dash.PanelOverview && m.mem.snap.Verdict.Focus != dash.PanelOverview {
 		return "go to " + panelNames[m.mem.snap.Verdict.Focus]
 	}
-	if r, ok := f.selected(rowsOf(f.panel, m.mem.snap)); ok && r.target.Kind == "pod" && r.placed {
+	if r, ok := f.selected(m.rows(f.panel)); ok && r.target.Kind == "pod" && r.placed {
 		return "describe"
 	}
 	return ""
