@@ -83,7 +83,8 @@ func (m Model) onList(msg async.Result[[]k8s.Service]) (Model, tea.Cmd) {
 	}
 	m.raw = msg.Value
 	m.applyFilter(m.selectedKey())
-	return m, cmd
+	m, gone := m.settlePending()
+	return m, tea.Batch(cmd, gone)
 }
 
 func (m Model) onKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {

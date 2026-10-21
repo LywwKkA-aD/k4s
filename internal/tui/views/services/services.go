@@ -3,7 +3,8 @@
 // logs of the pods behind a service and 'f' to port-forward it.
 //
 // The list refreshes through an async.Poller; row actions resolve through
-// async.Run under an InFlight guard.
+// async.Run under an InFlight guard. The view keeps a views.State, so Esc
+// from describe or logs brings it back as it was left.
 package services
 
 import (
@@ -50,6 +51,11 @@ type Model struct {
 	acts async.InFlight
 	// logsFor is the row the logs request in flight was made for.
 	logsFor views.ResourceRef
+	// pendingKey is the row a restored State selected, until the first
+	// list arrives to put the cursor on it; pendingCursor is where the
+	// cursor goes if that row is gone.
+	pendingKey    string
+	pendingCursor int
 
 	selectKey  key.Binding
 	logsKey    key.Binding
