@@ -25,20 +25,22 @@ func redact(s, home string) string {
 		return s
 	}
 	var b strings.Builder
+	pos := 0
 	for {
-		i := strings.Index(s, home)
+		i := strings.Index(s[pos:], home)
 		if i < 0 {
-			b.WriteString(s)
+			b.WriteString(s[pos:])
 			return b.String()
 		}
-		end := i + len(home)
-		b.WriteString(s[:i])
-		if wholePath(s, i, end) {
+		start := pos + i
+		end := start + len(home)
+		b.WriteString(s[pos:start])
+		if wholePath(s, start, end) {
 			b.WriteString("~")
 		} else {
 			b.WriteString(home)
 		}
-		s = s[end:]
+		pos = end
 	}
 }
 
