@@ -101,6 +101,11 @@ func serviceExternalIP(s *corev1.Service) string {
 // Returns (nil, nil, nil) — not an error — for selector-less services
 // (headless / ExternalName / manually-managed Endpoints). Callers
 // should treat that as "no logs available, do nothing".
+//
+// Superseded by ServiceLogTarget, which skips finished pods and reports
+// them, and returns ErrNoSelector instead of nothing. It stays until the
+// services view moves over; the formal deprecation marker would fail
+// staticcheck on that caller first.
 func (c *Client) PodsAndContainersForService(ctx context.Context, namespace, name string) ([]string, []string, error) {
 	svc, err := c.Clientset.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -123,11 +128,7 @@ func (c *Client) PodsAndContainersForService(ctx context.Context, namespace, nam
 	for _, p := range list.Items {
 		podNames = append(podNames, p.Name)
 	}
-	containers := make([]string, 0, len(list.Items[0].Spec.Containers))
-	for _, ct := range list.Items[0].Spec.Containers {
-		containers = append(containers, ct.Name)
-	}
-	return podNames, containers, nil
+	return podNames, containerNames(&list.Items[0].Spec), nil
 }
 
 // servicePorts mirrors `kubectl get svc`'s PORT(S) column. NodePorts are
