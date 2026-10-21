@@ -54,10 +54,11 @@ func TestATunnelErrorOutlivesTheSessionItEnded(t *testing.T) {
 	}
 
 	done := startAsync(context.Background(), m, "f1")
+	restarted := fake.next(t)
 	if a := statusOf(t, m, "f1"); a.TunnelErr != "" {
 		t.Errorf("a restart still shows %q", a.TunnelErr)
 	}
-	fake.next(t).ready()
+	restarted.ready()
 	if err := awaitErr(t, done); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
