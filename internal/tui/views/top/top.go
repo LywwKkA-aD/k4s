@@ -265,14 +265,14 @@ func (m Model) Title() string { return "top" }
 // Command implements views.View. The sort is always spelled out, so the
 // command pasted from the footer orders its rows as the view does.
 func (m Model) Command() kubectl.Cmd {
-	args := []string{"top", "nodes"}
-	if m.mode == modePods {
-		args = []string{"top", "pods", "-A"}
-		if m.namespace != "" {
-			args = []string{"top", "pods", "-n", m.namespace}
-		}
+	sortBy := "--sort-by=" + string(m.sort)
+	switch {
+	case m.mode == modeNodes:
+		return kubectl.New("top", "nodes", sortBy)
+	case m.namespace != "":
+		return kubectl.New("top", "pods", "-n", m.namespace, sortBy)
 	}
-	return kubectl.New(append(args, "--sort-by="+string(m.sort))...)
+	return kubectl.New("top", "pods", "-A", sortBy)
 }
 
 // Help implements views.View. The s and w hints show the current sort and
