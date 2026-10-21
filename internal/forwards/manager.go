@@ -67,12 +67,15 @@ type Active struct {
 // internal map. Writes happen under Manager.mu.
 type Manager struct {
 	mu        sync.Mutex
-	tunnel    tunneler
+	tunnel    Tunneler
 	cluster   cluster
 	probePort func(port uint16) error
 	statePath string
-	state     State
-	active    map[string]*Active
+	stopWait  time.Duration
+	// after is read-only once the Manager is built; see After.
+	after  *Stopping
+	state  State
+	active map[string]*Active
 	// attempts numbers every Start across the Manager's life, so an ID that
 	// is removed and registered again never reuses an attempt a parked
 	// Start still holds.
@@ -86,7 +89,7 @@ type Manager struct {
 // NewManager loads persisted state and returns a fresh Manager. Every
 // known intent starts in StatusStopped — we do not auto-revive forwards
 // on launch, the user explicitly opts in via the forwards view.
-func NewManager(client *k8s.Client) (*Manager, error) {
+func NewManager(client *k8s.Client, opts ...Option) (*Manager, error) {
 	path, err := statePath()
 	if err != nil {
 		return nil, fmt.Errorf("load state: %w", err)
@@ -101,6 +104,9 @@ func NewManager(client *k8s.Client) (*Manager, error) {
 	if client != nil {
 		d.tunnel = client
 	}
+	for _, opt := range opts {
+		opt(&d)
+	}
 	return newManager(d)
 }
 
@@ -109,11 +115,16 @@ func newManager(d deps) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load state: %w", err)
 	}
+	if d.stopWait <= 0 {
+		d.stopWait = stopDeadline
+	}
 	m := &Manager{
 		tunnel:    d.tunnel,
 		cluster:   d.cluster,
 		probePort: d.probePort,
 		statePath: d.statePath,
+		stopWait:  d.stopWait,
+		after:     d.after,
 		state:     state,
 		active:    make(map[string]*Active),
 		changeCh:  make(chan struct{}),
@@ -193,9 +204,13 @@ func NewID() string {
 
 // Register adds (or updates) a forward in the State and pushes the
 // stopped entry into the runtime map. It does not start the forward.
-// The caller is expected to chain Start when they want it live.
+// The caller is expected to chain Start when they want it live. It is
+// refused with ErrStopping while the Manager is Blocked.
 func (m *Manager) Register(f Forward) error {
 	if err := f.Validate(); err != nil {
+		return err
+	}
+	if err := m.Blocked(); err != nil {
 		return err
 	}
 	m.mu.Lock()
@@ -206,82 +221,6 @@ func (m *Manager) Register(f Forward) error {
 	} else {
 		m.active[f.ID] = &Active{Forward: f, Status: StatusStopped}
 	}
-	if err := m.state.saveTo(m.statePath); err != nil {
-		return fmt.Errorf("save state: %w", err)
-	}
-	m.notify()
-	return nil
-}
-
-// Stop signals the running session to terminate. It does NOT remove the
-// forward from State — the user still wants to remember the intent.
-// No-op if the forward is already stopped or in error.
-func (m *Manager) Stop(id string) error {
-	m.mu.Lock()
-	a, ok := m.active[id]
-	if !ok {
-		m.mu.Unlock()
-		return fmt.Errorf("forward %q not found", id)
-	}
-	sess := a.session
-	if sess == nil {
-		// Nothing live to stop; just normalise status if it was Error.
-		a.Status = StatusStopped
-		a.Err = nil
-		m.notify()
-		m.mu.Unlock()
-		return nil
-	}
-	a.Status = StatusStopped
-	a.session = nil
-	m.notify()
-	m.mu.Unlock()
-	sess.Close()
-	select {
-	case <-sess.Done:
-	case <-time.After(2 * time.Second):
-	}
-	return nil
-}
-
-// StopAll terminates every live forward and waits for their listeners to
-// close. Use this when switching contexts so the old cluster's forwards do
-// not pin local ports after the user has moved on.
-func (m *Manager) StopAll() error {
-	m.mu.Lock()
-	var sessions []*k8s.PortForwardSession
-	for _, a := range m.active {
-		if a.session != nil {
-			sessions = append(sessions, a.session)
-		}
-		a.Status = StatusStopped
-		a.session = nil
-		a.Err = nil
-	}
-	m.notify()
-	m.mu.Unlock()
-
-	for _, sess := range sessions {
-		sess.Close()
-	}
-	for _, sess := range sessions {
-		select {
-		case <-sess.Done:
-		case <-time.After(2 * time.Second):
-		}
-	}
-	return nil
-}
-
-// Remove stops the forward and deletes it from State.
-func (m *Manager) Remove(id string) error {
-	// Best effort: Stop only fails for an unknown ID, and the intent is
-	// removed either way.
-	_ = m.Stop(id)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.active, id)
-	m.state = m.state.Remove(id)
 	if err := m.state.saveTo(m.statePath); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
