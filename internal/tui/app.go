@@ -54,8 +54,10 @@ type Model struct {
 	startup startup.Session
 	flags   sessionFlags
 	// kubectlSession tells kubectl.Decorate how a pasted command reaches
-	// this cluster. It follows the client through :ctx.
+	// this cluster; runner starts exec with the client's kubeconfig. Both
+	// follow the client through :ctx.
 	kubectlSession kubectl.Session
+	runner         *kubectl.Runner
 
 	namespace string // "" = all
 	current   views.View
@@ -116,12 +118,14 @@ func New(client *k8s.Client, loadErr error, opts ...Option) Model {
 	return model
 }
 
-// withClient makes c the active client: its starting namespace and the
-// kubectl session footer commands are decorated with.
+// withClient makes c the active client: its starting namespace, the
+// kubectl session footer commands are decorated with and the runner exec
+// goes through.
 func (m Model) withClient(c *k8s.Client) Model {
 	m.client = c
 	m.namespace = clientNamespace(c)
 	m.kubectlSession = newKubectlSession(c, m.flags, os.Getenv, homedir.HomeDir())
+	m.runner = kubectl.NewRunner(kubectl.RunnerConfig{Kubeconfig: kubeconfigPaths(c)})
 	return m
 }
 

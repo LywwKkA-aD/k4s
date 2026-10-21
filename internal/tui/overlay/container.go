@@ -76,10 +76,6 @@ func (c container) View(width int) string {
 	return rows(width, lines...)
 }
 
-// execShell is the command exec runs in the container; the root runs the
-// same argv.
-const execShell = "sh"
-
 // Command is what picking the highlighted container leads to: the logs at
 // the tail prompt's default count, or the shell in the first pod.
 func (c container) Command() kubectl.Cmd {
@@ -95,7 +91,7 @@ func (c container) Command() kubectl.Cmd {
 		if len(r.Pods) == 0 {
 			return kubectl.Cmd{}
 		}
-		cmd, err := kubectl.Exec(r.Namespace, r.Pods[0], name, execShell)
+		cmd, err := views.ExecCommand(views.ExecRequestMsg{Namespace: r.Namespace, Pod: r.Pods[0], Container: name})
 		if err != nil {
 			return kubectl.Cmd{}
 		}

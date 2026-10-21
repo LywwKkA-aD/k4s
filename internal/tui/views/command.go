@@ -51,6 +51,17 @@ func selectorLogs(ns string, streamed int, container string, tail int64, t k8s.L
 	return c
 }
 
+// ExecShell is the command `e` runs in a container. The footer preview and
+// the exec the root starts use the same argv.
+const ExecShell = "sh"
+
+// ExecCommand is `kubectl exec -it -n <ns> [-c <c>] <pod> -- sh` for req.
+// It fails on a name kubectl would misread, such as a pod named like a
+// flag.
+func ExecCommand(req ExecRequestMsg) (kubectl.Cmd, error) {
+	return kubectl.Exec(req.Namespace, req.Pod, req.Container, ExecShell)
+}
+
 // orZero drops a builder error: an invalid command is not shown at all.
 func orZero(c kubectl.Cmd, err error) kubectl.Cmd {
 	if err != nil {

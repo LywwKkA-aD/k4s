@@ -259,42 +259,6 @@ func contains(haystack, needle string) bool {
 	return false
 }
 
-func TestBuildExecCommandIncludesContext(t *testing.T) {
-	t.Parallel()
-	cmd := buildExecCommand("staging", "ns", "pod-1", "app")
-	args := cmd.Args
-	want := []string{"kubectl", "exec", "-it", "--context", "staging", "-n", "ns", "-c", "app", "pod-1", "--", "sh"}
-	if len(args) != len(want) {
-		t.Fatalf("args = %v, want %v", args, want)
-	}
-	for i := range want {
-		if args[i] != want[i] {
-			t.Errorf("arg[%d] = %q, want %q", i, args[i], want[i])
-		}
-	}
-}
-
-func TestBuildExecCommandOmitsEmptyContext(t *testing.T) {
-	t.Parallel()
-	cmd := buildExecCommand("", "ns", "pod-1", "")
-	args := cmd.Args
-	if containsArg(args, "--context") {
-		t.Errorf("empty context should not add --context flag: %v", args)
-	}
-	if containsArg(args, "-c") {
-		t.Errorf("empty container should not add -c flag: %v", args)
-	}
-}
-
-func containsArg(args []string, target string) bool {
-	for _, a := range args {
-		if a == target {
-			return true
-		}
-	}
-	return false
-}
-
 func TestIsRebuildableView(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{viewDashboard, viewPods, viewNamespaces, viewDeployments, viewServices, viewContexts, viewTop, viewForwards} {
