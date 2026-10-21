@@ -32,19 +32,6 @@ func rootLines(m tui.Model) []string {
 	return strings.Split(tuitest.Screen(m), "\n")
 }
 
-// rootFooter is everything under the footer's rule: the hint or status
-// row and the kubectl row.
-func rootFooter(m tui.Model) string {
-	ls := rootLines(m)
-	for i := len(ls) - 1; i >= 0; i-- {
-		s := strings.TrimSpace(ls[i])
-		if s != "" && strings.Trim(s, "─") == "" {
-			return tuitest.TrimLines(strings.Join(ls[i+1:], "\n"))
-		}
-	}
-	return ""
-}
-
 func rootView(m tui.Model) string {
 	_, after, _ := strings.Cut(rootLines(m)[0], "view: ")
 	return strings.TrimSpace(after)
@@ -107,12 +94,12 @@ func TestEscFromLogsBringsTheListBack(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			onList, onLogs := toLogsOfThirdMatch(t, payClient(t), tc.extra...)
-			before := rootFooter(onList)
+			before := tuitest.Footer(onList)
 			tuitest.Golden(t, tc.golden, before+"\n")
 
 			back, _ := tuitest.Drive(t, onLogs, tuitest.Esc())
 			requireRootView(t, back, "services")
-			if after := rootFooter(back); after != before {
+			if after := tuitest.Footer(back); after != before {
 				t.Fatalf("footer after Esc:\n%s\nwant:\n%s", after, before)
 			}
 			if !strings.Contains(tuitest.Screen(back), "/ pay") {
@@ -135,7 +122,7 @@ func TestEscAfterTheRowWasDeleted(t *testing.T) {
 	deleteService(t, c, shop, "pay-web")
 	back, _ := tuitest.Drive(t, onLogs, tuitest.Esc())
 	requireRootView(t, back, "services")
-	if footer := rootFooter(back); !strings.Contains(footer, "service pay-web is gone") {
+	if footer := tuitest.Footer(back); !strings.Contains(footer, "service pay-web is gone") {
 		t.Fatalf("footer lacks the status:\n%s", footer)
 	}
 	if got := rootDescribes(t, back); got != shop+"/payments" {
@@ -169,7 +156,7 @@ func TestLogsOnTheKubernetesServiceSaysSo(t *testing.T) {
 	c := tuitest.NewFakeClient(t, tuitest.WithObjects(tuitest.Namespace(shop), tuitest.Service(shop, "kubernetes", 443, nil)))
 	keys := slices.Concat([]tea.Msg{tuitest.Press(":"), tuitest.Type("svc"), tuitest.Enter()}, tuitest.Keys("l"))
 	m, _ := tuitest.Drive(t, startedRoot(t, c), keys...)
-	if footer := rootFooter(m); !strings.Contains(footer, "service kubernetes has no selector") {
+	if footer := tuitest.Footer(m); !strings.Contains(footer, "service kubernetes has no selector") {
 		t.Fatalf("footer lacks the status:\n%s", footer)
 	}
 }

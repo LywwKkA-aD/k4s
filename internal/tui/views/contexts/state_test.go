@@ -2,7 +2,6 @@ package contexts_test
 
 import (
 	"slices"
-	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -106,33 +105,16 @@ func TestRestoreAfterTheRead(t *testing.T) {
 	}
 }
 
-func colon(name string) []tea.Msg {
-	return []tea.Msg{tuitest.Press(":"), tuitest.Type(name), tuitest.Enter()}
-}
-
-// rootFooter is the frame under the footer's rule: the hints or status row
-// and the kubectl row.
-func rootFooter(m tui.Model) string {
-	lines := strings.Split(tuitest.Screen(m), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		s := strings.TrimSpace(lines[i])
-		if s != "" && strings.Trim(s, "─") == "" {
-			return tuitest.TrimLines(strings.Join(lines[i+1:], "\n"))
-		}
-	}
-	return ""
-}
-
 // TestEscBringsTheContextsBackOnTheSameRow goes through the root: the row
 // under the cursor survives a trip to another view and back.
 func TestEscBringsTheContextsBackOnTheSameRow(t *testing.T) {
 	t.Parallel()
 
 	m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil), 160, 40)
-	m, _ = tuitest.Drive(t, m, slices.Concat(colon("ctx"), tuitest.Keys("down"))...)
-	before := rootFooter(m)
-	m, _ = tuitest.Drive(t, m, slices.Concat(colon("pods"), []tea.Msg{tuitest.Esc()})...)
-	if after := rootFooter(m); after != before {
+	m, _ = tuitest.Drive(t, m, slices.Concat(tuitest.Colon("ctx"), tuitest.Keys("down"))...)
+	before := tuitest.Footer(m)
+	m, _ = tuitest.Drive(t, m, slices.Concat(tuitest.Colon("pods"), []tea.Msg{tuitest.Esc()})...)
+	if after := tuitest.Footer(m); after != before {
 		t.Errorf("footer after Esc:\n%s\nwant as left:\n%s", after, before)
 	}
 	// Step: the pick is only looked at, not handed to the root, which

@@ -2,8 +2,6 @@ package namespaces_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -18,32 +16,6 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
-// TestMain keeps the root model these tests drive away from the
-// developer's home: no saved port-forwards (which would open the restore
-// popup) and no real kubeconfig.
-func TestMain(m *testing.M) {
-	os.Exit(isolated(m))
-}
-
-func isolated(m *testing.M) int {
-	tmp, err := os.MkdirTemp("", "k4s-namespaces-test-*")
-	if err != nil {
-		panic(err)
-	}
-	defer func() { _ = os.RemoveAll(tmp) }()
-	if err := os.Setenv("XDG_STATE_HOME", filepath.Join(tmp, "state")); err != nil {
-		panic(err)
-	}
-	kubeconfig, err := tuitest.WriteKubeconfig(tmp, tuitest.FakeContext, tuitest.FakeContext)
-	if err != nil {
-		panic(err)
-	}
-	if err := os.Setenv("KUBECONFIG", kubeconfig); err != nil {
-		panic(err)
-	}
-	return m.Run()
-}
-
 const (
 	payAPI = "pay-api"
 	payDB  = "pay-db"
@@ -57,23 +29,6 @@ func payClient(t *testing.T) *k8s.Client {
 	))
 }
 
-func colon(name string) []tea.Msg {
-	return []tea.Msg{tuitest.Press(":"), tuitest.Type(name), tuitest.Enter()}
-}
-
-// rootFooter is the frame under the footer's rule: the hints or status row
-// and the kubectl row.
-func rootFooter(m tui.Model) string {
-	lines := strings.Split(tuitest.Screen(m), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		s := strings.TrimSpace(lines[i])
-		if s != "" && strings.Trim(s, "─") == "" {
-			return tuitest.TrimLines(strings.Join(lines[i+1:], "\n"))
-		}
-	}
-	return ""
-}
-
 func header(m tui.Model) string {
 	first, _, _ := strings.Cut(tuitest.Screen(m), "\n")
 	return first
@@ -84,8 +39,8 @@ func header(m tui.Model) string {
 func leftOnPayWeb(t *testing.T, c *k8s.Client) (tui.Model, string) {
 	t.Helper()
 	m, _ := tuitest.Mount(t, tui.New(c, nil), 160, 40)
-	m, _ = tuitest.Drive(t, m, slices.Concat(colon("ns"), tuitest.FilterBy("pay"), tuitest.Keys("down", "down", "down", "w"))...)
-	before := rootFooter(m)
+	m, _ = tuitest.Drive(t, m, slices.Concat(tuitest.Colon("ns"), tuitest.FilterBy("pay"), tuitest.Keys("down", "down", "down", "w"))...)
+	before := tuitest.Footer(m)
 	m, _ = tuitest.Drive(t, m, tuitest.Enter())
 	if h := header(m); !strings.Contains(h, "ns: "+payWeb) || !strings.Contains(h, "view: pods") {
 		t.Fatalf("enter on %s: header %q", payWeb, h)
@@ -103,7 +58,7 @@ func TestEscBringsTheNamespacesBackAsLeft(t *testing.T) {
 	if h := header(m); !strings.Contains(h, "view: namespaces") {
 		t.Fatalf("Esc from pods: header %q", h)
 	}
-	if after := rootFooter(m); after != before {
+	if after := tuitest.Footer(m); after != before {
 		t.Errorf("footer after Esc:\n%s\nwant as left:\n%s", after, before)
 	}
 	if screen := tuitest.Screen(m); !strings.Contains(screen, "/ pay") || strings.Contains(screen, "shop") {
@@ -128,8 +83,8 @@ func TestEscAfterTheRowWasDeleted(t *testing.T) {
 	if !tuitest.Contains(out, want) {
 		t.Errorf("want %+v, got:\n%s", want, tuitest.Describe(out))
 	}
-	if !strings.Contains(rootFooter(m), want.Text) {
-		t.Errorf("footer:\n%s", rootFooter(m))
+	if !strings.Contains(tuitest.Footer(m), want.Text) {
+		t.Errorf("footer:\n%s", tuitest.Footer(m))
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Enter())
 	if h := header(m); !strings.Contains(h, "ns: "+payDB) {
@@ -143,7 +98,7 @@ func TestEscClearsTheFilterFirst(t *testing.T) {
 	t.Parallel()
 
 	m, _ := tuitest.Mount(t, tui.New(payClient(t), nil), 160, 40)
-	m, _ = tuitest.Drive(t, m, slices.Concat(colon("ns"), tuitest.FilterBy("pay"), []tea.Msg{tuitest.Esc()})...)
+	m, _ = tuitest.Drive(t, m, slices.Concat(tuitest.Colon("ns"), tuitest.FilterBy("pay"), []tea.Msg{tuitest.Esc()})...)
 	if h := header(m); !strings.Contains(h, "view: namespaces") {
 		t.Fatalf("the first Esc left: header %q", h)
 	}

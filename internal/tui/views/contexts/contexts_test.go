@@ -17,33 +17,6 @@ const (
 	beta  = "beta"
 )
 
-// TestMain points KUBECONFIG at a generated file so the picker never reads
-// the developer's own contexts, and XDG_STATE_HOME at an empty directory
-// so the root model the flow tests drive finds no saved port-forwards.
-// Tests that need another file use t.Setenv and do not run in parallel.
-func TestMain(m *testing.M) {
-	os.Exit(run(m))
-}
-
-func run(m *testing.M) int {
-	dir, err := os.MkdirTemp("", "k4s-contexts-test-*")
-	if err != nil {
-		panic(err)
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	if err := os.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state")); err != nil {
-		panic(err)
-	}
-	path, err := tuitest.WriteKubeconfig(dir, alpha, beta, alpha)
-	if err != nil {
-		panic(err)
-	}
-	if err := os.Setenv("KUBECONFIG", path); err != nil {
-		panic(err)
-	}
-	return m.Run()
-}
-
 func mounted(t *testing.T, current string) contexts.Model {
 	t.Helper()
 	m, _ := tuitest.Mount(t, contexts.New(current, k8s.Source{}), 120, 20)

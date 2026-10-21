@@ -132,6 +132,11 @@ func Paste(text string) tea.Msg {
 	return tea.PasteMsg{Content: text}
 }
 
+// Colon returns the keys that run ":name" from the root's command bar.
+func Colon(name string) []tea.Msg {
+	return []tea.Msg{Press(":"), Type(name), Enter()}
+}
+
 // Enter is Press("enter").
 func Enter() tea.Msg { return Press("enter") }
 

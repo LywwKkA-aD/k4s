@@ -38,19 +38,6 @@ func rootLines(m tui.Model) []string {
 	return strings.Split(tuitest.Screen(m), "\n")
 }
 
-// rootFooter is everything under the footer's rule: the hint (or status)
-// row and the kubectl command.
-func rootFooter(m tui.Model) string {
-	ls := rootLines(m)
-	for i := len(ls) - 1; i >= 0; i-- {
-		s := strings.TrimSpace(ls[i])
-		if s != "" && strings.Trim(s, "─") == "" {
-			return tuitest.TrimLines(strings.Join(ls[i+1:], "\n"))
-		}
-	}
-	return ""
-}
-
 func rootView(m tui.Model) string {
 	_, after, _ := strings.Cut(rootLines(m)[0], "view: ")
 	return strings.TrimSpace(after)
@@ -76,7 +63,7 @@ func TestEscFromLogsBringsThePodsBack(t *testing.T) {
 			m, _ = tuitest.Drive(t, m, tuitest.FilterBy("pay")...)
 			m, _ = tuitest.Drive(t, m, down(2)...)
 			m, _ = tuitest.Drive(t, m, tc.extra...)
-			before := rootFooter(m)
+			before := tuitest.Footer(m)
 			if !strings.Contains(before, tc.hint) {
 				t.Fatalf("footer before lacks %q:\n%s", tc.hint, before)
 			}
@@ -95,7 +82,7 @@ func TestEscFromLogsBringsThePodsBack(t *testing.T) {
 			if !strings.Contains(screen, "/ pay") || strings.Contains(screen, "cart-0") {
 				t.Errorf("the filter did not come back:\n%s", screen)
 			}
-			if after := rootFooter(m); after != before {
+			if after := tuitest.Footer(m); after != before {
 				t.Errorf("footer after Esc:\n%s\nwant as before:\n%s", after, before)
 			}
 

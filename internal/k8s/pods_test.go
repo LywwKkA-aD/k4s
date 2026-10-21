@@ -197,4 +197,3 @@ func TestListPodsAllNamespaces(t *testing.T) {
 		t.Fatalf("expected 2 pods across all namespaces, got %d", len(got))
 	}
 }
-
