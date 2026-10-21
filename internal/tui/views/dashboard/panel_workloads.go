@@ -13,6 +13,50 @@ type workloadItem struct {
 	w dash.WorkloadRow
 }
 
+// The jobs and cron lines' row keys.
+const (
+	jobsKey = "jobs"
+	cronKey = "cron"
+)
+
+// kindLineCount is the lines above panel 4's table: the deploy, sts and
+// ds bars, the jobs line and the cron line.
+const kindLineCount = 5
+
+// workloadRows are panel 4's cursor stops: the jobs and cron lines, while
+// the panel draws them, then the workloads that need a look.
+func workloadRows(s dash.Snapshot, lines bool) []row {
+	items := workloadItems(s)
+	out := make([]row, 0, len(items)+2)
+	if lines {
+		out = append(out, row{key: jobsKey, cmd: s.Workloads.Jobs.Cmd}, row{key: cronKey, cmd: s.Workloads.Cron.Cmd})
+	}
+	for _, it := range items {
+		out = append(out, it.row)
+	}
+	return out
+}
+
+// workloadsNeed is how many lines panel 4's list keeps before the lines
+// above it fold: a header and up to minListRows rows, or the all-ready
+// line.
+func workloadsNeed(rows int) int {
+	if rows == 0 {
+		return 1
+	}
+	return min(rows, minListRows) + 1
+}
+
+// drawsKindLines reports whether panel 4 has room in l for its ready bars
+// and the jobs and cron lines, which fold into one line when it has not.
+func (l layout) drawsKindLines(s dash.Snapshot) bool {
+	pl, ok := l.placeOf(dash.PanelWorkloads)
+	if !ok || pl.line {
+		return false
+	}
+	return pl.h-2-kindLineCount >= workloadsNeed(len(s.Workloads.Rows))
+}
+
 // workloadItems are panel 4's rows as the data layer orders them: not
 // ready, failed jobs and suspended cronjobs, most severe first.
 func workloadItems(s dash.Snapshot) []workloadItem {

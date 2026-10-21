@@ -1,6 +1,7 @@
 package dashboard_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -193,27 +194,46 @@ func TestEventsPanel(t *testing.T) {
 func TestPanelRowsCarryTheirCommands(t *testing.T) {
 	t.Parallel()
 
+	const firstDeploy = "kubectl describe deployment payments-worker -n shop"
 	tests := []struct {
 		keys []string
+		w, h int
 		want string
 	}{
 		{keys: []string{"4"}, want: "kubectl get deploy,sts,ds -A"},
-		{keys: []string{"4", "down"}, want: "kubectl describe deployment payments-worker -n shop"},
-		{keys: []string{"4", "down", "down", "down", "down"}, want: "kubectl describe statefulset loki-backend -n monitoring"},
-		{keys: []string{"4", "down", "down", "down", "down", "down", "down", "down"}, want: "kubectl describe cronjob report-weekly -n growlytics"},
+		{keys: []string{"4", "down"}, want: "kubectl get jobs -A --field-selector status.successful=0"},
+		{keys: []string{"4", "down", "down"}, want: "kubectl get cronjobs -A"},
+		{keys: []string{"4", "down", "down", "down"}, want: firstDeploy},
+		{keys: []string{"4", "down", "down", "down", "down", "down", "down"}, want: "kubectl describe statefulset loki-backend -n monitoring"},
+		{keys: []string{"4", "down", "down", "down", "down", "down", "down", "down", "down", "down"}, want: "kubectl describe cronjob report-weekly -n growlytics"},
+		// Folded into one line, the jobs and cron lines are no stops.
+		{keys: []string{"4", "down"}, w: 120, h: 34, want: firstDeploy},
 		{keys: []string{"5"}, want: "kubectl events -A --types=Warning"},
 		{keys: []string{"5", "down"}, want: "kubectl describe pod loki-backend-0 -n monitoring"},
 		{keys: []string{"5", "down", "down", "down", "down", "down", "down", "down", "down", "down"}, want: "kubectl describe job nightly-e2e-28741000 -n ci"},
 	}
 	for _, tt := range tests {
-		t.Run(strings.Join(tt.keys, " "), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s %dx%d", strings.Join(tt.keys, " "), tt.w, tt.h), func(t *testing.T) {
 			t.Parallel()
-			m, _ := press(t, mount(t, newFeed(busyK3s), wideW, wideH), tt.keys...)
+			w, h := wideW, wideH
+			if tt.w > 0 {
+				w, h = tt.w, tt.h
+			}
+			m, _ := press(t, mount(t, newFeed(busyK3s), w, h), tt.keys...)
 			if got := command(m); got != tt.want {
 				t.Fatalf("command = %q, want %q", got, tt.want)
 			}
 		})
 	}
+}
+
+// TestJobsAndCronLinesTakeTheCursor: the cursor stands on the jobs and
+// cron lines like on any row.
+func TestJobsAndCronLinesTakeTheCursor(t *testing.T) {
+	t.Parallel()
+
+	screen := screenOf(t, nil, "4", "down", "down")
+	requireAll(t, screen, []string{"┃›cron    14 · ○ 1 suspended · last schedule 3m", "2/8 · 5 need attention"}, nil)
 }
 
 // TestEnterOnPanelRows opens describe where k4s has the view (pods,
@@ -227,9 +247,10 @@ func TestEnterOnPanelRows(t *testing.T) {
 		want views.DescribeRequestMsg
 		hint string
 	}{
-		{name: "deployment row", keys: []string{"4", "down"}, want: views.DescribeRequestMsg{Kind: "deployment", Namespace: "shop", Name: "payments-worker"}, hint: "describe"},
+		{name: "deployment row", keys: []string{"4", "down", "down", "down"}, want: views.DescribeRequestMsg{Kind: "deployment", Namespace: "shop", Name: "payments-worker"}, hint: "describe"},
 		{name: "pod event", keys: []string{"5", "down"}, want: views.DescribeRequestMsg{Kind: "pod", Namespace: "monitoring", Name: "loki-backend-0"}, hint: "describe"},
-		{name: "statefulset row", keys: []string{"4", "down", "down", "down", "down"}},
+		{name: "statefulset row", keys: []string{"4", "down", "down", "down", "down", "down", "down"}},
+		{name: "jobs line", keys: []string{"4", "down"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

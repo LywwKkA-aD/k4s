@@ -34,7 +34,7 @@ func TestWideGolden(t *testing.T) {
 		{name: "busy_k3s_207x58", keys: []string{"3", "down"}},
 		{name: "busy_k3s_207x58_nodes", keys: []string{"2", "down", "down"}},
 		{name: "busy_k3s_207x58_overview"},
-		{name: "busy_k3s_207x58_workloads", keys: []string{"4", "down", "down"}},
+		{name: "busy_k3s_207x58_workloads", keys: []string{"4", "down", "down", "down", "down"}},
 		{name: "busy_k3s_207x58_events", keys: []string{"5", "down", "down", "down", "down"}},
 	}
 	for _, tt := range tests {
