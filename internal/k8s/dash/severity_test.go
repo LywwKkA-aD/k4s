@@ -101,12 +101,18 @@ func TestWarningRule(t *testing.T) {
 	ready := podRow{name: "web", status: "Running", ready: 1, readyOf: 1, readyOK: true}
 	notReady := podRow{name: "api", status: "Running", ready: 0, readyOf: 1, readyOK: true}
 	f := flagged{
-		objects:   map[ObjectKey]bool{{Kind: "pod", Namespace: "shop", Name: "crash"}: true},
-		names:     map[string]bool{"pod/unplaced": true},
-		deploys:   []string{"payments"},
-		pods:      map[string]podRow{"web": ready, "api": notReady, "crash": {name: "crash"}, "unplaced": {name: "unplaced"}},
-		nodes:     map[string]bool{"node-1": true},
-		workloads: map[string]bool{"deployment/web": true},
+		objects: map[ObjectKey]bool{{Kind: "pod", Namespace: "shop", Name: "crash"}: true},
+		names:   map[string]bool{"pod/unplaced": true},
+		deploys: []string{"payments"},
+		pods: map[ObjectKey]podRow{
+			{Kind: "pod", Namespace: "shop", Name: "web"}:   ready,
+			{Kind: "pod", Namespace: "shop", Name: "api"}:   notReady,
+			{Kind: "pod", Namespace: "shop", Name: "crash"}: {name: "crash"},
+		},
+		podNames:      map[string]podRow{"unplaced": {name: "unplaced"}, "legacy": ready},
+		nodes:         map[string]bool{"node-1": true},
+		workloads:     map[ObjectKey]bool{{Kind: "deployment", Namespace: "shop", Name: "web"}: true},
+		workloadNames: map[string]bool{"statefulset/db": true},
 	}
 	pod := func(name string) ObjectKey { return ObjectKey{Kind: "pod", Namespace: "shop", Name: name} }
 	cases := []struct {
@@ -125,12 +131,16 @@ func TestWarningRule(t *testing.T) {
 		{"a pod already flagged is not counted twice", "BackOff", pod("crash"), minute, f, false},
 		{"a pod flagged before placement is not either", "BackOff", pod("unplaced"), minute, f, false},
 		{"a pod that is gone does not", "Unhealthy", pod("deleted"), minute, f, false},
+		{"a pod of that name in another namespace does not keep it alive", "FailedMount", ObjectKey{Kind: "pod", Namespace: "ops", Name: "web"}, minute, f, false},
+		{"a pod the list could not place matches by name", "FailedMount", ObjectKey{Kind: "pod", Namespace: "ops", Name: "legacy"}, minute, f, true},
 		{"without a pods list, assume it exists", "FailedMount", pod("deleted"), minute, flagged{}, true},
 		{"an existing node counts", "SystemOOM", ObjectKey{Kind: "node", Name: "node-1"}, minute, f, true},
 		{"a gone node does not", "SystemOOM", ObjectKey{Kind: "node", Name: "node-9"}, minute, f, false},
 		{"a ReplicaSet of a flagged deployment is that deployment", "FailedCreate", ObjectKey{Kind: "replicaset", Namespace: "shop", Name: "payments-6c9f7d8b5"}, minute, f, false},
 		{"another ReplicaSet counts", "FailedCreate", ObjectKey{Kind: "replicaset", Namespace: "shop", Name: "web-6c9f7d8b5"}, minute, f, true},
 		{"an existing deployment counts", "ProgressDeadlineExceeded", ObjectKey{Kind: "deployment", Namespace: "shop", Name: "web"}, minute, f, true},
+		{"a deployment of that name in another namespace does not", "ProgressDeadlineExceeded", ObjectKey{Kind: "deployment", Namespace: "ops", Name: "web"}, minute, f, false},
+		{"a workload the list could not place matches by name", "ProgressDeadlineExceeded", ObjectKey{Kind: "statefulset", Namespace: "ops", Name: "db"}, minute, f, true},
 		{"a gone deployment does not", "ProgressDeadlineExceeded", ObjectKey{Kind: "deployment", Namespace: "shop", Name: "old"}, minute, f, false},
 		{"other kinds count", "ProvisioningFailed", ObjectKey{Kind: "persistentvolumeclaim", Namespace: "shop", Name: "data"}, minute, f, true},
 	}
