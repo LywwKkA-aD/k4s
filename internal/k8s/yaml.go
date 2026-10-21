@@ -19,8 +19,9 @@ var ErrYAMLKind = errors.New("unsupported kind for yaml")
 // ObjectYAML returns the object as `kubectl get <kind> <name> -o yaml`
 // prints it: apiVersion and kind set, keys in order, and managedFields
 // left out as kubectl leaves them out by default. kind is the lower-case
-// name the kubectl command uses: pod, deployment, service or namespace.
-// namespace is ignored for a namespace, which has none.
+// name the kubectl command uses: pod, deployment, service, namespace,
+// node or event. namespace is ignored for a namespace and a node, which
+// have none.
 func (c *Client) ObjectYAML(ctx context.Context, kind, namespace, name string) (string, error) {
 	obj, err := c.getObject(ctx, kind, namespace, name)
 	if err != nil {
@@ -48,6 +49,12 @@ func (c *Client) getObject(ctx context.Context, kind, namespace, name string) (r
 	case "namespace":
 		n, err := c.Clientset.CoreV1().Namespaces().Get(ctx, name, get)
 		return asPrinted(n, err, kind, corev1.SchemeGroupVersion.WithKind("Namespace"))
+	case "node":
+		n, err := c.Clientset.CoreV1().Nodes().Get(ctx, name, get)
+		return asPrinted(n, err, kind, corev1.SchemeGroupVersion.WithKind("Node"))
+	case "event":
+		e, err := c.Clientset.CoreV1().Events(namespace).Get(ctx, name, get)
+		return asPrinted(e, err, kind, corev1.SchemeGroupVersion.WithKind("Event"))
 	}
 	return nil, fmt.Errorf("%w: %s", ErrYAMLKind, kind)
 }

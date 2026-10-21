@@ -31,6 +31,8 @@ func yamlObjects() []runtime.Object {
 		},
 		&appsv1.Deployment{ObjectMeta: meta(granted, "web")},
 		&corev1.Service{ObjectMeta: meta(granted, "web"), Spec: corev1.ServiceSpec{ClusterIP: "10.43.0.10"}},
+		&corev1.Node{ObjectMeta: meta("", "node-1"), Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{KubeletVersion: "v1.36.5+k3s1"}}},
+		&corev1.Event{ObjectMeta: meta(granted, "web-1.17a"), Reason: "BackOff", Message: "the whole message"},
 	}
 }
 
@@ -46,6 +48,8 @@ func TestObjectYAML(t *testing.T) {
 		{kind: "deployment", namespace: granted, name: "web", head: "apiVersion: apps/v1\nkind: Deployment\n"},
 		{kind: "service", namespace: granted, name: "web", head: "apiVersion: v1\nkind: Service\n", want: []string{"  clusterIP: 10.43.0.10\n"}},
 		{kind: "namespace", name: granted, head: "apiVersion: v1\nkind: Namespace\n", want: []string{"  name: " + granted + "\n"}},
+		{kind: "node", name: "node-1", head: "apiVersion: v1\nkind: Node\n", want: []string{"    kubeletVersion: v1.36.5+k3s1\n"}},
+		{kind: "event", namespace: granted, name: "web-1.17a", head: "apiVersion: v1\n", want: []string{"kind: Event\n", "message: the whole message\n"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.kind, func(t *testing.T) {
