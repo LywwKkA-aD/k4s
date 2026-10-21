@@ -12,14 +12,6 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
-// Resource versions of a services list (M4.4): a poll may be answered
-// from the apiserver's watch cache, a refresh the user asked for reads
-// through.
-const (
-	pollRead       = "0"
-	consistentRead = ""
-)
-
 // Update routes ticks, replies and keys; navigation goes to the table.
 func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -52,11 +44,12 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	return m, cmd
 }
 
-// list fetches the services under the poller's current Token.
-func (m Model) list(resourceVersion string) tea.Cmd {
+// list fetches the services under the poller's current Token. A poll
+// passes k8s.FromCache; a refresh the user asked for reads through.
+func (m Model) list(opts ...k8s.ListOption) tea.Cmd {
 	c, ns := m.client, m.namespace
 	return async.Run(m.poll.Token(), m.poll.Timeout(), func(ctx context.Context) ([]k8s.Service, error) {
-		return c.ListServices(ctx, ns, resourceVersion)
+		return c.ListServices(ctx, ns, opts...)
 	})
 }
 
@@ -65,7 +58,7 @@ func (m Model) onTick(msg async.TickMsg) (Model, tea.Cmd) {
 	if m.poll, ok = m.poll.Due(msg); !ok {
 		return m, nil
 	}
-	return m, m.list(pollRead)
+	return m, m.list(k8s.FromCache())
 }
 
 // onList folds a list reply in and arms the next tick. A failed refresh
@@ -129,7 +122,7 @@ func (m Model) refresh() (Model, tea.Cmd) {
 	if m.poll, ok = m.poll.Begin(); !ok {
 		return m, nil
 	}
-	return m, m.list(consistentRead)
+	return m, m.list()
 }
 
 func (m Model) tableHeight() int {

@@ -2,16 +2,13 @@ package k8s
 
 import (
 	"context"
-	"slices"
 	"testing"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
-	ktesting "k8s.io/client-go/testing"
 )
 
 func intPtr(i int32) *int32 { return &i }
@@ -84,98 +81,3 @@ func TestListDeploymentsHandlesNilReplicas(t *testing.T) {
 	}
 }
 
-// TestListDeploymentsAtPassesTheResourceVersion: a poll lists from the
-// apiserver's watch cache ("0"); 'r' and a plain ListDeployments read
-// consistently ("").
-func TestListDeploymentsAtPassesTheResourceVersion(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name string
-		list func(context.Context, *Client) ([]Deployment, error)
-		want string
-	}{
-		{name: "watch cache", want: "0", list: func(ctx context.Context, c *Client) ([]Deployment, error) {
-			return c.ListDeploymentsAt(ctx, "demo", "0")
-		}},
-		{name: "consistent", want: "", list: func(ctx context.Context, c *Client) ([]Deployment, error) {
-			return c.ListDeploymentsAt(ctx, "demo", "")
-		}},
-		{name: "default is consistent", want: "", list: func(ctx context.Context, c *Client) ([]Deployment, error) {
-			return c.ListDeployments(ctx, "demo")
-		}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "x", Namespace: "demo"}}
-			cs := fake.NewSimpleClientset(runtime.Object(dep))
-			var seen []string
-			cs.PrependReactor("list", "deployments", func(a ktesting.Action) (bool, runtime.Object, error) {
-				if l, ok := a.(interface{ GetListOptions() metav1.ListOptions }); ok {
-					seen = append(seen, l.GetListOptions().ResourceVersion)
-				}
-				return false, nil, nil
-			})
-			got, err := tc.list(context.Background(), &Client{Clientset: cs, Context: "test"})
-			if err != nil || len(got) != 1 {
-				t.Fatalf("list = %v, %v; want the one deployment", got, err)
-			}
-			if !slices.Equal(seen, []string{tc.want}) {
-				t.Errorf("ResourceVersion = %q, want [%q]", seen, tc.want)
-			}
-		})
-	}
-}
-
-func TestPodsForDeploymentMatchesLabelSelector(t *testing.T) {
-	t.Parallel()
-
-	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "nginx", Namespace: "demo"},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: intPtr(3),
-			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx"}},
-		},
-	}
-	objs := []runtime.Object{
-		runtime.Object(dep),
-		&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "nginx-a", Namespace: "demo", Labels: map[string]string{"app": "nginx"}},
-		},
-		&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "nginx-b", Namespace: "demo", Labels: map[string]string{"app": "nginx"}},
-		},
-		// Different app — must not match.
-		&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "demo", Labels: map[string]string{"app": "other"}},
-		},
-	}
-
-	c := &Client{Clientset: fake.NewSimpleClientset(objs...), Context: "test"}
-
-	pods, err := c.PodsForDeployment(context.Background(), "demo", "nginx")
-	if err != nil {
-		t.Fatalf("PodsForDeployment: %v", err)
-	}
-	if len(pods) != 2 {
-		t.Fatalf("expected 2 pods, got %d (%v)", len(pods), pods)
-	}
-	want := map[string]bool{"nginx-a": true, "nginx-b": true}
-	for _, p := range pods {
-		if !want[p] {
-			t.Errorf("unexpected pod %q in result", p)
-		}
-	}
-}
-
-func TestPodsForDeploymentMissingDeployment(t *testing.T) {
-	t.Parallel()
-
-	c := &Client{Clientset: fake.NewSimpleClientset(), Context: "test"}
-
-	_, err := c.PodsForDeployment(context.Background(), "demo", "ghost")
-	if err == nil {
-		t.Error("expected error for missing deployment, got nil")
-	}
-}

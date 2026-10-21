@@ -7,8 +7,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 )
 
 // Service is a presentation-friendly snapshot of a core/v1 Service.
@@ -23,12 +21,9 @@ type Service struct {
 }
 
 // ListServices returns the services in namespace, or in all namespaces
-// when namespace is "". resourceVersion goes to the list as is: "0" lets
-// the apiserver answer from its watch cache, which is what a poll wants;
-// "" is a consistent read, for a refresh the user asked for.
-func (c *Client) ListServices(ctx context.Context, namespace, resourceVersion string) ([]Service, error) {
-	opts := metav1.ListOptions{ResourceVersion: resourceVersion}
-	list, err := c.Clientset.CoreV1().Services(namespace).List(ctx, opts)
+// when namespace is "", a consistent read unless opts say otherwise.
+func (c *Client) ListServices(ctx context.Context, namespace string, opts ...ListOption) ([]Service, error) {
+	list, err := c.Clientset.CoreV1().Services(namespace).List(ctx, listOptions(opts))
 	if err != nil {
 		return nil, fmt.Errorf("list services: %w", err)
 	}
@@ -91,48 +86,6 @@ func serviceExternalIP(s *corev1.Service) string {
 	default:
 		return "<none>"
 	}
-}
-
-// PodsAndContainersForService returns the pod names that back the given
-// service plus the container set defined on the first matching pod. The
-// containers come from a real running pod (not a template) because a
-// Service has no pod template of its own — it just selects pods by
-// label. When multiple pods back the service we assume they share a
-// template (the standard ReplicaSet/Deployment pattern) and read the
-// containers off the first one.
-//
-// Returns (nil, nil, nil) — not an error — for selector-less services
-// (headless / ExternalName / manually-managed Endpoints). Callers
-// should treat that as "no logs available, do nothing".
-//
-// Superseded by ServiceLogTarget, which skips finished pods and reports
-// them, and returns ErrNoSelector instead of nothing. The services view
-// no longer calls it; only the tuitest seed test does, and it goes with
-// that caller. The formal deprecation marker would fail staticcheck there
-// first.
-func (c *Client) PodsAndContainersForService(ctx context.Context, namespace, name string) ([]string, []string, error) {
-	svc, err := c.Clientset.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return nil, nil, fmt.Errorf("get service: %w", err)
-	}
-	if len(svc.Spec.Selector) == 0 {
-		return nil, nil, nil
-	}
-	selector := labels.SelectorFromSet(svc.Spec.Selector).String()
-	list, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: selector,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("list pods: %w", err)
-	}
-	if len(list.Items) == 0 {
-		return nil, nil, nil
-	}
-	podNames := make([]string, 0, len(list.Items))
-	for _, p := range list.Items {
-		podNames = append(podNames, p.Name)
-	}
-	return podNames, containerNames(&list.Items[0].Spec), nil
 }
 
 // servicePorts mirrors `kubectl get svc`'s PORT(S) column. NodePorts are

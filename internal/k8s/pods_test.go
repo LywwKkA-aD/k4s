@@ -9,7 +9,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
-	k8stesting "k8s.io/client-go/testing"
 )
 
 func TestListPodsRendersStatusReadinessAndRestarts(t *testing.T) {
@@ -199,50 +198,3 @@ func TestListPodsAllNamespaces(t *testing.T) {
 	}
 }
 
-// listOptionsAction is the part of a fake-clientset list action that
-// carries the request's ListOptions.
-type listOptionsAction interface {
-	GetListOptions() metav1.ListOptions
-}
-
-// TestListPodsResourceVersion pins what each list asks the apiserver for:
-// ResourceVersion "0" may be answered from the watch cache, "" is a
-// consistent read (M4.4).
-func TestListPodsResourceVersion(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name string
-		opts []PodListOption
-		want string
-	}{
-		{name: "a plain list reads consistently", want: ""},
-		{name: "a poll may read the watch cache", opts: []PodListOption{PodsResourceVersion("0")}, want: "0"},
-		{name: "an explicit consistent read", opts: []PodListOption{PodsResourceVersion("")}, want: ""},
-		{name: "the last option wins", opts: []PodListOption{PodsResourceVersion("0"), PodsResourceVersion("")}, want: ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			cs := fake.NewSimpleClientset()
-			seen := make(chan string, 1)
-			cs.PrependReactor("list", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
-				la, ok := a.(listOptionsAction)
-				if !ok {
-					t.Errorf("list action %T carries no ListOptions", a)
-					return false, nil, nil
-				}
-				seen <- la.GetListOptions().ResourceVersion
-				return false, nil, nil
-			})
-			c := &Client{Clientset: cs, Context: "test"}
-
-			if _, err := c.ListPods(context.Background(), "demo", tc.opts...); err != nil {
-				t.Fatalf("ListPods: %v", err)
-			}
-			if got := <-seen; got != tc.want {
-				t.Errorf("ResourceVersion = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}

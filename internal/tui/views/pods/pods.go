@@ -92,7 +92,7 @@ func (m Model) Init() tea.Cmd {
 	if !m.poll.Busy() {
 		return nil
 	}
-	return m.list(rvCache)
+	return m.list(k8s.FromCache())
 }
 
 // Update routes list replies, ticks, row-action replies and keys.
