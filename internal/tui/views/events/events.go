@@ -85,7 +85,8 @@ type Model struct {
 	shown   []k8s.Event
 	typed   int
 	matched int
-	// cut is set when the API held more than k8s.MaxEvents.
+	// cut is set when the list holds fewer events than the API had: past
+	// k8s.MaxEvents, or a refresh that ran out of time between pages.
 	cut      bool
 	warnings bool
 

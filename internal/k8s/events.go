@@ -3,6 +3,7 @@ package k8s
 import (
 	"cmp"
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -19,10 +20,15 @@ const (
 	// tens of thousands of events, polled every few seconds.
 	MaxEvents = 10000
 	// maxEventsRead bounds a read in pages. The server lists in key order,
-	// so the newest MaxEvents are known only once every page is read;
-	// twice MaxEvents keeps a refresh of a busy cluster within the list
-	// deadline, and past it the list is cut.
+	// so the newest MaxEvents are known only once every page is read; past
+	// twice MaxEvents the list is cut. That is 40 requests, which a
+	// refresh across every namespace makes within its 15s deadline at
+	// 350ms a page; on a slower API the read stops at readReserve.
 	maxEventsRead = 2 * MaxEvents
+	// readReserve is the part of its deadline a read in pages keeps to
+	// sort and return what it has: no page is started, or waited for,
+	// past deadline-readReserve, and the pages read come back cut.
+	readReserve = time.Second
 )
 
 // Event is one core/v1 Event, with what `kubectl events` prints of it.
@@ -56,9 +62,9 @@ type EventObject struct {
 // first.
 type EventList struct {
 	Items []Event
-	// Cut is set when there were more than MaxEvents: only the newest
-	// MaxEvents were kept, or reading stopped at maxEventsRead with pages
-	// left.
+	// Cut is set when the list holds less than the server had: only the
+	// newest MaxEvents were kept, or reading stopped with pages left, at
+	// maxEventsRead or at the deadline.
 	Cut bool
 }
 
@@ -67,24 +73,44 @@ type EventList struct {
 // `kubectl events` prints the same events oldest first. It reads in pages
 // of eventsPage, up to maxEventsRead, and keeps the newest MaxEvents, as
 // it keeps them of a whole answer from the watch cache: a poll and a
-// refresh show the same events. opts apply to the first page; a continued
-// page takes its resource version from the continue token, as the API
-// requires.
+// refresh show the same events. A read that runs out of time after its
+// first page returns the pages read, cut. opts apply to the first page; a
+// continued page takes its resource version from the continue token, as
+// the API requires.
 func (c *Client) ListEvents(ctx context.Context, namespace string, now time.Time, opts ...ListOption) (EventList, error) {
 	o := listOptions(opts)
 	o.Limit = eventsPage
+	more, cancel := continuedPages(ctx)
+	defer cancel()
 	var raw []corev1.Event
 	for {
-		list, err := c.Clientset.CoreV1().Events(namespace).List(ctx, o)
-		if err != nil {
+		pageCtx := ctx
+		if len(raw) > 0 {
+			pageCtx = more
+		}
+		list, err := c.Clientset.CoreV1().Events(namespace).List(pageCtx, o)
+		switch {
+		case err != nil && len(raw) > 0 && (more.Err() != nil || errors.Is(err, context.DeadlineExceeded)):
+			return newestEvents(raw, true, now), nil
+		case err != nil:
 			return EventList{}, listError("events", namespace, err)
 		}
 		raw = append(raw, list.Items...)
-		if list.Continue == "" || len(raw) >= maxEventsRead {
+		if list.Continue == "" || len(raw) >= maxEventsRead || more.Err() != nil {
 			return newestEvents(raw, list.Continue != "", now), nil
 		}
 		o = metav1.ListOptions{Limit: eventsPage, Continue: list.Continue}
 	}
+}
+
+// continuedPages is the context the pages after the first are read
+// under: ctx, ending readReserve before it does.
+func continuedPages(ctx context.Context) (context.Context, context.CancelFunc) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return context.WithCancel(ctx)
+	}
+	return context.WithDeadline(ctx, deadline.Add(-readReserve))
 }
 
 // newestEvents converts raw at now and keeps the newest MaxEvents; more

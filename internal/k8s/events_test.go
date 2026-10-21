@@ -119,11 +119,13 @@ func ptrTo(e corev1.Event) *corev1.Event { return &e }
 // makes the i-th event in key order; nil serves e-00000, e-00001, ...
 // about pod/web-1, each a second older than the one before. whole answers
 // a list from the watch cache (ResourceVersion "0") with every event at
-// once, whatever its Limit, as the cache does.
+// once, whatever its Limit, as the cache does. fail answers the n-th
+// request, from 0, with its error instead of a page.
 type pagedEvents struct {
 	total int
 	item  func(i int) corev1.Event
 	whole bool
+	fail  map[int]error
 
 	mu   sync.Mutex
 	seen []metav1.ListOptions
@@ -144,7 +146,11 @@ func (p *pagedEvents) react(a ktesting.Action) (bool, runtime.Object, error) {
 	o := la.GetListOptions()
 	p.mu.Lock()
 	p.seen = append(p.seen, o)
+	n := len(p.seen) - 1
 	p.mu.Unlock()
+	if err := p.fail[n]; err != nil {
+		return true, nil, err
+	}
 	start := 0
 	if o.Continue != "" {
 		if _, err := fmt.Sscanf(o.Continue, "from-%d", &start); err != nil {

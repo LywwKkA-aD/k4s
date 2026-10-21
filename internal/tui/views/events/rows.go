@@ -182,7 +182,8 @@ func (m Model) note() string {
 		parts = append(parts, fmt.Sprintf("showing newest %d of %d events", len(m.shown), m.matched))
 	}
 	if m.loaded && m.cut {
-		parts = append(parts, fmt.Sprintf("list cut at %d events", k8s.MaxEvents))
+		// A list cut at the deadline holds fewer than k8s.MaxEvents.
+		parts = append(parts, fmt.Sprintf("list cut at %d events", len(m.items)))
 	}
 	return strings.Join(parts, " · ")
 }
