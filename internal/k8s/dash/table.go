@@ -113,19 +113,23 @@ func (t table) str(row, col int) (string, bool) {
 	return s, true
 }
 
-// num reads an integer cell, or a string cell holding one.
-func (t table) num(row, col int) (int64, bool) {
+// num reads an integer cell, or a string cell holding one. The counts it
+// reads are int32 in the API, so a wider value is rejected rather than
+// wrapped on 32-bit builds.
+func (t table) num(row, col int) (int, bool) {
 	raw, ok := t.cell(row, col)
 	if !ok || len(raw) == 0 {
 		return 0, false
 	}
+	s := string(raw)
 	if raw[0] == '"' {
-		s, _ := t.str(row, col)
-		n, err := strconv.ParseInt(s, 10, 64)
-		return n, err == nil
+		s, _ = t.str(row, col)
 	}
-	n, err := strconv.ParseInt(string(raw), 10, 64)
-	return n, err == nil
+	n, err := strconv.ParseInt(s, 10, 32)
+	if err != nil {
+		return 0, false
+	}
+	return int(n), true
 }
 
 func (t table) flag(row, col int) (bool, bool) {
