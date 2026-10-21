@@ -76,12 +76,15 @@ func kindWord(kind string) string { return strings.ToLower(kind) }
 // flagged is what other panels already show as a problem, so its warnings
 // are not counted twice, and what exists, so stale warnings are dropped.
 type flagged struct {
-	objects   map[ObjectKey]bool // problems placed in a namespace, and nodes
-	names     map[string]bool    // "kind/name" of problems not yet placed
-	deploys   []string           // not-ready deployments: their ReplicaSets' warnings are theirs
-	pods      map[string]podRow  // pods by name; nil when the pods list is unavailable
-	nodes     map[string]bool    // nil when the nodes list is unavailable
-	workloads map[string]bool    // "kind/name"; nil when the lists are unavailable
+	objects   map[ObjectKey]bool   // problems placed in a namespace, and nodes
+	names     map[string]bool      // "kind/name" of problems not yet placed
+	deploys   []string             // not-ready deployments: their ReplicaSets' warnings are theirs
+	pods      map[ObjectKey]podRow // pods the list placed in a namespace; nil when the pods list is unavailable
+	podNames  map[string]podRow    // pods the list did not place, by name
+	nodes     map[string]bool      // nil when the nodes list is unavailable
+	workloads map[ObjectKey]bool   // placed workloads; nil when the lists are unavailable
+	// workloadNames are the unplaced ones, "kind/name".
+	workloadNames map[string]bool
 }
 
 // has reports whether another panel already flags the object.
@@ -137,7 +140,10 @@ func counts(e eventInfo, key ObjectKey, age time.Duration, f flagged) bool {
 		if f.pods == nil {
 			return true
 		}
-		r, ok := f.pods[key.Name]
+		r, ok := f.pods[key]
+		if !ok {
+			r, ok = f.podNames[key.Name]
+		}
 		if !ok {
 			return false
 		}
@@ -152,7 +158,7 @@ func counts(e eventInfo, key ObjectKey, age time.Duration, f flagged) bool {
 			}
 		}
 	case "deployment", "statefulset", "daemonset":
-		return f.workloads == nil || f.workloads[short]
+		return f.workloads == nil || f.workloads[key] || f.workloadNames[short]
 	}
 	return true
 }

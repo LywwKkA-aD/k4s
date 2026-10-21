@@ -162,9 +162,13 @@ func flaggedOf(s Snapshot) flagged {
 // leaves its map nil, which the warning rule reads as "assume it exists".
 func existing(f flagged, s Snapshot) flagged {
 	if s.Ledger[Pods].State == StateOK {
-		f.pods = make(map[string]podRow, len(s.st.pods))
+		f.pods, f.podNames = map[ObjectKey]podRow{}, map[string]podRow{}
 		for _, r := range s.st.pods {
-			f.pods[r.name] = r
+			if r.namespace == "" {
+				f.podNames[r.name] = r
+				continue
+			}
+			f.pods[ObjectKey{Kind: "pod", Namespace: r.namespace, Name: r.name}] = r
 		}
 	}
 	if s.Ledger[Nodes].State == StateOK {
@@ -174,10 +178,14 @@ func existing(f flagged, s Snapshot) flagged {
 		}
 	}
 	if s.Ledger[Deployments].State == StateOK && s.Ledger[StatefulSets].State == StateOK && s.Ledger[DaemonSets].State == StateOK {
-		f.workloads = map[string]bool{}
+		f.workloads, f.workloadNames = map[ObjectKey]bool{}, map[string]bool{}
 		for _, kr := range workloadKinds(s.st) {
 			for _, r := range kr.rows {
-				f.workloads[kr.kind+"/"+r.name] = true
+				if r.namespace == "" {
+					f.workloadNames[kr.kind+"/"+r.name] = true
+					continue
+				}
+				f.workloads[ObjectKey{Kind: kr.kind, Namespace: r.namespace, Name: r.name}] = true
 			}
 		}
 	}
