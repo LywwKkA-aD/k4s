@@ -190,9 +190,10 @@ func (m Model) Help() []key.Binding {
 
 // HelpMap lists the panels for the help popup: the key that focuses each
 // one, its name and its kubectl command, decorated for this session like
-// the footer's.
+// the footer's. Every panel the cluster has is listed: one the size
+// leaves out opens zoomed on its key.
 func (m Model) HelpMap() []key.Binding {
-	panels := append([]dash.Panel{dash.PanelOverview}, m.lay.visible()...)
+	panels := append([]dash.Panel{dash.PanelOverview}, present(m.shown())...)
 	out := make([]key.Binding, 0, len(panels))
 	for _, p := range panels {
 		k := strconv.Itoa(int(p))

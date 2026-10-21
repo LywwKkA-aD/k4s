@@ -177,14 +177,20 @@ func TestEnterHintOnTheBannerNeedsItsPanel(t *testing.T) {
 func TestHelpMapListsThePanels(t *testing.T) {
 	t.Parallel()
 
+	// Every panel the cluster has, also where the size leaves it out or a
+	// zoom covers it: its number opens it.
+	medium := mount(t, newFeed(busyK3s), 120, 34)
+	zoomed, _ := press(t, medium, "3", "z")
+	for _, v := range []dashboard.Model{mount(t, newFeed(busyK3s), wideW, wideH), medium, zoomed} {
+		keys := make([]string, 0, len(v.HelpMap()))
+		for _, b := range v.HelpMap() {
+			keys = append(keys, b.Help().Key)
+		}
+		if strings.Join(keys, "") != "01234567" {
+			t.Fatalf("map keys = %v, want 0 to 7", keys)
+		}
+	}
 	m := mount(t, newFeed(busyK3s), wideW, wideH)
-	keys := make([]string, 0, len(m.HelpMap()))
-	for _, b := range m.HelpMap() {
-		keys = append(keys, b.Help().Key)
-	}
-	if strings.Join(keys, "") != "01234567" {
-		t.Fatalf("map keys = %v, want 0 to 7", keys)
-	}
 	if desc := m.HelpMap()[3].Help().Desc; desc != "pods · "+podsCmd {
 		t.Fatalf("map entry 3 = %q", desc)
 	}
