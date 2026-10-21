@@ -33,6 +33,9 @@ func TestResolveCanonicalAndAliases(t *testing.T) {
 		{"ev", "events", true},
 		{"EV", "events", true},
 		{"event", "events", true},
+		{"nodes", "nodes", true},
+		{"no", "nodes", true},
+		{"node", "nodes", true},
 		{"foobar", "", false},
 		{"", "", false},
 	}
@@ -59,6 +62,7 @@ func TestAllReturnsEveryCanonical(t *testing.T) {
 		"top":         true,
 		"forwards":    true,
 		"events":      true,
+		"nodes":       true,
 	}
 	if len(all) != len(want) {
 		t.Fatalf("All() = %v; want %d commands", all, len(want))
@@ -84,6 +88,7 @@ func TestAliasesExcludesCanonical(t *testing.T) {
 		{canonical: "deployments", mustHave: []string{"deploy", "deployment", "dp"}, mustNot: "deployments"},
 		{canonical: "services", mustHave: []string{"svc", "service"}, mustNot: "services"},
 		{canonical: "events", mustHave: []string{"ev", "event"}, mustNot: "events"},
+		{canonical: "nodes", mustHave: []string{"no", "node"}, mustNot: "nodes"},
 		{canonical: "unknown", mustHave: nil, mustNot: ""},
 	}
 	for _, tc := range cases {

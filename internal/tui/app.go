@@ -29,6 +29,7 @@ const (
 	viewDeployments = "deployments"
 	viewServices    = "services"
 	viewEvents      = "events"
+	viewNodes       = "nodes"
 	viewContexts    = "contexts"
 	viewTop         = "top"
 	viewForwards    = "forwards"

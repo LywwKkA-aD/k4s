@@ -57,6 +57,7 @@ var commands = []entry{
 	{canonical: "deployments", aliases: []string{"deployments", "deploy", "deployment", "dp"}},
 	{canonical: "services", aliases: []string{"services", "svc", "service"}},
 	{canonical: "events", aliases: []string{"events", "ev", "event"}},
+	{canonical: "nodes", aliases: []string{"nodes", "no", "node"}},
 	{canonical: "contexts", aliases: []string{"contexts", "ctx", "context"}},
 	{canonical: "top", aliases: []string{"top", "metrics"}},
 	{canonical: "forwards", aliases: []string{"forwards", "pf", "forward", "portforward", "port-forward"}},

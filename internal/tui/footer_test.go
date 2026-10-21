@@ -32,6 +32,7 @@ func TestFooterGoldens(t *testing.T) {
 		{name: "services", input: colon("svc")},
 		{name: "events", input: colon("ev")},
 		{name: "events_warnings", input: then(colon("ev"), tuitest.Keys("W"))},
+		{name: "nodes", input: colon("no")},
 		{name: "namespaces", input: colon("ns")},
 		{name: "contexts", input: colon("ctx")},
 		{name: "top_pods", input: colon("top")},
