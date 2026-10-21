@@ -201,7 +201,7 @@ func (m Model) View() string {
 		return styles.Hint.Render("loading deployments…")
 	}
 	if m.health.Failed() {
-		return styles.Warn.Render("deployments unavailable: " + m.health.Err().Error())
+		return styles.Warn.Render("deployments unavailable: " + m.health.Text())
 	}
 	body := m.table.View()
 	if len(m.shown) == 0 {

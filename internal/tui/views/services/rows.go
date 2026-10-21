@@ -128,7 +128,7 @@ func (m Model) View() string {
 		return styles.Hint.Render("loading services…")
 	}
 	if m.health.Failed() {
-		return styles.Warn.Render("services unavailable: " + m.health.Err().Error())
+		return styles.Warn.Render("services unavailable: " + m.health.Text())
 	}
 	body := m.table.View()
 	if len(m.table.Rows()) == 0 {

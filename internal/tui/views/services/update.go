@@ -67,6 +67,9 @@ func (m Model) onList(msg async.Result[[]k8s.Service]) (Model, tea.Cmd) {
 	if !m.poll.Accept(msg.Token) {
 		return m, nil
 	}
+	if next, cmd, ok := m.fallBack(msg.Err); ok {
+		return next, cmd
+	}
 	var cmd, said tea.Cmd
 	m.poll, cmd = m.poll.Done(msg.Token, msg.Err)
 	m.health, said = m.health.Fold(msg.Err)

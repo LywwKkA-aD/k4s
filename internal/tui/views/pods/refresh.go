@@ -67,6 +67,9 @@ func (m Model) onList(msg async.Result[[]k8s.Pod]) (Model, tea.Cmd) {
 	if !m.poll.Accept(msg.Token) {
 		return m, nil
 	}
+	if next, cmd, ok := m.fallBack(msg.Err); ok {
+		return next, cmd
+	}
 	var next, said tea.Cmd
 	m.poll, next = m.poll.Done(msg.Token, msg.Err)
 	m.health, said = m.health.Fold(msg.Err)
@@ -81,7 +84,7 @@ func (m Model) onList(msg async.Result[[]k8s.Pod]) (Model, tea.Cmd) {
 }
 
 func (m Model) resized(msg tea.WindowSizeMsg) Model {
-	m.bodyH = msg.Height
+	m.bodyH, m.width = msg.Height, msg.Width
 	m.filter.SetWidth(msg.Width)
 	m.table.SetColumns(layout(msg.Width, m.namespace == "").columns())
 	styles.FitTable(&m.table)

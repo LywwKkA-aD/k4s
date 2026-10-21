@@ -31,7 +31,7 @@ func (m Model) body() string {
 	case !m.loaded:
 		return styles.Hint.Render("loading pods…")
 	case m.health.Failed():
-		return styles.Warn.Render("pods unavailable: " + m.health.Err().Error())
+		return styles.Warn.Render("pods unavailable: " + m.health.Text())
 	case len(m.table.Rows()) > 0:
 		return m.table.View()
 	case m.filter.Active():

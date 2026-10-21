@@ -2,6 +2,10 @@
 // the last good list stay on screen under a one-line banner, the error is
 // said once in the status row, and r retries. Before any list has
 // succeeded there are no rows to keep, and the view shows its error body.
+//
+// Every error is worded by k8s.Classify, so the banner, the status row and
+// the error body say the same thing: "forbidden: list pods in demo ·
+// kubectl auth can-i list pods -n demo", "API unreachable: 10.0.0.1:6443".
 package stale
 
 import (
@@ -9,6 +13,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -26,16 +31,16 @@ type Health struct {
 	said string
 }
 
-// Fold takes the answer to a list. A new error text comes back as an
-// Error status, once however many ticks repeat it; a success forgets it,
-// so the same failure after a recovery is said again.
+// Fold takes the answer to a list. A new error text, as Describe words it,
+// comes back as an Error status, once however many ticks repeat it; a
+// success forgets it, so the same failure after a recovery is said again.
 func (h Health) Fold(err error) (Health, tea.Cmd) {
 	h = h.Track(err)
 	if err == nil {
 		h.said = ""
 		return h, nil
 	}
-	text := err.Error()
+	text := Describe(err)
 	if text == h.said {
 		return h, nil
 	}
@@ -60,6 +65,10 @@ func (h Health) Reset() Health { return Health{} }
 // Err is the error of the last answer, nil after a success.
 func (h Health) Err() error { return h.err }
 
+// Text is the last error as Describe words it, "" after a success: what an
+// error body shows.
+func (h Health) Text() string { return Describe(h.err) }
+
 // Failed reports an error with no earlier list to keep on screen.
 func (h Health) Failed() bool { return h.err != nil && !h.good }
 
@@ -74,10 +83,10 @@ func (h Health) Banner() string {
 	return styles.Warn.Render("stale: " + reason(h.err) + " · r retry")
 }
 
-// reason is the short form of err: its first line without the leading
-// "list <resource>: " context, cut to maxReason.
+// reason is the short form of err: its classified Short without the
+// leading "list <resource>: " context, cut to maxReason.
 func reason(err error) string {
-	text, _, _ := strings.Cut(err.Error(), "\n")
+	text := k8s.Classify(err).Short
 	if rest, ok := strings.CutPrefix(text, "list "); ok {
 		if _, after, found := strings.Cut(rest, ": "); found {
 			text = after

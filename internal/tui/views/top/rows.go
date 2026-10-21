@@ -11,6 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -203,12 +204,11 @@ type failure struct {
 // a metrics API that is absent or not ready, or any other failure, is a
 // warning: the rest of k4s works without metrics.
 func failureOf(err error) failure {
-	d := k8s.Classify(err)
 	switch {
-	case d.Kind == k8s.KindForbidden:
-		return failure{text: d.Text(), level: status.Error}
+	case k8s.Classify(err).Kind == k8s.KindForbidden:
+		return failure{text: stale.Describe(err), level: status.Error}
 	case !errors.Is(err, k8s.ErrMetricsUnavailable):
-		return failure{text: "metrics unavailable: " + d.Text(), level: status.Warn}
+		return failure{text: "metrics unavailable: " + stale.Describe(err), level: status.Warn}
 	case apierrors.IsServiceUnavailable(err):
 		return failure{text: "metrics unavailable: metrics-server is not ready (503)", level: status.Warn}
 	}

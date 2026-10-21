@@ -9,6 +9,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -75,7 +76,7 @@ func logsRequest(r views.ResourceRef, t k8s.LogTarget, err error, detached bool)
 	case errors.Is(err, k8s.ErrNoSelector):
 		return statusCmd(status.Warn, kind+" "+r.Name+" has no selector")
 	case err != nil:
-		return statusCmd(status.Error, kind+" "+r.Name+": "+err.Error())
+		return statusCmd(status.Error, kind+" "+r.Name+": "+stale.Describe(err))
 	case len(t.Pods) == 0:
 		return statusCmd(status.Warn, noRunningPods(r.Name, t))
 	}

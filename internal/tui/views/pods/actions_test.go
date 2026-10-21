@@ -9,8 +9,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
@@ -205,7 +207,8 @@ func TestRowActionFailuresSaySo(t *testing.T) {
 	t.Parallel()
 
 	forbidden := tuitest.WithReactor("get", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, errors.New(`pods "web-1" is forbidden`)
+		denial := errors.New(`User "u" cannot get resource "pods" in API group "" in the namespace "demo"`)
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "web-1", denial)
 	})
 	hollow := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "hollow", Namespace: demo, CreationTimestamp: metav1.Now()}}
 	actions := map[string]string{"l": "logs", "e": "exec", "f": "port-forward"}
@@ -226,7 +229,7 @@ func TestRowActionFailuresSaySo(t *testing.T) {
 		{
 			name: "lookup error", opts: []tuitest.FakeOption{forbidden}, row: rowWeb1, keys: []string{"l", "e", "f"},
 			want: func(key string) views.StatusMsg {
-				return views.StatusMsg{Level: status.Error, Text: actions[key] + ` for pod demo/web-1: get pod: pods "web-1" is forbidden`}
+				return views.StatusMsg{Level: status.Error, Text: actions[key] + ` for pod demo/web-1: forbidden: get pods in demo · kubectl auth can-i get pods -n demo`}
 			},
 		},
 		{

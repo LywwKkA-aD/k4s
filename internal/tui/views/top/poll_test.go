@@ -155,7 +155,7 @@ func TestMetricsFailuresAnswerWithAStatus(t *testing.T) {
 		},
 		{
 			name: "forbidden", status: http.StatusForbidden,
-			want: views.StatusMsg{Level: status.Error, Text: "forbidden: list pods.metrics.k8s.io in all namespaces · kubectl auth can-i list pods.metrics.k8s.io -A"},
+			want: views.StatusMsg{Level: status.Error, Text: "forbidden: list pods.metrics.k8s.io in all namespaces · :ns <name> picks one · kubectl auth can-i list pods.metrics.k8s.io -A"},
 		},
 		{
 			name: "metrics-server down", status: http.StatusServiceUnavailable,

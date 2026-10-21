@@ -121,7 +121,7 @@ func TestSlowAPIStretchesTheCadence(t *testing.T) {
 	if got := clk.Delays(); !slices.Equal(got, []time.Duration{10 * time.Second}) {
 		t.Errorf("tick delays = %v, want [10s]", got)
 	}
-	if !strings.Contains(tuitest.Screen(m), "namespaces unavailable: list namespaces: context deadline exceeded") {
+	if !strings.Contains(tuitest.Screen(m), "namespaces unavailable: API slow: list namespaces timed out · r retries") {
 		t.Errorf("screen:\n%s", tuitest.Screen(m))
 	}
 }

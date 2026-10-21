@@ -189,6 +189,9 @@ func (m Model) onReply(tok async.Token, err error, keep func(Model) Model) (view
 	if !m.poll.Accept(tok) {
 		return m, nil
 	}
+	if fell, cmd, ok := m.fallBack(err); ok {
+		return fell, cmd
+	}
 	var next tea.Cmd
 	m.poll, next = m.poll.Done(tok, err)
 	report := m.report(err)

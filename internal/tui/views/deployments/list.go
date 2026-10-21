@@ -39,6 +39,9 @@ func (m Model) onList(msg async.Result[[]k8s.Deployment]) (Model, tea.Cmd) {
 	if !m.poll.Accept(msg.Token) {
 		return m, nil
 	}
+	if next, cmd, ok := m.fallBack(msg.Err); ok {
+		return next, cmd
+	}
 	var arm, said tea.Cmd
 	m.poll, arm = m.poll.Done(msg.Token, msg.Err)
 	m.health, said = m.health.Fold(msg.Err)

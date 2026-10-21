@@ -10,6 +10,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -92,7 +93,7 @@ func logsFailed(ref views.ResourceRef, err error) tea.Cmd {
 	case apierrors.IsNotFound(err):
 		return statusCmd(status.Warn, "service "+ref.Name+" is gone, press r")
 	}
-	return statusCmd(status.Error, "logs for service "+ref.Name+": "+err.Error())
+	return statusCmd(status.Error, "logs for service "+ref.Name+": "+stale.Describe(err))
 }
 
 // logsPrompt asks the root for the container picker when the pods run

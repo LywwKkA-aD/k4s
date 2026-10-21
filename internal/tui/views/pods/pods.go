@@ -34,6 +34,7 @@ type Model struct {
 	table  table.Model
 	filter filter.Model
 	bodyH  int
+	width  int
 
 	raw []k8s.Pod
 	// shown is raw through the filter, in table order: the cursor indexes it.

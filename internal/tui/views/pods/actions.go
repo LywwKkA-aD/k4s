@@ -10,6 +10,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -213,7 +214,7 @@ func lookupFailed(a action, t podTarget, err error) tea.Cmd {
 	if apierrors.IsNotFound(err) {
 		return statusCmd(status.Warn, "pod "+t.name+" gone, press r")
 	}
-	return statusCmd(status.Error, fmt.Sprintf("%s for pod %s: %v", a.label(), t.key(), err))
+	return statusCmd(status.Error, fmt.Sprintf("%s for pod %s: %s", a.label(), t.key(), stale.Describe(err)))
 }
 
 func statusCmd(level status.Level, text string) tea.Cmd {

@@ -78,7 +78,7 @@ func (m Model) View() string {
 		return styles.Hint.Render("loading namespaces…")
 	}
 	if m.health.Failed() {
-		return styles.Warn.Render("namespaces unavailable: " + m.health.Err().Error())
+		return styles.Warn.Render("namespaces unavailable: " + m.health.Text())
 	}
 	body := m.table.View()
 	above := make([]string, 0, 3)
