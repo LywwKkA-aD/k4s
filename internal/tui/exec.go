@@ -18,6 +18,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -88,7 +89,7 @@ func (r execResolvedMsg) apply(m Model) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if apierrors.IsNotFound(r.err) {
-		return m.setStatus(status.Warn, "exec: pod "+r.req.Namespace+"/"+r.req.Pod+" is gone, press r")
+		return m.setStatus(status.Warn, "exec: pod "+podPath(r.req)+" is gone, press r")
 	}
 	shell := views.ExecShell
 	if r.err == nil {
@@ -165,7 +166,7 @@ func (d shellDoneMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if d.shell == windowsShell {
 		return m.setError("exec: no " + d.shell + " in " + podLabel(d.req) + exitLabel(d.err))
 	}
-	text := "no " + d.shell + " in " + d.req.Namespace + "/" + d.req.Pod + " · y copies the kubectl debug command" + exitLabel(d.err)
+	text := "no " + d.shell + " in " + podPath(d.req) + " · y copies the kubectl debug command" + exitLabel(d.err)
 	return m.setStatusAbout(status.Error, text, debugCommand(d.req))
 }
 
@@ -194,11 +195,20 @@ func debugCommand(req views.ExecRequestMsg) kubectl.Cmd {
 	return kubectl.New(args...)
 }
 
+// podPath is <ns>/<pod> for a status row. The names come from the cluster,
+// so they are made inert one by one: an escape sequence left open in one
+// would otherwise swallow the rest of the message.
+func podPath(req views.ExecRequestMsg) string {
+	return sanitize.Line(req.Namespace) + "/" + sanitize.Line(req.Pod)
+}
+
+// podLabel is <pod>[/<container>] for a status row, inert like podPath.
 func podLabel(req views.ExecRequestMsg) string {
+	pod := sanitize.Line(req.Pod)
 	if req.Container == "" {
-		return req.Pod
+		return pod
 	}
-	return req.Pod + "/" + req.Container
+	return pod + "/" + sanitize.Line(req.Container)
 }
 
 func exitLabel(err error) string {
