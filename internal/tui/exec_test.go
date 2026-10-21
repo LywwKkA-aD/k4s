@@ -1,120 +1,207 @@
 package tui
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
+
+const fakeKubectlPath = "/usr/local/bin/kubectl"
+
+// withLookPath gives m a runner that finds kubectl through look and runs
+// with base as its environment.
+func withLookPath(m Model, look func(string) (string, error), base []string) Model {
+	m.runner = kubectl.NewRunner(kubectl.RunnerConfig{
+		Kubeconfig: kubeconfigPaths(m.client),
+		LookPath:   look,
+		Environ:    func() []string { return slices.Clone(base) },
+	})
+	return m
+}
 
 func foundAt(path string) func(string) (string, error) {
 	return func(string) (string, error) { return path, nil }
 }
 
+func notFound(file string) (string, error) {
+	return "", &exec.Error{Name: file, Err: exec.ErrNotFound}
+}
+
 func kubeconfigEnv(env []string) []string {
 	var out []string
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "KUBECONFIG=") {
+		if strings.HasPrefix(kv, kubectl.EnvKubeconfig+"=") {
 			out = append(out, kv)
 		}
 	}
 	return out
 }
 
-func TestNewExecCommand(t *testing.T) {
+// TestExecRunsTheFooterCommand is the exec contract: the decorated command
+// the footer shows, pasted into a shell, splits into exactly the argv k4s
+// runs, and the child reads the same kubeconfig files as the TUI.
+func TestExecRunsTheFooterCommand(t *testing.T) {
 	t.Parallel()
 
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shells only")
+	}
 	sep := string(os.PathListSeparator)
-	req := views.ExecRequestMsg{Namespace: "ns", Pod: "pod-1", Container: "app"}
-	wantArgs := []string{"kubectl", "exec", "-it", "--context", "staging", "-n", "ns", "-c", "app", "pod-1", "--", "sh"}
-
+	req := views.ExecRequestMsg{Namespace: "shop", Pod: "api-7d9f", Container: "app"}
 	cases := []struct {
 		name    string
 		client  *k8s.Client
-		wantEnv []string // nil means the child inherits the parent environment
+		flags   sessionFlags
+		wantEnv []string // KUBECONFIG entries in the child's environment
 	}{
 		{
-			name:    "single kubeconfig",
-			client:  &k8s.Client{Context: "staging", KubeconfigPaths: []string{"/home/u/.kube/config"}},
-			wantEnv: []string{"KUBECONFIG=/home/u/.kube/config"},
+			name:    "current context",
+			client:  &k8s.Client{Context: "dev", CurrentContext: "dev", KubeconfigPaths: []string{"/home/me/.kube/config"}},
+			wantEnv: []string{"KUBECONFIG=/home/me/.kube/config"},
 		},
 		{
-			name:    "merged kubeconfig list keeps precedence order",
-			client:  &k8s.Client{Context: "staging", KubeconfigPaths: []string{"/a/one", "/b/two"}},
+			name:    "switched context with a space in its name",
+			client:  &k8s.Client{Context: "it's prod", CurrentContext: "dev", KubeconfigPaths: []string{"/home/me/.kube/config"}},
+			wantEnv: []string{"KUBECONFIG=/home/me/.kube/config"},
+		},
+		{
+			name: "k3s fallback",
+			client: &k8s.Client{
+				Context: "default", CurrentContext: "default", KubeconfigPaths: []string{"/etc/rancher/k3s/k3s.yaml"},
+				Source: k8s.Source{Paths: []string{"/etc/rancher/k3s/k3s.yaml"}, Origin: k8s.OriginK3s},
+			},
+			wantEnv: []string{"KUBECONFIG=/etc/rancher/k3s/k3s.yaml"},
+		},
+		{
+			name:    "several files a bare kubectl would not load",
+			client:  &k8s.Client{Context: "dev", CurrentContext: "dev", KubeconfigPaths: []string{"/a/one", "/b/two"}},
 			wantEnv: []string{"KUBECONFIG=/a/one" + sep + "/b/two"},
 		},
 		{
-			name:   "no recorded paths inherits the environment",
-			client: &k8s.Client{Context: "staging"},
+			name:    "context named on the command line",
+			client:  &k8s.Client{Context: "dev", CurrentContext: "dev", KubeconfigPaths: []string{"/home/me/.kube/config"}},
+			flags:   sessionFlags{context: true},
+			wantEnv: []string{"KUBECONFIG=/home/me/.kube/config"},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			cmd, err := newExecCommand(foundAt("/usr/local/bin/kubectl"), tc.client, req)
+			m := New(nil, nil)
+			m.flags = tc.flags
+			m = m.withClient(tc.client)
+			m.kubectlSession = newKubectlSession(tc.client, tc.flags, func(string) string { return "" }, "/home/me")
+			m = withLookPath(m, foundAt(fakeKubectlPath), []string{"PATH=/bin", "KUBECONFIG=/stale"})
+
+			c, err := m.execCommand(req)
 			if err != nil {
-				t.Fatalf("newExecCommand: %v", err)
+				t.Fatalf("execCommand: %v", err)
 			}
-			if !slices.Equal(cmd.Args, wantArgs) {
-				t.Errorf("Args = %v, want %v", cmd.Args, wantArgs)
+			shown := m.decorate(mustExec(t, req))
+			words := shellSplit(t, shown.String())
+			env, argv := splitAssignments(words)
+			if c.Args[0] != fakeKubectlPath || !slices.Equal(argv[1:], c.Args[1:]) || argv[0] != "kubectl" {
+				t.Errorf("footer %q splits into %q, exec runs %q", shown.String(), argv, c.Args)
 			}
-			if tc.wantEnv == nil {
-				if cmd.Env != nil {
-					t.Errorf("Env = %v, want nil (inherit)", cmd.Env)
+			for _, kv := range env {
+				if !slices.Contains(c.Env, kv) {
+					t.Errorf("footer assigns %s, the child's env lacks it", kv)
 				}
-				return
 			}
-			if got := kubeconfigEnv(cmd.Env); !slices.Equal(got, tc.wantEnv) {
-				t.Errorf("KUBECONFIG entries = %v, want %v", got, tc.wantEnv)
-			}
-			if len(cmd.Env) < len(os.Environ())-1 {
-				t.Errorf("Env dropped the parent environment: %d entries, parent has %d", len(cmd.Env), len(os.Environ()))
+			if got := kubeconfigEnv(c.Env); !slices.Equal(got, tc.wantEnv) {
+				t.Errorf("KUBECONFIG = %v, want %v", got, tc.wantEnv)
 			}
 		})
 	}
 }
 
-func TestExecEnvReplacesInheritedKubeconfig(t *testing.T) {
-	t.Parallel()
-
-	base := []string{"PATH=/bin", "KUBECONFIG=/etc/rancher/k3s/k3s.yaml", "HOME=/home/u"}
-	got := execEnv(base, []string{"/home/u/.kube/config"})
-	want := []string{"PATH=/bin", "HOME=/home/u", "KUBECONFIG=/home/u/.kube/config"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("execEnv = %v, want %v", got, want)
+func mustExec(t *testing.T, req views.ExecRequestMsg) kubectl.Cmd {
+	t.Helper()
+	cmd, err := views.ExecCommand(req)
+	if err != nil {
+		t.Fatalf("ExecCommand: %v", err)
 	}
-	if base[1] != "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" {
-		t.Fatalf("execEnv mutated its input: %v", base)
-	}
+	return cmd
 }
 
-func TestNewExecCommandKubectlMissing(t *testing.T) {
+// splitAssignments separates the leading NAME=value words of a shell line
+// from the command.
+func splitAssignments(words []string) (env, argv []string) {
+	for i, w := range words {
+		name, _, ok := strings.Cut(w, "=")
+		if !ok || name == "" || strings.ContainsAny(name, "/- ") {
+			return words[:i], words[i:]
+		}
+	}
+	return words, nil
+}
+
+// shellSplit asks sh to word-split line and returns the words.
+func shellSplit(t *testing.T, line string) []string {
+	t.Helper()
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh on PATH")
+	}
+	script := `set -- ` + line + `; for w in "$@"; do printf '%s\000' "$w"; done`
+	out, err := exec.Command("sh", "-c", script).Output() //nolint:gosec // test drives a fixed shell
+	if err != nil {
+		t.Fatalf("sh -c %q: %v", script, err)
+	}
+	parts := bytes.Split(out, []byte{0})
+	words := make([]string, 0, len(parts))
+	for _, p := range parts[:len(parts)-1] {
+		words = append(words, string(p))
+	}
+	return words
+}
+
+func TestExecRequestErrors(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name    string
-		lookErr error
-		want    string
+		name string
+		look func(string) (string, error)
+		req  views.ExecRequestMsg
+		want string
 	}{
-		{name: "not on PATH", lookErr: &exec.Error{Name: "kubectl", Err: exec.ErrNotFound}, want: "kubectl not found on PATH"},
-		{name: "other lookup failure", lookErr: errors.New("permission denied"), want: "find kubectl: permission denied"},
+		{
+			name: "neither kubectl nor k3s on PATH", look: notFound,
+			req: views.ExecRequestMsg{Namespace: "ns", Pod: "pod-1"}, want: "exec: kubectl not found on PATH",
+		},
+		{
+			name: "lookup failure", look: func(string) (string, error) { return "", errors.New("permission denied") },
+			req: views.ExecRequestMsg{Namespace: "ns", Pod: "pod-1"}, want: "exec: find kubectl: permission denied",
+		},
+		{
+			name: "pod name that reads as a flag", look: foundAt(fakeKubectlPath),
+			req: views.ExecRequestMsg{Namespace: "ns", Pod: "--all"}, want: `exec: invalid name: pod "--all"`,
+		},
+		{
+			name: "bad container", look: foundAt(fakeKubectlPath),
+			req: views.ExecRequestMsg{Namespace: "ns", Pod: "pod-1", Container: "A B"}, want: `exec: invalid name: container "A B"`,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			lookPath := func(string) (string, error) { return "", tc.lookErr }
-			cmd, err := newExecCommand(lookPath, &k8s.Client{}, views.ExecRequestMsg{Namespace: "ns", Pod: "p"})
-			if err == nil || err.Error() != tc.want {
-				t.Fatalf("err = %v, want %q", err, tc.want)
+			m := withLookPath(New(nil, nil), tc.look, nil)
+			upd, cmd := m.Update(tc.req)
+			msg, ok := upd.(Model).status.Current(time.Now())
+			if !ok || !strings.HasPrefix(msg.Text, tc.want) {
+				t.Fatalf("status = %+v, %v; want it to start with %q", msg, ok, tc.want)
 			}
-			if cmd != nil {
-				t.Fatalf("cmd = %v, want nil when kubectl cannot be found", cmd)
+			if cmd == nil {
+				t.Fatal("expected the status expiry timer, got nil cmd")
 			}
 		})
 	}
@@ -133,28 +220,6 @@ func TestExecRequestWithoutKubectlShowsFooterError(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("expected the status expiry timer, got nil cmd")
-	}
-}
-
-func TestWithoutEnvKey(t *testing.T) {
-	t.Parallel()
-
-	base := []string{"PATH=/bin", "KUBECONFIG=/a", "Kubeconfig=/b", "KUBECONFIGX=/c"}
-	cases := []struct {
-		name     string
-		foldCase bool
-		want     []string
-	}{
-		{name: "case-sensitive like unix", want: []string{"PATH=/bin", "Kubeconfig=/b", "KUBECONFIGX=/c"}},
-		{name: "case-insensitive like windows", foldCase: true, want: []string{"PATH=/bin", "KUBECONFIGX=/c"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := withoutEnvKey(base, kubeconfigEV, tc.foldCase); !slices.Equal(got, tc.want) {
-				t.Fatalf("withoutEnvKey = %v, want %v", got, tc.want)
-			}
-		})
 	}
 }
 

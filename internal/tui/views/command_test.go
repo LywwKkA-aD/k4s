@@ -1,6 +1,7 @@
 package views_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -142,6 +143,36 @@ func TestLogsCommandWithoutAValidCommand(t *testing.T) {
 			got := views.LogsCommand(tc.namespace, tc.pods, tc.container, 100, tc.target)
 			if !got.IsZero() || got.Display() != "" {
 				t.Errorf("LogsCommand = %q, want the zero Cmd", got.Display())
+			}
+		})
+	}
+}
+
+func TestExecCommand(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		req     views.ExecRequestMsg
+		want    string
+		wantErr bool
+	}{
+		{name: "default container", req: views.ExecRequestMsg{Namespace: "demo", Pod: "web-1"}, want: "kubectl exec -it -n demo web-1 -- sh"},
+		{name: "named container", req: views.ExecRequestMsg{Namespace: "demo", Pod: "web-1", Container: "app"}, want: "kubectl exec -it -n demo -c app web-1 -- sh"},
+		{name: "pod named like a flag", req: views.ExecRequestMsg{Namespace: "demo", Pod: "--all"}, wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := views.ExecCommand(tc.req)
+			if tc.wantErr {
+				if !errors.Is(err, kubectl.ErrInvalidName) {
+					t.Fatalf("err = %v, want ErrInvalidName", err)
+				}
+				return
+			}
+			if err != nil || got.String() != tc.want {
+				t.Fatalf("ExecCommand = %q, %v; want %q", got.String(), err, tc.want)
 			}
 		})
 	}
