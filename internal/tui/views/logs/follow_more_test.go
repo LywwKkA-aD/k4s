@@ -31,7 +31,7 @@ func TestAFailedReresolveSaysSoOnce(t *testing.T) {
 	r.feed(r.end("web-h1-a", io.ErrUnexpectedEOF))
 	r.advance(explainDebounce)
 	r.advance(followInterval)
-	want := "logs of deployment web: cannot list its pods again: etcd is down"
+	want := "logs of deployment web: cannot list its pods again: API unavailable (503)"
 	if got := r.statuses(); len(got) != 1 || got[0] != want {
 		t.Fatalf("statuses = %q, want %q once", got, want)
 	}

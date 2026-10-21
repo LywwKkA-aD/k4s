@@ -82,7 +82,7 @@ func TestJudge(t *testing.T) {
 			name: "status not caught up with a waiting container", found: true, state: podIn("Running", k8s.ContainerState{Running: true, Started: started}),
 			err: waitingToStart, want: outDropped, note: "◇ stream dropped · reconnected",
 		},
-		{name: "a refusal", found: true, state: podIn("Running", k8s.ContainerState{Running: true, Started: started}), err: forbidden, want: outError, note: "○ ended: " + forbidden.ErrStatus.Message},
+		{name: "a refusal", found: true, state: podIn("Running", k8s.ContainerState{Running: true, Started: started}), err: forbidden, want: outError, note: "○ ended: forbidden: pods/log · kubectl auth can-i --list"},
 		{name: "a panic in k4s", found: true, state: podIn("Running", k8s.ContainerState{Running: true, Started: started}), err: internalError{log: "the k4s log"}, want: outError, note: "○ ended: internal error (see the k4s log)"},
 		{name: "the container is gone from the pod", found: true, state: k8s.PodState{Phase: "Running"}, err: io.EOF, want: outError, note: "○ ended: container app is not in the pod"},
 		{name: "a pod being created", found: true, state: podIn("Pending", k8s.ContainerState{Waiting: "ContainerCreating"}), err: waitingToStart, want: outWaiting, note: "△ waiting: ContainerCreating"},

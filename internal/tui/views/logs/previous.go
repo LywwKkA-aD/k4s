@@ -137,7 +137,7 @@ func previousFailed(ns, pod, container string, err error) tea.Cmd {
 		return statusCmd(status.Error, "forbidden: cannot read the logs of pod "+pod+" in "+ns+
 			" (kubectl auth can-i get pods --subresource=log -n "+ns+")")
 	}
-	return statusCmd(status.Error, "previous logs of pod "+pod+": "+text)
+	return statusCmd(status.Error, "previous logs of pod "+pod+": "+errText(err))
 }
 
 // apiMessage is the API server's own message when err carries a status,

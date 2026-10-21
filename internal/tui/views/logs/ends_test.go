@@ -175,7 +175,7 @@ func TestEndsThatLastSayWhy(t *testing.T) {
 		},
 		{
 			name: "refused", change: func(*rig) {}, err: apierrors.NewUnauthorized("token expired"),
-			want: "[web-h1-a] ○ ended: token expired",
+			want: "[web-h1-a] ○ ended: unauthorized: credentials expired or revoked",
 		},
 	}
 	for _, tc := range cases {

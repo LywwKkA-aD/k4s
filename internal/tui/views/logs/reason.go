@@ -174,10 +174,24 @@ func hardError(err error) bool {
 	return code >= 400 && code < 500
 }
 
-// errText is a stream error in words, inert: the API's own message
-// without the request URL around it.
+// errText is err as k8s.Classify words it everywhere in k4s: inert, with
+// no URL query or credentials. Only a refusal's can-i command and an
+// unreachable k3s server's fix are kept as hints; the others offer r,
+// which the logs view does not have: its re-resolve retries by itself.
+// An error the classifier does not know reads as the API's own message
+// when it carries one, worded by Classify on its own so it is redacted
+// the same way.
 func errText(err error) string {
-	return sanitize.Line(apiMessage(err))
+	d := k8s.Classify(err)
+	switch d.Kind {
+	case k8s.KindForbidden, k8s.KindUnreachable:
+		return d.Text()
+	case k8s.KindOther:
+		if msg := apiMessage(err); msg != "" && msg != err.Error() {
+			return k8s.Classify(errors.New(msg)).Short
+		}
+	}
+	return d.Short
 }
 
 // retrySteps are the waits before a dropped stream reconnects, the last

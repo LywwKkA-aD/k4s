@@ -221,7 +221,7 @@ func TestStreamErrorsAndPlaceholders(t *testing.T) {
 	failing, _ := tuitest.Mount(t, logs.New(tuitest.NewFakeClient(t, refused), tuitest.NamespaceDemo, []string{tuitest.PodCrash}, 0, "", logs.WithClock(clock)), 100, 20)
 	t.Cleanup(func() { _ = failing.Close() })
 	failing = fire(t, failing, clock, time.Second)
-	if screen := tuitest.Screen(failing); !strings.Contains(screen, `[crash-0] ○ ended: pods/log "crash-0" is forbidden: not allowed`) {
+	if screen := tuitest.Screen(failing); !strings.Contains(screen, `[crash-0] ○ ended: forbidden: pods/log · kubectl auth can-i --list`) {
 		t.Errorf("stream error screen:\n%s", screen)
 	}
 	failing, _ = tuitest.Drive(t, failing, tuitest.Press("/"), tuitest.Type("forbidden"), tuitest.Enter())
