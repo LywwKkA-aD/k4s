@@ -50,7 +50,8 @@ func (m Model) onList(msg async.Result[[]k8s.Deployment]) (Model, tea.Cmd) {
 		return m, arm
 	}
 	m.raw = msg.Value
-	return m.withRows(), arm
+	m, gone := m.withRows().settleRestore()
+	return m, tea.Batch(arm, gone)
 }
 
 // feedFilter hands a key press or a paste to the open filter and refilters
