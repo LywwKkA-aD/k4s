@@ -7,8 +7,8 @@
 // interfaces:
 //
 //   - Stateful and Restorer: Esc brings a list back as it was left (the
-//     committed filter, the row under the cursor, the scroll, watch and
-//     view settings). The root keeps a State per history entry, hands it
+//     committed filter, the row under the cursor, watch and view
+//     settings). The root keeps a State per history entry, hands it
 //     to a freshly built view with Restore, and drops them all on :ctx.
 //   - BackHandler: Esc is the view's first, so a committed filter clears
 //     before Esc leaves the view.

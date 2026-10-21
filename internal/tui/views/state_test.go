@@ -25,13 +25,13 @@ func TestRowKey(t *testing.T) {
 func TestStateWithoutSelectionKeepsTheRest(t *testing.T) {
 	t.Parallel()
 
-	in := views.State{Filter: "pay", Selected: "shop/api", Cursor: 3, Offset: 2, Paused: true, Mode: "nodes", Sort: "cpu"}
+	in := views.State{Filter: "pay", Selected: "shop/api", Cursor: 3, Paused: true, Mode: "nodes", Sort: "cpu"}
 	got := in.WithoutSelection()
 	want := views.State{Filter: "pay", Paused: true, Mode: "nodes", Sort: "cpu"}
 	if got != want {
 		t.Fatalf("WithoutSelection = %+v, want %+v", got, want)
 	}
-	if in.Selected != "shop/api" || in.Cursor != 3 || in.Offset != 2 {
+	if in.Selected != "shop/api" || in.Cursor != 3 {
 		t.Fatalf("WithoutSelection changed its receiver: %+v", in)
 	}
 	if (views.State{}).WithoutSelection() != (views.State{}) {

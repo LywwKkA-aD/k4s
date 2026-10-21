@@ -206,7 +206,7 @@ func viewsOf(h []historyEntry) []string {
 func TestNamespaceCommandKeepsTheFilter(t *testing.T) {
 	t.Parallel()
 
-	st := views.State{Filter: "web", Selected: "demo/web-1", Cursor: 3, Offset: 1, Paused: true}
+	st := views.State{Filter: "web", Selected: "demo/web-1", Cursor: 3, Paused: true}
 	m := stubbed().switchTo(viewDeployments).withState(st)
 	next, _ := m.execCmd("ns shop")
 	v := next.current.(stubView)
