@@ -157,7 +157,8 @@ func TestHintsFollowTheFocus(t *testing.T) {
 }
 
 // TestEnterHintOnTheBannerNeedsItsPanel: Enter on the banner goes to the
-// most severe panel, so the hint is left out where that panel is hidden.
+// most severe panel, zoomed where the size leaves it out; the hint is
+// left out only where there is no room to show it at all.
 func TestEnterHintOnTheBannerNeedsItsPanel(t *testing.T) {
 	t.Parallel()
 
@@ -169,8 +170,15 @@ func TestEnterHintOnTheBannerNeedsItsPanel(t *testing.T) {
 	if got := hint(mount(t, newFeed(base), wideW, wideH), "enter"); got != "go to top pods" {
 		t.Fatalf("enter hint with top pods on screen = %q", got)
 	}
-	if got := hint(mount(t, newFeed(base), 120, 34), "enter"); got != "" {
-		t.Fatalf("enter hint with top pods hidden = %q, want none", got)
+	medium := mount(t, newFeed(base), 120, 34)
+	if got := hint(medium, "enter"); got != "go to top pods" {
+		t.Fatalf("enter hint with top pods left out = %q", got)
+	}
+	if m, _ := press(t, medium, "enter"); !strings.Contains(tuitest.Screen(m), "7 top pods") {
+		t.Fatal("enter on the banner did not open top pods zoomed")
+	}
+	if got := hint(mount(t, newFeed(base), 38, 5), "enter"); got != "" {
+		t.Fatalf("enter hint with no room for a panel = %q, want none", got)
 	}
 }
 
