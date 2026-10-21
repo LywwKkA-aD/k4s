@@ -60,6 +60,16 @@ func TestBackoffSequence(t *testing.T) {
 			want:     secs(10, 10, 5),
 		},
 		{
+			name:     "retry-after is capped",
+			outcomes: []error{apierrors.NewTooManyRequests("slow down", 86400)},
+			want:     []time.Duration{async.MaxRetryAfter},
+		},
+		{
+			name:     "retry-after at the cap is kept",
+			outcomes: []error{apierrors.NewTooManyRequests("slow down", int(async.MaxRetryAfter/time.Second))},
+			want:     []time.Duration{async.MaxRetryAfter},
+		},
+		{
 			name:     "a 429 doubles the whole interval and success eases it a step at a time",
 			outcomes: []error{errThrottled, errThrottled, nil, nil, nil},
 			want:     secs(10, 20, 10, 5, 5),
