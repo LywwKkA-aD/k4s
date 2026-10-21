@@ -162,7 +162,7 @@ func fetchCmd(gen int64, c *k8s.Client, namespace string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
-		items, err := c.ListServices(ctx, namespace)
+		items, err := c.ListServices(ctx, namespace, "")
 		return servicesMsg{gen: gen, namespace: namespace, items: items, err: err}
 	}
 }

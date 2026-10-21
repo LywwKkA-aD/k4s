@@ -22,10 +22,13 @@ type Service struct {
 	Age        time.Duration
 }
 
-// ListServices returns services in the given namespace, or all namespaces when
-// namespace == "".
-func (c *Client) ListServices(ctx context.Context, namespace string) ([]Service, error) {
-	list, err := c.Clientset.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
+// ListServices returns the services in namespace, or in all namespaces
+// when namespace is "". resourceVersion goes to the list as is: "0" lets
+// the apiserver answer from its watch cache, which is what a poll wants;
+// "" is a consistent read, for a refresh the user asked for.
+func (c *Client) ListServices(ctx context.Context, namespace, resourceVersion string) ([]Service, error) {
+	opts := metav1.ListOptions{ResourceVersion: resourceVersion}
+	list, err := c.Clientset.CoreV1().Services(namespace).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("list services: %w", err)
 	}
