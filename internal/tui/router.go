@@ -143,10 +143,7 @@ func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Help):
 		return m.openHelp(), nil
 	case key.Matches(msg, m.keys.Back):
-		if next, ok := m.popHistory(); ok {
-			return next, next.relayoutCmd()
-		}
-		return m, nil
+		return m.back()
 	case key.Matches(msg, m.keys.Copy):
 		return m.copyCommand()
 	}

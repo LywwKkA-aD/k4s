@@ -62,6 +62,9 @@ type Model struct {
 	namespace string // "" = all
 	current   views.View
 	history   []historyEntry
+	// build makes the view for a name; nil means newView. Tests use it to
+	// put stub views in history.
+	build func(m Model, name string) views.View
 
 	// overlay is the open popup or prompt, nil when there is none. While
 	// it is open it gets every key; what it asked for comes back as a
