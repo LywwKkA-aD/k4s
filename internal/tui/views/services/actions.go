@@ -17,6 +17,8 @@ func (m Model) row() (ref views.ResourceRef, cmd tea.Cmd, ok bool) {
 		return ref, statusCmd(status.Warn, "no kubeconfig"), false
 	case !m.loaded:
 		return ref, statusCmd(status.Info, "services are still loading"), false
+	case m.health.Failed():
+		return ref, statusCmd(status.Warn, "services unavailable, press r"), false
 	}
 	row := m.table.SelectedRow()
 	if row == nil {

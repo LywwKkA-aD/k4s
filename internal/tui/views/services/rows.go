@@ -127,8 +127,8 @@ func (m Model) View() string {
 	if !m.loaded {
 		return styles.Hint.Render("loading services…")
 	}
-	if m.err != nil {
-		return styles.Warn.Render("services unavailable: " + m.err.Error())
+	if m.health.Failed() {
+		return styles.Warn.Render("services unavailable: " + m.health.Err().Error())
 	}
 	body := m.table.View()
 	if len(m.table.Rows()) == 0 {
@@ -138,8 +138,15 @@ func (m Model) View() string {
 			body = styles.Hint.Render("no services")
 		}
 	}
-	if !m.filter.Active() {
+	above := make([]string, 0, 3)
+	if m.filter.Active() {
+		above = append(above, m.filter.View())
+	}
+	if banner := m.health.Banner(); banner != "" {
+		above = append(above, banner)
+	}
+	if len(above) == 0 {
 		return body
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.filter.View(), body)
+	return lipgloss.JoinVertical(lipgloss.Left, append(above, body)...)
 }
