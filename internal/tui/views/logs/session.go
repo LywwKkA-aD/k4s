@@ -6,14 +6,15 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 )
 
 // session is one run of the streams behind the view. Its events channel
-// closes once every stream has ended. Batches carry the gen they were
-// read under, so the reads a replaced session left in flight never land
-// in its successor.
+// closes once every stream has ended. Batches carry the session's Token,
+// so the reads a replaced session, or another logs view, left in flight
+// never land here.
 type session struct {
-	gen    int
+	tok    async.Token
 	events chan logEvent
 	cancel context.CancelFunc
 }
@@ -50,7 +51,7 @@ func (s streamSpec) options() k8s.LogOptions {
 // startSession starts the streams of spec: one pod is read as it comes,
 // several are merged (see runMergedStreams). Without a client or pods the
 // events channel is closed at once.
-func startSession(gen int, spec streamSpec) session {
+func startSession(tok async.Token, spec streamSpec) session {
 	ctx, cancel := context.WithCancel(context.Background())
 	events := make(chan logEvent, eventBufferSize)
 	switch {
@@ -68,7 +69,7 @@ func startSession(gen int, spec streamSpec) session {
 	default:
 		go runMergedStreams(ctx, spec, events)
 	}
-	return session{gen: gen, events: events, cancel: cancel}
+	return session{tok: tok, events: events, cancel: cancel}
 }
 
 // drainEvents pulls every event the channel currently has ready (no
@@ -101,16 +102,16 @@ func drainEvents(ch <-chan logEvent, max int) ([]logEvent, bool) {
 // channel has queued in one go. One Update tick rebuilds the viewport once
 // instead of 5000 times when --tail=5000 arrives in a flood.
 func waitOrDrainCmd(s session) tea.Cmd {
-	ch, gen := s.events, s.gen
+	ch, tok := s.events, s.tok
 	return func() tea.Msg {
 		first, ok := <-ch
 		if !ok {
-			return streamsClosedMsg{gen: gen}
+			return streamsClosedMsg{tok: tok}
 		}
 		rest, done := drainEvents(ch, drainBatchCap-1)
 		batch := make([]logEvent, 0, 1+len(rest))
 		batch = append(batch, first)
 		batch = append(batch, rest...)
-		return logEventsBatch{gen: gen, events: batch, done: done}
+		return logEventsBatch{tok: tok, events: batch, done: done}
 	}
 }

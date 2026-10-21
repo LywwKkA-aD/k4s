@@ -28,6 +28,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -84,9 +85,10 @@ type Model struct {
 	target k8s.LogTarget
 
 	sess session
-	// lastGen numbers sessions and openings, so a reply always knows
-	// whether it is still wanted.
-	lastGen int
+	// mint names this view instance; each session and opening takes its
+	// Next, so a reply from another logs view, or from a stream this one
+	// replaced, is never taken.
+	mint async.Token
 	// previous is set while the stream shows the previous instance of the
 	// container; opening is the request for it in flight, if any.
 	previous bool
@@ -138,16 +140,16 @@ type logEvent struct {
 
 // logEventsBatch is the result of one drain tick: every event the channel
 // had ready (up to drainBatchCap) plus a flag set when the channel closed
-// during the drain, so the loop knows to stop scheduling more reads. gen
+// during the drain, so the loop knows to stop scheduling more reads. tok
 // names the session it was read from.
 type logEventsBatch struct {
-	gen    int
+	tok    async.Token
 	events []logEvent
 	done   bool
 }
 
-// streamsClosedMsg says the session gen has no streams left.
-type streamsClosedMsg struct{ gen int }
+// streamsClosedMsg says the session tok has no streams left.
+type streamsClosedMsg struct{ tok async.Token }
 
 // Option changes how New builds the view.
 type Option func(*Model)
@@ -194,8 +196,8 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 	for _, opt := range opts {
 		opt(&m)
 	}
-	m.lastGen = 1
-	m.sess = startSession(m.lastGen, m.spec())
+	m.mint = async.New().Next()
+	m.sess = startSession(m.mint, m.spec())
 	return m
 }
 

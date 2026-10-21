@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ func fed(t *testing.T, m Model, lines ...string) Model {
 	for i, l := range lines {
 		events[i] = logEvent{Pod: "p", Line: l}
 	}
-	next, _ := m.Update(logEventsBatch{gen: m.sess.gen, events: events})
+	next, _ := m.Update(logEventsBatch{tok: m.sess.tok, events: events})
 	out, ok := next.(Model)
 	if !ok {
 		t.Fatalf("Update returned %T", next)
@@ -146,6 +147,35 @@ func TestTrimShiftsMatchesInOrder(t *testing.T) {
 		if !strings.Contains(m.Title(), " "+s.count+" ") {
 			t.Fatalf("step %d: title %q, want counter %s", i, m.Title(), s.count)
 		}
+	}
+}
+
+func TestABatchForAnotherViewIsDropped(t *testing.T) {
+	t.Parallel()
+
+	closed := New(nil, "ns", []string{"p"}, 100, "")
+	current := sized(t)
+	stray := logEventsBatch{tok: closed.sess.tok, events: []logEvent{{Pod: "p", Line: "from the closed view"}}}
+	next, cmd := current.Update(stray)
+	if got := next.(Model); len(got.rawLines) != 0 || cmd != nil {
+		t.Fatalf("a batch read for another view landed: %d lines, cmd %v", len(got.rawLines), cmd != nil)
+	}
+}
+
+func TestAPreviousReplyForAnotherViewIsDropped(t *testing.T) {
+	t.Parallel()
+
+	opened := func() Model {
+		m := New(nil, "ns", []string{"p"}, 100, "", withSource(fakeStreamer{"p": "line\n"}))
+		t.Cleanup(func() { _ = m.Close() })
+		next, _ := m.Update(tuitest.Press("p"))
+		return next.(Model)
+	}
+	closed, current := opened(), opened()
+	stray := previousOpenedMsg{tok: closed.opening.tok, err: context.Canceled}
+	next, cmd := current.Update(stray)
+	if cmd != nil || !next.(Model).opening.busy() {
+		t.Fatal("a previous-instance reply for another view was taken")
 	}
 }
 

@@ -17,7 +17,7 @@ import (
 // session the view has since replaced is dropped. An internal error (a
 // recovered panic) is also said in the status line.
 func (m Model) onLogEventsBatch(msg logEventsBatch) (views.View, tea.Cmd) {
-	if msg.gen != m.sess.gen {
+	if !m.sess.tok.Accept(msg.tok) {
 		return m, nil
 	}
 	first := len(m.rawLines)
@@ -98,14 +98,10 @@ func (m *Model) trim() int {
 
 // shiftMatches renumbers matches after the first drop lines went.
 func shiftMatches(matches []match, current, drop int) ([]match, int) {
-	gone := sort.Search(len(matches), func(i int) bool { return matches[i].line >= drop })
-	if gone == 0 {
-		out := make([]match, len(matches))
-		for i, mt := range matches {
-			out[i] = match{line: mt.line - drop, span: mt.span}
-		}
-		return out, current
+	if len(matches) == 0 {
+		return nil, 0
 	}
+	gone := sort.Search(len(matches), func(i int) bool { return matches[i].line >= drop })
 	out := make([]match, 0, len(matches)-gone)
 	for _, mt := range matches[gone:] {
 		out = append(out, match{line: mt.line - drop, span: mt.span})

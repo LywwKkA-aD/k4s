@@ -10,6 +10,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/sanitize"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -18,7 +19,7 @@ import (
 // view goes on streaming the current log until it is answered, so a
 // container that never restarted costs a status line, not the stream.
 type opening struct {
-	gen    int
+	tok    async.Token
 	cancel context.CancelFunc
 }
 
@@ -33,7 +34,7 @@ func (o opening) stop() {
 // previousOpenedMsg answers an opening: the session reading the previous
 // instance's log, or why it could not be opened.
 type previousOpenedMsg struct {
-	gen  int
+	tok  async.Token
 	sess session
 	err  error
 }
@@ -50,26 +51,26 @@ func (m Model) togglePrevious() (Model, tea.Cmd) {
 		return m, statusCmd(status.Info, "opening the previous instance…")
 	case m.previous:
 		m.previous = false
-		m.lastGen++
-		return m.restart(startSession(m.lastGen, m.spec()))
+		m.mint = m.mint.Next()
+		return m.restart(startSession(m.mint, m.spec()))
 	}
-	m.lastGen++
+	m.mint = m.mint.Next()
 	ctx, cancel := context.WithCancel(context.Background())
-	m.opening = opening{gen: m.lastGen, cancel: cancel}
-	return m, openPrevious(ctx, cancel, m.lastGen, m.spec())
+	m.opening = opening{tok: m.mint, cancel: cancel}
+	return m, openPrevious(ctx, cancel, m.mint, m.spec())
 }
 
 // openPrevious opens the previous instance's log and starts reading it.
 // The stream is opened before the view gives up the current one, so an
 // error leaves the view as it was.
-func openPrevious(ctx context.Context, cancel context.CancelFunc, gen int, spec streamSpec) tea.Cmd {
+func openPrevious(ctx context.Context, cancel context.CancelFunc, tok async.Token, spec streamSpec) tea.Cmd {
 	pod, opts := spec.pods[0], spec.options()
 	opts.Previous = true
 	return func() tea.Msg {
 		stream, err := spec.src.StreamLogs(ctx, spec.namespace, pod, opts)
 		if err != nil {
 			cancel()
-			return previousOpenedMsg{gen: gen, err: err}
+			return previousOpenedMsg{tok: tok, err: err}
 		}
 		events := make(chan logEvent, eventBufferSize)
 		go func() {
@@ -79,12 +80,12 @@ func openPrevious(ctx context.Context, cancel context.CancelFunc, gen int, spec 
 			})
 			readOnePod(ctx, stream, pod, events)
 		}()
-		return previousOpenedMsg{gen: gen, sess: session{gen: gen, events: events, cancel: cancel}}
+		return previousOpenedMsg{tok: tok, sess: session{tok: tok, events: events, cancel: cancel}}
 	}
 }
 
 func (m Model) onPreviousOpened(msg previousOpenedMsg) (views.View, tea.Cmd) {
-	if !m.opening.busy() || msg.gen != m.opening.gen {
+	if !m.opening.busy() || !m.opening.tok.Accept(msg.tok) {
 		msg.sess.stop()
 		return m, nil
 	}
