@@ -108,6 +108,12 @@ func (c *Client) startPodPortForward(namespace, podName string, localPort, remot
 // runForwarder starts client-go's forwarder over dialer on its own
 // goroutine and returns the session that controls it. release runs once
 // the forwarder has returned.
+//
+// A panic on that goroutine ends the session with ErrInternal. The
+// forwarder serves each connection on goroutines of its own, which this
+// recover does not reach: the observe wrappers guard what runs below them
+// there (tunnelErrors.guard), and client-go's own code on those
+// goroutines is out of scope.
 func runForwarder(dialer streamhttp.Dialer, podName string, localPort, remotePort uint16, stopCh chan struct{}, release func(), now func() time.Time) (*PortForwardSession, error) {
 	readyCh := make(chan struct{})
 	errCh := make(chan error, 1)

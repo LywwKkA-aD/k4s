@@ -2,13 +2,16 @@ package k8s
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 	streamhttp "k8s.io/streaming/pkg/httpstream"
 )
 
@@ -86,10 +89,29 @@ type observedConn struct {
 	errs *tunnelErrors
 }
 
+// guard is deferred by every wrapper below with its error result. They
+// run on client-go's per-connection goroutines, which the forwarder's
+// recover in runForwarder does not cover, so a panic in a wrapper, or in
+// the stream or connection it calls, would end k4s with the terminal in
+// raw mode. guard turns it into an ErrInternal for client-go, which drops
+// that one connection, and records it on the session, which keeps running.
+// client-go's own code on those goroutines is out of reach: only what runs
+// below a wrapper's frame is covered.
+func (e *tunnelErrors) guard(op string, err *error) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	klog.Errorf("port-forward %s panicked: %v\n%s", op, r, debug.Stack())
+	*err = fmt.Errorf("%w: %s panicked: %v", ErrInternal, op, r)
+	e.record((*err).Error())
+}
+
 // CreateStream implements streamhttp.Connection. client-go reads each
 // connection's error stream to the end, so its whole message passes
 // through observedStream.
-func (c observedConn) CreateStream(headers http.Header) (streamhttp.Stream, error) {
+func (c observedConn) CreateStream(headers http.Header) (_ streamhttp.Stream, err error) {
+	defer c.errs.guard("create stream", &err)
 	s, err := c.Connection.CreateStream(headers)
 	if err != nil {
 		c.errs.record(err.Error())
@@ -110,8 +132,9 @@ type observedStream struct {
 }
 
 // Read implements io.Reader.
-func (s *observedStream) Read(p []byte) (int, error) {
-	n, err := s.Stream.Read(p)
+func (s *observedStream) Read(p []byte) (n int, err error) {
+	defer s.errs.guard("read", &err)
+	n, err = s.Stream.Read(p)
 	if room := maxTunnelError - len(s.msg); room > 0 {
 		s.msg = append(s.msg, p[:min(n, room)]...)
 	}
@@ -122,4 +145,16 @@ func (s *observedStream) Read(p []byte) (int, error) {
 		s.errs.record(err.Error())
 	}
 	return n, err
+}
+
+// Write implements io.Writer.
+func (s *observedStream) Write(p []byte) (n int, err error) {
+	defer s.errs.guard("write", &err)
+	return s.Stream.Write(p)
+}
+
+// Close implements io.Closer.
+func (s *observedStream) Close() (err error) {
+	defer s.errs.guard("close", &err)
+	return s.Stream.Close()
 }
