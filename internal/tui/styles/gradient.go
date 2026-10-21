@@ -16,6 +16,10 @@ const GradientSteps = 9
 // widths, but only the current few are ever drawn again.
 const maxCachedRamps = 32
 
+// maxRampWidth caps a ramp: no terminal is wider, and an absurd reported
+// width must not allocate a matching slice. Wider runs get 1024 cells.
+const maxRampWidth = 1024
+
 // Ramp is the gradient spread over a run of cells. It is read-only, so one
 // cached Ramp serves every caller.
 type Ramp struct {
@@ -58,6 +62,7 @@ func (g *gradientCache) ramp(width int) Ramp {
 	if width <= 0 {
 		return Ramp{}
 	}
+	width = min(width, maxRampWidth)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if r, ok := g.ramps[width]; ok {
