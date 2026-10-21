@@ -2,6 +2,7 @@ package styles
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"regexp"
 	"slices"
@@ -51,6 +52,12 @@ func sample() map[string]string {
 	}
 	for _, id := range PodPalette() {
 		out["pod "+string(id)] = lipgloss.NewStyle().Foreground(PodColor(id)).Render("▌")
+	}
+	for name, s := range dashboardSample(Dashboard()) {
+		out[name] = s
+	}
+	for i, c := range GradientStops() {
+		out[fmt.Sprintf("gradient stop %d", i)] = lipgloss.NewStyle().Foreground(c).Render("━")
 	}
 	return out
 }
@@ -164,6 +171,10 @@ func TestMonoKeepsStateVisible(t *testing.T) {
 		{name: "ok", want: []int{1}},
 		{name: "err", want: []int{1, 4}},
 		{name: "title", want: []int{1}},
+		{name: "dash warn", want: []int{1}},
+		{name: "dash err", want: []int{1, 4}},
+		{name: "dash selection", want: []int{7}},
+		{name: "dash title focused", want: []int{1}},
 	}
 	for _, c := range cases {
 		got := shown(t, profile, out[c.name])
@@ -174,8 +185,10 @@ func TestMonoKeepsStateVisible(t *testing.T) {
 			}
 		}
 	}
-	if slices.Contains(sgrCodes(shown(t, profile, out["warn"])), 4) {
-		t.Error("warn must not underline, or it reads as an error")
+	for _, name := range []string{"warn", "dash warn"} {
+		if slices.Contains(sgrCodes(shown(t, profile, out[name])), 4) {
+			t.Errorf("%s must not underline, or it reads as an error", name)
+		}
 	}
 	if slices.Contains(sgrCodes(shown(t, profile, out["hint"])), 2) {
 		t.Error("hint must not be faint")
@@ -227,10 +240,15 @@ func TestNoColorKeepsStateMarkers(t *testing.T) {
 	if !forced || profile != colorprofile.ASCII {
 		t.Fatalf("ColorProfile() = %v, %v; want ASCII, true", profile, forced)
 	}
+	dash := Dashboard()
 	for name, s := range map[string]string{
-		"selected row": Table().Selected.Render("nginx"),
-		"warn":         Warn.Render("warn"),
-		"err":          Err.Render("err"),
+		"selected row":       Table().Selected.Render("nginx"),
+		"warn":               Warn.Render("warn"),
+		"err":                Err.Render("err"),
+		"dash selection":     dash.Selection.Render(CursorMarker + "nginx"),
+		"dash warn":          dash.Warn.Render(GlyphWarn),
+		"dash err":           dash.Err.Render(GlyphErr),
+		"dash title focused": dash.TitleFocused.Render(" 3 pods "),
 	} {
 		got := shown(t, profile, s)
 		codes := sgrCodes(got)

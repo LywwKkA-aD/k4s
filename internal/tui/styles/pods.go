@@ -19,9 +19,12 @@ var podColors = []token{
 	{Light: "#4D7A1F", Dark: "#A3BE8C"}, // lime
 	{Light: "#7A6000", Dark: "#E5C07B"}, // yellow
 	{Light: "#C0262D", Dark: "#F07178"}, // red
-	{Light: "#00727A", Dark: "#3FC1C9"}, // cyan
+	{Light: "#00727A", Dark: "#3FC1C9"}, // cyan, also accent2
 	{Light: "#8E3BA6", Dark: "#C678DD"}, // magenta
 }
+
+// accent2PodColor is the podColors entry the accent2 token reuses.
+const accent2PodColor = 8
 
 // PodColorID names one pod colour. Render it through PodColor so light and
 // mono themes get their own variant.

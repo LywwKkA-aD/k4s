@@ -68,8 +68,8 @@ func use(p palette) {
 	Subtitle = lipgloss.NewStyle().Foreground(p.muted).Italic(true)
 	Hint = lipgloss.NewStyle().Foreground(p.muted)
 	OK = lipgloss.NewStyle().Foreground(p.ok).Bold(p.mono)
-	Warn = lipgloss.NewStyle().Foreground(p.warn).Bold(p.mono)
-	Err = lipgloss.NewStyle().Foreground(p.err).Bold(true).Underline(p.mono)
+	Warn = warnStyle(p)
+	Err = errStyle(p)
 	Stat = lipgloss.NewStyle().
 		Foreground(p.accent).
 		Bold(true).
@@ -96,6 +96,28 @@ func use(p palette) {
 		Padding(1, 3)
 	PopupTitle = lipgloss.NewStyle().Bold(true).Foreground(p.accent)
 	Placeholder = lipgloss.NewStyle().Foreground(p.muted).Italic(p.mono)
+	dash = dashboardStyles(p)
+	gradients.reset(blendStops(p))
+}
+
+// warnStyle bolds warnings in mono, where they have no colour. It never
+// underlines, or a warning would read as an error.
+func warnStyle(p palette) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(p.warn).Bold(p.mono)
+}
+
+func errStyle(p palette) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(p.err).Bold(true).Underline(p.mono)
+}
+
+// selectedStyle is built from scratch: the bubbles table default carries an
+// ANSI 212 foreground that would leak into mono.
+func selectedStyle(p palette) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(p.selectionFg).
+		Background(p.selectionBg).
+		Bold(true).
+		Reverse(p.mono)
 }
 
 // Table returns the table styles used across views.
@@ -107,13 +129,7 @@ func Table() table.Styles {
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(active.muted).
 		BorderBottom(true)
-	// Built from scratch: the bubbles default carries an ANSI 212
-	// foreground that would leak into mono.
-	s.Selected = lipgloss.NewStyle().
-		Foreground(active.selectionFg).
-		Background(active.selectionBg).
-		Bold(true).
-		Reverse(active.mono)
+	s.Selected = selectedStyle(active)
 	return s
 }
 
