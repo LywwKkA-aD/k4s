@@ -11,6 +11,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
@@ -36,8 +37,10 @@ type Model struct {
 
 	raw []k8s.Pod
 	// shown is raw through the filter, in table order: the cursor indexes it.
-	shown  []k8s.Pod
-	err    error
+	shown []k8s.Pod
+	// health is the last list answer: an error over earlier rows is a stale
+	// view, one before any rows is the body.
+	health stale.Health
 	loaded bool
 
 	// tok is the view's mint: every row action takes the next Token.

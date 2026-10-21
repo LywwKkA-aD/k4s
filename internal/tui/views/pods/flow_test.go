@@ -296,8 +296,8 @@ func TestRefreshRespectsBusy(t *testing.T) {
 		t.Fatalf("r should issue one fetch, got:\n%s", tuitest.Describe(first))
 	}
 	m, second := tuitest.Step(t, m, tuitest.Press("r"))
-	if len(second) != 0 {
-		t.Fatalf("r while a fetch is in flight must not issue another:\n%s", tuitest.Describe(second))
+	if !onlyRefreshNotice(second) {
+		t.Fatalf("r while a fetch is in flight must only say so, not issue another:\n%s", tuitest.Describe(second))
 	}
 
 	if err := c.Clientset.CoreV1().Pods(tuitest.NamespaceDemo).Delete(context.Background(), tuitest.PodWeb2, metav1.DeleteOptions{}); err != nil {
@@ -333,7 +333,7 @@ func TestStaleReplyFromAnotherViewIsDropped(t *testing.T) {
 	if screen := tuitest.Screen(fresh); !strings.Contains(screen, "loading pods") {
 		t.Errorf("a reply addressed to an older view was applied:\n%s", screen)
 	}
-	if _, again := tuitest.Step(t, fresh, tuitest.Press("r")); len(again) != 0 {
+	if _, again := tuitest.Step(t, fresh, tuitest.Press("r")); !onlyRefreshNotice(again) {
 		t.Errorf("the stale reply released the busy flag:\n%s", tuitest.Describe(again))
 	}
 

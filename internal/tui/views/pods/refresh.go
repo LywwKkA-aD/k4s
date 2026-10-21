@@ -9,6 +9,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -54,7 +55,7 @@ func (m Model) refresh() (Model, tea.Cmd) {
 	}
 	poll, ok := m.poll.Begin()
 	if !ok {
-		return m, nil
+		return m, statusCmd(status.Info, "refresh already running")
 	}
 	m.poll = poll
 	return m, m.list()
@@ -66,16 +67,17 @@ func (m Model) onList(msg async.Result[[]k8s.Pod]) (Model, tea.Cmd) {
 	if !m.poll.Accept(msg.Token) {
 		return m, nil
 	}
-	var next tea.Cmd
+	var next, said tea.Cmd
 	m.poll, next = m.poll.Done(msg.Token, msg.Err)
+	m.health, said = m.health.Fold(msg.Err)
 	m.loaded = true
-	m.err = msg.Err
 	if msg.Err != nil {
-		return m, next
+		m.table.SetHeight(max(m.tableHeight(), minTableRows))
+		return m, tea.Batch(next, said)
 	}
 	m.raw = msg.Value
 	m, gone := m.refiltered().settlePending()
-	return m, tea.Batch(next, gone)
+	return m, tea.Batch(next, said, gone)
 }
 
 func (m Model) resized(msg tea.WindowSizeMsg) Model {
@@ -87,13 +89,17 @@ func (m Model) resized(msg tea.WindowSizeMsg) Model {
 	return m
 }
 
-// tableHeight reserves one body line for the filter bar when active so the
-// table does not overlap the prompt.
+// tableHeight reserves a body line for the filter bar when active and one
+// for the stale banner so the table does not overlap them.
 func (m Model) tableHeight() int {
+	h := m.bodyH
 	if m.filter.Active() {
-		return m.bodyH - 1
+		h--
 	}
-	return m.bodyH
+	if m.health.Stale() {
+		h--
+	}
+	return h
 }
 
 func (m Model) openFilter() (Model, tea.Cmd) {
