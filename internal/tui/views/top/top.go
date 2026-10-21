@@ -20,6 +20,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -344,18 +345,18 @@ func isMetricsServerMissing(err error) bool {
 
 // Title implements views.View. Stable "top" so the navigation history
 // can rebuild the view on Esc. The mode (pods vs nodes) is reflected in
-// KubectlEquivalent only.
+// Command only.
 func (m Model) Title() string { return "top" }
 
-// KubectlEquivalent implements views.View.
-func (m Model) KubectlEquivalent() string {
+// Command implements views.View.
+func (m Model) Command() kubectl.Cmd {
 	if m.mode == modeNodes {
-		return "kubectl top nodes"
+		return kubectl.New("top", "nodes")
 	}
 	if m.namespace == "" {
-		return "kubectl top pods -A"
+		return kubectl.New("top", "pods", "-A")
 	}
-	return "kubectl top pods -n " + m.namespace
+	return kubectl.New("top", "pods", "-n", m.namespace)
 }
 
 // Help implements views.View.

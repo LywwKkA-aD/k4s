@@ -1,2 +1,2 @@
  q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  ↑↓/pgup/pgdn scroll  ·  f follow  ·  w wrap  ·  ← scroll left  ·  → scroll right  ·  t tag pod…
- ≈ kubectl logs -f --tail=50 -n demo {web-1,web-2}
+ ≈ kubectl logs -f web-1 --tail=50 -n demo

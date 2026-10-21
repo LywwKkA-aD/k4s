@@ -48,8 +48,8 @@ func TestDescribeRendersEachKind(t *testing.T) {
 					t.Errorf("screen lacks %q:\n%s", w, screen)
 				}
 			}
-			if got := m.KubectlEquivalent(); got != tc.kubectl {
-				t.Errorf("KubectlEquivalent = %q, want %q", got, tc.kubectl)
+			if got := m.Command().String(); got != tc.kubectl {
+				t.Errorf("Command = %q, want %q", got, tc.kubectl)
 			}
 			if got := m.Title(); got != string(tc.kind)+" · "+tc.name {
 				t.Errorf("Title = %q for content that fits", got)

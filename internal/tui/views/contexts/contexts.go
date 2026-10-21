@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -154,8 +155,8 @@ func (m Model) View() string {
 // Title implements views.View.
 func (m Model) Title() string { return "contexts" }
 
-// KubectlEquivalent implements views.View.
-func (m Model) KubectlEquivalent() string { return "kubectl config get-contexts" }
+// Command implements views.View.
+func (m Model) Command() kubectl.Cmd { return kubectl.New("config", "get-contexts") }
 
 // Help implements views.View.
 func (m Model) Help() []key.Binding {

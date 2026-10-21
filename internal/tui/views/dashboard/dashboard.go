@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -168,16 +169,13 @@ func (m Model) View() string {
 	return out
 }
 
-// Title implements views.View. Stable routing name; watch state is in
-// KubectlEquivalent's "--watch" suffix.
+// Title implements views.View. Stable routing name.
 func (m Model) Title() string { return "dashboard" }
 
-// KubectlEquivalent implements views.View.
-func (m Model) KubectlEquivalent() string {
-	if m.watchEnabled {
-		return "kubectl get all -A --watch"
-	}
-	return "kubectl get all -A"
+// Command implements views.View. k4s polls rather than holding a watch
+// open, so the command has no --watch.
+func (m Model) Command() kubectl.Cmd {
+	return kubectl.New("get", "all", "-A")
 }
 
 // Help implements views.View.

@@ -111,12 +111,14 @@ func (m Model) footerTopRow(width int) string {
 	return styles.Hint.Render(ansi.Truncate(strings.Join(m.footerBindings(), "  ·  "), width, "…"))
 }
 
+// footerCommandRow is the active command as the user would paste it, with
+// ApproxMark in front when k4s does not do exactly what it says.
 func (m Model) footerCommandRow(width int) string {
-	eq := m.current.KubectlEquivalent()
-	if eq == "" {
+	shown := m.current.Command().Display()
+	if shown == "" {
 		return ""
 	}
-	return styles.KubectlHint.Render(ansi.Truncate("≈ "+eq, width, "…"))
+	return styles.KubectlHint.Render(ansi.Truncate(shown, width, "…"))
 }
 
 func (m Model) footerBindings() []string {

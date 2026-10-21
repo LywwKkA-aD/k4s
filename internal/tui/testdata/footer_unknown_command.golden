@@ -1,2 +1,2 @@
  unknown command: nope
- ≈ kubectl get all -A --watch
+ kubectl get all -A

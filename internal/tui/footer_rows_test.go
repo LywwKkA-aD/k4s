@@ -77,7 +77,7 @@ func TestLongFooterRowsEndInAnEllipsis(t *testing.T) {
 	if !strings.HasPrefix(hints, "q home") || !strings.HasSuffix(hints, "…") {
 		t.Errorf("hints row = %q, want it cut with an ellipsis", hints)
 	}
-	if command != "≈ kubectl get pods -n demo --watch" {
+	if command != "kubectl get pods -n demo" {
 		t.Errorf("command row = %q", command)
 	}
 }

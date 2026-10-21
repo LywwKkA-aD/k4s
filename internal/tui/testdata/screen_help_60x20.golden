@@ -16,4 +16,4 @@
 │     w  watch                                             │
 ──────────────────────────────────────────────────────────
  q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? hel…
- ≈ kubectl get all -A --watch
+ kubectl get all -A

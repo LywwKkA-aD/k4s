@@ -16,4 +16,4 @@
 
 ──────────────────────────────────────────────────────────
  : pods, ns, dashboard
- ≈ kubectl get all -A --watch
+ kubectl get all -A

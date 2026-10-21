@@ -227,31 +227,32 @@ func TestFilterCapturesKeysAndNarrowsRows(t *testing.T) {
 	}
 }
 
-func TestWatchToggleShowsInKubectlEquivalent(t *testing.T) {
+// TestWatchToggleKeepsTheCommand: k4s polls, kubectl --watch streams, so
+// the footer command is the same with auto-refresh on or off.
+func TestWatchToggleKeepsTheCommand(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		namespace string
-		watching  string
-		paused    string
+		want      string
 	}{
-		{namespace: "", watching: "kubectl get pods -A --watch", paused: "kubectl get pods -A"},
-		{namespace: tuitest.NamespaceDemo, watching: "kubectl get pods -n demo --watch", paused: "kubectl get pods -n demo"},
+		{namespace: "", want: "kubectl get pods -A"},
+		{namespace: tuitest.NamespaceDemo, want: "kubectl get pods -n demo"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.watching, func(t *testing.T) {
+		t.Run(tc.want, func(t *testing.T) {
 			t.Parallel()
 			m := pods.New(nil, tc.namespace)
-			if got := m.KubectlEquivalent(); got != tc.watching {
-				t.Errorf("default = %q, want %q", got, tc.watching)
+			if got := m.Command().String(); got != tc.want {
+				t.Errorf("default = %q, want %q", got, tc.want)
 			}
 			m, out := tuitest.Drive(t, m, tuitest.Press("w"))
-			if got := m.KubectlEquivalent(); got != tc.paused || len(out) != 0 {
-				t.Errorf("after w = %q (out %s), want %q", got, tuitest.Describe(out), tc.paused)
+			if got := m.Command().String(); got != tc.want || len(out) != 0 {
+				t.Errorf("after w = %q (out %s), want %q", got, tuitest.Describe(out), tc.want)
 			}
 			m, _ = tuitest.Drive(t, m, tuitest.Press("w"))
-			if got := m.KubectlEquivalent(); got != tc.watching {
-				t.Errorf("after second w = %q, want %q", got, tc.watching)
+			if got := m.Command().String(); got != tc.want {
+				t.Errorf("after second w = %q, want %q", got, tc.want)
 			}
 		})
 	}
