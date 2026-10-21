@@ -157,3 +157,34 @@ func TestWithoutEnvKey(t *testing.T) {
 		})
 	}
 }
+
+// TestExecDoneReportsAFailedShell: the shell's exit error lands in the
+// status row once the TUI is back; a clean exit says nothing.
+func TestExecDoneReportsAFailedShell(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		err  error
+		want string // "" means no status
+	}{
+		{name: "clean exit", err: nil},
+		{name: "failed shell", err: errors.New("exit status 137"), want: "exec: exit status 137"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			upd, _ := New(nil, nil).Update(execDoneMsg{err: tc.err})
+			msg, ok := upd.(Model).status.Current(time.Now())
+			if tc.want == "" {
+				if ok {
+					t.Fatalf("status = %+v after a clean exit", msg)
+				}
+				return
+			}
+			if !ok || msg.Text != tc.want {
+				t.Fatalf("status = %+v, %v; want %q", msg, ok, tc.want)
+			}
+		})
+	}
+}

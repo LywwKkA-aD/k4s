@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
+	"github.com/LywwKkA-aD/k4s/internal/tui"
+	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -84,6 +86,15 @@ func TestRestorePromptCountsSavedForwards(t *testing.T) {
 	}
 }
 
+// startedPastTheGrace starts the root on clk and lets the restore confirm's
+// grace period run out, as a user reading the question would.
+func startedPastTheGrace(t *testing.T, clk *clock) tui.Model {
+	t.Helper()
+	m := startedAt(t, nil, clk)
+	clk.Advance(overlay.Grace)
+	return m
+}
+
 func TestRestorePromptKeys(t *testing.T) {
 	cases := []struct {
 		key    string
@@ -103,7 +114,7 @@ func TestRestorePromptKeys(t *testing.T) {
 		t.Run(tc.key, func(t *testing.T) {
 			isolatedState(t)
 			saveForwards(t, "")
-			m, out := tuitest.Drive(t, started(t, nil), tuitest.Press(tc.key))
+			m, out := tuitest.Drive(t, startedPastTheGrace(t, newClock()), tuitest.Press(tc.key))
 			if hasQuit(out) {
 				t.Fatal("a restore key quit the app")
 			}
@@ -117,10 +128,26 @@ func TestRestorePromptKeys(t *testing.T) {
 	}
 }
 
+// TestRestorePromptIgnoresTypeAhead: keys pressed before the question can
+// have been read do not answer it.
+func TestRestorePromptIgnoresTypeAhead(t *testing.T) {
+	isolatedState(t)
+	saveForwards(t, "")
+	clk := newClock()
+	m := startedAt(t, nil, clk)
+
+	m, _ = tuitest.Drive(t, m, tuitest.Keys("y", "enter", "esc")...)
+	requireScreen(t, m, "restore port-forwards")
+
+	clk.Advance(overlay.Grace)
+	m, _ = tuitest.Drive(t, m, tuitest.Press("n"))
+	refuteScreen(t, m, "restore port-forwards")
+}
+
 func TestRevivedForwardsShowInTheForwardsView(t *testing.T) {
 	isolatedState(t)
 	saveForwards(t, "", "")
-	m, _ := tuitest.Drive(t, started(t, nil), tuitest.Press("y"))
+	m, _ := tuitest.Drive(t, startedPastTheGrace(t, newClock()), tuitest.Press("y"))
 	m, _ = tuitest.Drive(t, m, colon("pf")...)
 	requireView(t, m, "forwards")
 	requireScreen(t, m, "19000 → 80", "19001 → 80")
@@ -157,10 +184,8 @@ func TestForwardPromptRefusesABusyPort(t *testing.T) {
 
 	req := views.ForwardRequestMsg{Kind: "pod", Namespace: tuitest.NamespaceDemo, Name: tuitest.PodWeb1}
 	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), req, tuitest.Type(fmt.Sprintf("%d:80", addr.Port)), tuitest.Enter())
-	want := fmt.Sprintf("port-forward: local port %d already in use — pick another", addr.Port)
-	if got := footer(m); !strings.Contains(got, want) {
-		t.Errorf("footer = %q, want %q", got, want)
-	}
+	// The prompt stays open with the reason, so another port is one edit away.
+	requireScreen(t, m, fmt.Sprintf("local port %d already in use — pick another", addr.Port), fmt.Sprintf("❯ %d:80", addr.Port))
 	requireView(t, m, "dashboard")
 	if fresh := started(t, nil); strings.Contains(tuitest.Screen(fresh), "restore port-forwards") {
 		t.Error("a refused forward was saved")
@@ -185,6 +210,27 @@ func TestBrokenStateDisablesForwards(t *testing.T) {
 	}
 	m, _ = tuitest.Drive(t, m, colon("pf")...)
 	requireScreen(t, m, "port-forward subsystem unavailable")
+
+	// A pair chosen before the state broke cannot be saved either.
+	chosen := overlay.ForwardChosenMsg{Request: views.ForwardRequestMsg{Kind: "pod", Namespace: tuitest.NamespaceDemo, Name: tuitest.PodWeb1}, Local: 9000, Remote: 80}
+	m, _ = tuitest.Drive(t, m, chosen)
+	if got := footer(m); !strings.Contains(got, "port-forward: state subsystem unavailable") {
+		t.Errorf("footer = %q", got)
+	}
+	requireView(t, m, "forwards")
+}
+
+func TestForwardThatCannotBeSavedWarns(t *testing.T) {
+	isolatedState(t)
+	port := freePort(t)
+	req := views.ForwardRequestMsg{Kind: "job", Namespace: tuitest.NamespaceDemo, Name: "nightly"}
+
+	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), req, tuitest.Type(fmt.Sprintf("%d:80", port)), tuitest.Enter())
+	if got := footer(m); !strings.Contains(got, `port-forward: unknown kind "job"`) {
+		t.Errorf("footer = %q", got)
+	}
+	requireView(t, m, "dashboard")
+	refuteScreen(t, m, "format local:remote")
 }
 
 func TestContextSwitchWithBrokenStateWarns(t *testing.T) {

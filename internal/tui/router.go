@@ -3,7 +3,6 @@ package tui
 import (
 	"charm.land/bubbles/v2/cursor"
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
@@ -25,22 +24,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onWindowResize(msg)
 	case relayoutMsg:
 		return m.onRelayout()
-	case views.NamespaceSelectedMsg:
-		return m.onNamespaceSelected(msg)
-	case views.ContextSelectedMsg:
-		return m.onContextSelected(msg)
-	case views.DescribeRequestMsg:
-		return m.onDescribeRequest(msg)
-	case views.TailPromptRequestMsg:
-		return m.onTailPromptRequest(msg)
-	case views.ContainerPromptRequestMsg:
-		return m.onContainerPromptRequest(msg)
-	case views.LogsRequestMsg:
-		return m.onLogsRequest(msg)
-	case views.ExecRequestMsg:
-		return m.onExecRequest(msg)
-	case views.ForwardRequestMsg:
-		return m.onForwardRequest(msg)
+	case tea.KeyPressMsg:
+		return m.onKey(msg)
+	case tea.PasteMsg, cursor.BlinkMsg:
+		return m.onInput(msg)
 	case execDoneMsg:
 		return m.onExecDone(msg)
 	case views.StatusMsg:
@@ -48,44 +35,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case status.ExpireMsg:
 		m.status = m.status.Expire(msg, m.now())
 		return m, nil
-	case tea.KeyPressMsg:
-		return m.onKey(msg)
 	}
-	return m.routeToActiveUI(msg)
+	if next, cmd, ok := m.onRequest(msg); ok {
+		return next, cmd
+	}
+	if next, cmd, ok := m.onOverlayResult(msg); ok {
+		return next, cmd
+	}
+	return m.forwardToView(msg)
 }
 
-// onPaste delivers bracketed-paste text where typed text would go: the
-// open text prompt, else the active view. Popups without a text field
-// ignore it, except help, which closes on any input.
-func (m Model) onPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
-	switch m.cmdMode {
-	case cmdBarOff:
-		return m.forwardToView(msg)
-	case cmdBarCommand, cmdBarTailPrompt, cmdBarForwardPrompt:
-		var cmd tea.Cmd
-		m.cmdBar, cmd = m.cmdBar.Update(msg)
-		return m, cmd
-	case cmdBarHelp:
-		return m.closeCmdBar(), nil
+// onRequest handles what a view asks the root to do; ok is false for any
+// other message.
+func (m Model) onRequest(msg tea.Msg) (next tea.Model, cmd tea.Cmd, ok bool) {
+	switch msg := msg.(type) {
+	case views.NamespaceSelectedMsg:
+		next, cmd = m.onNamespaceSelected(msg)
+	case views.ContextSelectedMsg:
+		next, cmd = m.onContextSelected(msg)
+	case views.DescribeRequestMsg:
+		next, cmd = m.onDescribeRequest(msg)
+	case views.TailPromptRequestMsg:
+		next = m.onTailPromptRequest(msg)
+	case views.ContainerPromptRequestMsg:
+		next = m.onContainerPromptRequest(msg)
+	case views.LogsRequestMsg:
+		next, cmd = m.onLogsRequest(msg)
+	case views.ExecRequestMsg:
+		next, cmd = m.onExecRequest(msg)
+	case views.ForwardRequestMsg:
+		next, cmd = m.onForwardRequest(msg)
+	default:
+		return m, nil, false
 	}
-	return m, nil
+	return next, cmd, true
 }
 
-// routeToActiveUI delivers a message that matched no root case. Pastes go
-// where typed text would. Cursor blink ticks are not key messages, so while
-// a text prompt is open they must reach the cmdBar explicitly — otherwise
-// they fall through to the view and the cursor freezes after the first
-// blink.
-func (m Model) routeToActiveUI(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if paste, ok := msg.(tea.PasteMsg); ok {
-		return m.onPaste(paste)
-	}
-	if m.cmdMode == cmdBarCommand || m.cmdMode == cmdBarTailPrompt || m.cmdMode == cmdBarForwardPrompt {
-		if _, ok := msg.(cursor.BlinkMsg); ok {
-			var cmd tea.Cmd
-			m.cmdBar, cmd = m.cmdBar.Update(msg)
-			return m, cmd
-		}
+// onInput delivers a paste or a cursor blink where typed text goes: the open
+// overlay, else the active view. Blinks are not key messages, so without
+// this an overlay's cursor would freeze after its first blink.
+func (m Model) onInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.overlay != nil {
+		return m.onOverlayInput(msg)
 	}
 	return m.forwardToView(msg)
 }
@@ -108,9 +99,9 @@ func (m Model) onRelayout() (tea.Model, tea.Cmd) {
 // onContextSelected swaps the active k8s.Client to the chosen context. We
 // drop the navigation history (its entries reference resources that may not
 // exist in the new cluster) and the active namespace (likewise) and land
-// the user back on the dashboard. Failures surface in the command-bar
-// error line so the user gets feedback without losing their place — the
-// previous client stays active.
+// the user back on the dashboard. Failures surface in the status row so
+// the user gets feedback without losing their place — the previous client
+// stays active.
 func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.Cmd) {
 	client, err := k8s.LoadFromKubeconfigContext("", msg.Name)
 	if err != nil {
@@ -164,8 +155,8 @@ func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	m.status = m.status.KeyPressed()
-	if m.cmdMode != cmdBarOff {
-		return m.handleCmdBar(msg)
+	if m.overlay != nil {
+		return m.onOverlayInput(msg)
 	}
 	// Views that own the keyboard (focused textinput, list-popup, etc.) get
 	// every keystroke first. Without this, 'q' inside a filter prompt would
@@ -181,16 +172,9 @@ func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		next := m.goHome()
 		return next, next.relayoutCmd()
 	case key.Matches(msg, m.keys.Command):
-		m.cmdMode = cmdBarCommand
-		m.status = m.status.Clear()
-		m.cmdBar.Prompt = ": "
-		m.cmdBar.Placeholder = "pods, ns, dashboard"
-		m.cmdBar.SetValue("")
-		m.cmdBar.Focus()
-		return m, textinput.Blink
+		return m.openCommandBar(), nil
 	case key.Matches(msg, m.keys.Help):
-		m.cmdMode = cmdBarHelp
-		return m, nil
+		return m.openHelp(), nil
 	case key.Matches(msg, m.keys.Back):
 		if next, ok := m.popHistory(); ok {
 			return next, next.relayoutCmd()

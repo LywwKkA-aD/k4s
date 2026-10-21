@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 
+	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
@@ -32,11 +33,9 @@ func (m Model) View() tea.View {
 	return v
 }
 
-// render composes header / body / footer. The body normally renders the
-// active view, but multi-field prompts (tail lines, container picker) are
-// drawn as centered popups that temporarily cover the view — the single-
-// line ":" command bar stays in the footer because it is one line by
-// design and a popup would feel heavyweight.
+// render composes header / body / footer. A popup overlay covers the
+// body while it is open; the command bar is one line by design and sits in
+// the footer instead.
 func (m Model) render() string {
 	header := m.renderHeader()
 	footer := m.renderFooter()
@@ -45,10 +44,8 @@ func (m Model) render() string {
 	bodyWidth := max(m.width, 0)
 
 	content := m.current.View()
-	if m.cmdMode == cmdBarTailPrompt || m.cmdMode == cmdBarContainerPrompt ||
-		m.cmdMode == cmdBarForwardPrompt || m.cmdMode == cmdBarHelp ||
-		m.cmdMode == cmdBarRestorePrompt {
-		content = m.renderPromptPopup(bodyWidth, bodyHeight)
+	if m.overlay != nil && overlay.PlacementOf(m.overlay) == overlay.Popup {
+		content = m.renderPopup(bodyWidth, bodyHeight)
 	}
 
 	body := fit(lipgloss.NewStyle().Height(bodyHeight).MaxHeight(bodyHeight), bodyWidth, content)
@@ -67,32 +64,11 @@ func fit(st lipgloss.Style, w int, s string) string {
 	return st.Width(w).Render(s)
 }
 
-// renderPromptPopup renders the active prompt as a centred bordered card.
-// Tail prompt is a textinput; container prompt is a navigable list.
-func (m Model) renderPromptPopup(width, height int) string {
-	var inner string
-	switch m.cmdMode {
-	case cmdBarTailPrompt:
-		inner = lipgloss.JoinVertical(
-			lipgloss.Left,
-			styles.PopupTitle.Render("tail lines"),
-			"",
-			m.cmdBarView(),
-			"",
-			styles.Hint.Render("Enter run · Esc cancel · default 100"),
-		)
-	case cmdBarForwardPrompt:
-		inner = m.renderForwardPromptInner()
-	case cmdBarContainerPrompt:
-		inner = m.renderContainerPickerInner()
-	case cmdBarHelp:
-		inner = m.renderHelpPopupInner()
-	case cmdBarRestorePrompt:
-		inner = m.renderRestorePromptInner()
-	default:
-		return ""
-	}
-	box := styles.PopupBox.Render(inner)
+// renderPopup draws the open overlay as a bordered card centred in the
+// body, its content cut to fit inside the card.
+func (m Model) renderPopup(width, height int) string {
+	inner := width - styles.PopupBox.GetHorizontalFrameSize()
+	box := styles.PopupBox.Render(m.overlay.View(inner))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
 
@@ -126,8 +102,8 @@ func (m Model) renderFooter() string {
 }
 
 func (m Model) footerTopRow(width int) string {
-	if m.cmdMode == cmdBarCommand {
-		return ansi.Truncate(m.cmdBarView(), width, "…")
+	if m.overlay != nil && overlay.PlacementOf(m.overlay) == overlay.Footer {
+		return m.overlay.View(width)
 	}
 	if msg, ok := m.status.Current(m.now()); ok {
 		return statusStyle(msg.Level).Render(ansi.Truncate(msg.Text, width, "…"))

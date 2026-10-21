@@ -6,7 +6,7 @@
 
           ╭──────────────────────────────────────────────────────────╮
           │                                                          │
-          │   container                                              │
+          │   container · pod/multi-0 · ns demo                      │
           │                                                          │
           │   ▶ 1. sidecar                                           │
           │     2. app                                               │
