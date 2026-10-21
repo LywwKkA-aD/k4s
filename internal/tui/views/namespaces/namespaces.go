@@ -14,6 +14,8 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -31,10 +33,12 @@ type Model struct {
 	client *k8s.Client
 	// poll owns the refresh cadence and fences replies: a list answered
 	// for another instance of this view carries another Token.
-	poll   async.Poller
-	table  table.Model
-	raw    []k8s.Namespace
-	err    error
+	poll  async.Poller
+	table table.Model
+	raw   []k8s.Namespace
+	// health is the last list answer: an error over earlier rows is a stale
+	// view, one before any rows is the body.
+	health stale.Health
 	loaded bool
 	bodyH  int
 	filter filter.Model
@@ -152,21 +156,23 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 }
 
 // onList takes a list reply meant for this view. Done arms the next tick,
-// so its Cmd must reach Bubble Tea even when the list failed.
+// so its Cmd must reach Bubble Tea even when the list failed. A failure
+// keeps the earlier rows under a stale banner and is said once.
 func (m Model) onList(msg async.Result[[]k8s.Namespace]) (views.View, tea.Cmd) {
 	if !m.poll.Accept(msg.Token) {
 		return m, nil
 	}
-	var next tea.Cmd
+	var next, said tea.Cmd
 	m.poll, next = m.poll.Done(msg.Token, msg.Err)
+	m.health, said = m.health.Fold(msg.Err)
 	m.loaded = true
-	m.err = msg.Err
+	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	if msg.Err != nil {
-		return m, next
+		return m, tea.Batch(next, said)
 	}
 	m.raw = msg.Value
 	m, gone := m.withRows().landPending()
-	return m, tea.Batch(next, gone)
+	return m, tea.Batch(next, said, gone)
 }
 
 // handleKey reports handled when the key matched a binding.
@@ -183,7 +189,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	case key.Matches(msg, m.refreshKey) && m.client != nil:
 		var ok bool
 		if m.poll, ok = m.poll.Begin(); !ok {
-			return m, nil, true
+			return m, func() tea.Msg {
+				return views.StatusMsg{Level: status.Info, Text: "refresh already running"}
+			}, true
 		}
 		return m, m.list(), true
 	case key.Matches(msg, m.selectKey) && m.loaded:

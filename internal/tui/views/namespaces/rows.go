@@ -9,11 +9,17 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
+// tableHeight is the body less the lines above the table: the filter bar
+// and the stale banner.
 func (m Model) tableHeight() int {
+	h := m.bodyH
 	if m.filter.Active() {
-		return m.bodyH - 1
+		h--
 	}
-	return m.bodyH
+	if m.health.Stale() {
+		h--
+	}
+	return h
 }
 
 // feedFilter hands a key press or a paste to the open filter and refilters
@@ -71,12 +77,19 @@ func (m Model) View() string {
 	if !m.loaded {
 		return styles.Hint.Render("loading namespaces…")
 	}
-	if m.err != nil {
-		return styles.Warn.Render("namespaces unavailable: " + m.err.Error())
+	if m.health.Failed() {
+		return styles.Warn.Render("namespaces unavailable: " + m.health.Err().Error())
 	}
 	body := m.table.View()
-	if !m.filter.Active() {
+	above := make([]string, 0, 3)
+	if m.filter.Active() {
+		above = append(above, m.filter.View())
+	}
+	if banner := m.health.Banner(); banner != "" {
+		above = append(above, banner)
+	}
+	if len(above) == 0 {
 		return body
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.filter.View(), body)
+	return lipgloss.JoinVertical(lipgloss.Left, append(above, body)...)
 }
