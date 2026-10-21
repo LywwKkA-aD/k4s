@@ -121,3 +121,19 @@ func TestLogsFooterGoldens(t *testing.T) {
 	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), req)
 	tuitest.Golden(t, "footer_logs_deployment_15_pods", footer(m)+"\n")
 }
+
+// TestDetachedFlagTravelsThroughThePicker: a logs request for a row the
+// cursor left stays marked from the picker to the tail prompt.
+func TestDetachedFlagTravelsThroughThePicker(t *testing.T) {
+	t.Parallel()
+
+	target, pods := webTarget(2)
+	pick := views.ContainerPromptRequestMsg{
+		Namespace: tuitest.NamespaceDemo, Pods: pods, Containers: []string{tuitest.ContainerApp, tuitest.ContainerSidecar},
+		NextKind: "logs", Target: webRef(), Logs: target, Detached: true,
+	}
+	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), pick)
+	requireScreen(t, m, "container · deployment/web", "(not the selected row)")
+	m, _ = tuitest.Drive(t, m, tuitest.Press("2"))
+	requireScreen(t, m, "tail lines · deployment/web · ns demo", "(not the selected row)")
+}
