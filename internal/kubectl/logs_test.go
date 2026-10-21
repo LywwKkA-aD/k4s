@@ -78,6 +78,21 @@ func TestSelectorLogs(t *testing.T) {
 			spec: kubectl.LogsSpec{Namespace: "shop", Selector: "app=api", Tail: 10, Matched: 0, Streamed: 7},
 			want: "kubectl logs -f -l app=api --prefix --tail=10 --max-log-requests=7 -n shop",
 		},
+		{
+			name: "past MaxLogRequests pods only that many are streamed",
+			spec: kubectl.LogsSpec{Namespace: "shop", Selector: "app=api", Tail: 100, Matched: 73, Streamed: 73},
+			want: "kubectl logs -f -l app=api --prefix --tail=100 --max-log-requests=50 -n shop", wantApprox: true,
+		},
+		{
+			name: "the streamed pods of a capped view",
+			spec: kubectl.LogsSpec{Namespace: "shop", Selector: "app=api", Tail: 100, Matched: 73, Streamed: 50},
+			want: "kubectl logs -f -l app=api --prefix --tail=100 --max-log-requests=50 -n shop", wantApprox: true,
+		},
+		{
+			name: "exactly MaxLogRequests pods",
+			spec: kubectl.LogsSpec{Namespace: "shop", Selector: "app=api", Tail: 100, Matched: 50, Streamed: 50},
+			want: "kubectl logs -f -l app=api --prefix --tail=100 --max-log-requests=50 -n shop",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

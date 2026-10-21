@@ -8,6 +8,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -28,7 +29,7 @@ const (
 	checkSpacing = followInterval
 	// maxStreams bounds the pods streamed at once, which is also the
 	// --max-log-requests the footer asks for.
-	maxStreams = 50
+	maxStreams = kubectl.MaxLogRequests
 	// followNote is what a following view says, in its help and on the
 	// first pod that joins.
 	followNote = "k4s re-resolves every 10s; kubectl logs -l does not follow new pods"

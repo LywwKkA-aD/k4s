@@ -2,17 +2,12 @@ package logs
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 
 	"charm.land/bubbles/v2/key"
 
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
-
-// requestsFlag is the kubectl flag that bounds a follow of several pods.
-const requestsFlag = "--max-log-requests="
 
 // Title implements views.View.
 func (m Model) Title() string {
@@ -45,34 +40,14 @@ func (m Model) Title() string {
 // streamed now, which changes as pods join and leave, with --previous
 // instead of -f while the previous instance shows. k4s never streams more
 // than maxStreams pods, and says so: past that the command asks for that
-// many requests and is marked approximate.
+// many requests and is marked approximate (views.LogsCommand), as the
+// prompts before the view previewed it.
 func (m Model) Command() kubectl.Cmd {
-	c := capRequests(views.LogsCommand(m.namespace, m.pods, m.container, m.tail, m.target), maxStreams)
+	c := views.LogsCommand(m.namespace, m.pods, m.container, m.tail, m.target)
 	if m.previous {
 		return previousCommand(c)
 	}
 	return c
-}
-
-// capRequests lowers c's --max-log-requests to limit, marking c
-// approximate when it does.
-func capRequests(c kubectl.Cmd, limit int) kubectl.Cmd {
-	args := make([]string, len(c.Args))
-	capped := false
-	for i, a := range c.Args {
-		args[i] = a
-		n, err := strconv.Atoi(strings.TrimPrefix(a, requestsFlag))
-		if strings.HasPrefix(a, requestsFlag) && err == nil && n > limit {
-			args[i] = requestsFlag + strconv.Itoa(limit)
-			capped = true
-		}
-	}
-	if !capped {
-		return c
-	}
-	out := kubectl.New(args...)
-	out.Approx = true
-	return out
 }
 
 // Help implements views.View. 't' is only advertised when there is more

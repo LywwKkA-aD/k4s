@@ -9,6 +9,12 @@ import (
 // HashLabel is the label a Deployment stamps on each ReplicaSet's pods.
 const HashLabel = "pod-template-hash"
 
+// MaxLogRequests is the most pods a follow of several pods streams at
+// once: k4s streams no more, and its command asks kubectl for no more.
+// kubectl refuses to follow more pods than --max-log-requests allows, so a
+// command for more is approximate.
+const MaxLogRequests = 50
+
 // ErrEmptySelector is returned for a selector logs command with no selector.
 var ErrEmptySelector = errors.New("empty label selector")
 
@@ -39,7 +45,8 @@ type LogsSpec struct {
 	// kubectl follows them all and refuses to start when they outnumber
 	// --max-log-requests.
 	Matched int
-	// Streamed counts the pods k4s actually streams.
+	// Streamed counts the pods k4s streams, or would: past MaxLogRequests
+	// it streams that many.
 	Streamed int
 }
 
@@ -48,8 +55,9 @@ type LogsSpec struct {
 //	kubectl logs -f -l '<selector>' --prefix --tail=<n> --max-log-requests=<m> -n <ns> [-c <c>]
 //
 // --max-log-requests is set whenever more than one pod matches, since
-// kubectl's default of 5 makes a larger follow fail. The command is Approx
-// when k4s streams fewer pods than the selector matches.
+// kubectl's default of 5 makes a larger follow fail, and never above
+// MaxLogRequests. The command is Approx when k4s streams fewer pods than
+// the selector matches.
 func SelectorLogs(s LogsSpec) (Cmd, error) {
 	if err := CheckLabel("namespace", s.Namespace); err != nil {
 		return Cmd{}, err
@@ -61,12 +69,13 @@ func SelectorLogs(s LogsSpec) (Cmd, error) {
 		return Cmd{}, err
 	}
 	args := []string{"logs", "-f", "-l", s.Selector, "--prefix", tailFlag(s.Tail)}
-	if requests := max(s.Matched, s.Streamed); requests > 1 {
+	streamed := min(s.Streamed, MaxLogRequests)
+	if requests := min(max(s.Matched, streamed), MaxLogRequests); requests > 1 {
 		args = append(args, "--max-log-requests="+strconv.Itoa(requests))
 	}
 	args = append(args, "-n", s.Namespace)
 	args = withContainer(args, s.Container)
-	return Cmd{Args: args, Approx: s.Streamed < s.Matched}, nil
+	return Cmd{Args: args, Approx: streamed < s.Matched}, nil
 }
 
 // PodLogs builds `kubectl logs -f <pod> --tail=<n> -n <ns> [-c <c>]`.

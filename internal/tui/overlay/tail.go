@@ -61,7 +61,7 @@ func (t tail) View(width int) string {
 		inputView(t.input, width),
 		"",
 		styles.Hint.Render("Enter run · Esc cancel · default 100"),
-		styles.Hint.Render(capHint(len(t.req.Pods))),
+		styles.Hint.Render(capHint(views.StreamedPods(len(t.req.Pods)))),
 	)
 	return rows(width, lines...)
 }
@@ -73,13 +73,14 @@ func (t tail) Command() kubectl.Cmd {
 }
 
 // count is the line count typed so far, clamped to what the logs view
-// keeps (views.ClampTail), so the footer previews what will run.
+// keeps (views.ClampTail) over the pods it streams, so the footer previews
+// what will run.
 func (t tail) count() int64 {
-	return views.ClampTail(parseTail(t.input.Value()), len(t.req.Pods))
+	return views.ClampTail(parseTail(t.input.Value()), views.StreamedPods(len(t.req.Pods)))
 }
 
 // capHint names the tail cap: the logs view keeps views.MaxLogLines, shared
-// out across the pods.
+// out across the pods it streams.
 func capHint(pods int) string {
 	limit := strconv.FormatInt(views.TailCap(pods), 10)
 	if pods <= 1 {

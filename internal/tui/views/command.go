@@ -13,8 +13,8 @@ import (
 //   - several pods of a resolved target (t.Selector set): `kubectl logs -f
 //     -l '<selector>' --prefix --tail=<n> --max-log-requests=<m> ...`,
 //     where a deployment's selector is narrowed to t.Hashes and m covers
-//     t.Matched(); Approx when t.Approx() or the selector matches more pods
-//     than are streamed;
+//     t.Matched() up to kubectl.MaxLogRequests; Approx when t.Approx() or
+//     the selector matches more pods than are streamed;
 //   - several pods without a target: kubectl cannot follow a list of pod
 //     names, so the first pod's command, marked Approx.
 //
@@ -32,6 +32,14 @@ func LogsCommand(ns string, pods []string, container string, tail int64, t k8s.L
 		return c
 	}
 	return kubectl.Cmd{}
+}
+
+// StreamedPods is how many of n pods a logs view streams at once: all of
+// them, up to kubectl.MaxLogRequests. A tail is shared out among those
+// (ClampTail(tail, StreamedPods(n))), so the prompts and the logs view
+// agree on it.
+func StreamedPods(n int) int {
+	return min(n, kubectl.MaxLogRequests)
 }
 
 func selectorLogs(ns string, streamed int, container string, tail int64, t k8s.LogTarget) kubectl.Cmd {

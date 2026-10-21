@@ -215,7 +215,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 		crash:       defaultCrashLog(),
 		clock:       async.RealClock{},
 		namespace:   namespace,
-		tail:        views.ClampTail(tail, min(len(pods), maxStreams)),
+		tail:        views.ClampTail(tail, views.StreamedPods(len(pods))),
 		container:   container,
 		viewport:    newViewport(),
 		podColors:   assignPodColors(pods),

@@ -178,6 +178,16 @@ func TestExecCommand(t *testing.T) {
 	}
 }
 
+func TestStreamedPods(t *testing.T) {
+	t.Parallel()
+
+	for n, want := range map[int]int{0: 0, 1: 1, 50: 50, 73: kubectl.MaxLogRequests} {
+		if got := views.StreamedPods(n); got != want {
+			t.Errorf("StreamedPods(%d) = %d, want %d", n, got, want)
+		}
+	}
+}
+
 // TestLogsCommandDoesNotShareThePodSlice: the builder reads pods and never
 // keeps them, so a view that reuses its slice cannot change a built Cmd.
 func TestLogsCommandDoesNotShareThePodSlice(t *testing.T) {
