@@ -261,6 +261,11 @@ func TestNilClientHelpers(t *testing.T) {
 	if c.KubeconfigArg() != "" {
 		t.Error("nil client has a kubeconfig arg")
 	}
+	// Without a client there is no Source: the default lookup is used. It
+	// must fail with a load error, not panic.
+	if _, err := c.SwitchContext("no-such-context-anywhere"); err == nil {
+		t.Error("nil SwitchContext to an unknown context succeeded")
+	}
 	if got, err := c.Interactive(); got != nil || err != nil {
 		t.Errorf("nil Interactive() = %v, %v", got, err)
 	}

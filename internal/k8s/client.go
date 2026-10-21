@@ -130,8 +130,13 @@ func Load(src Source, contextName string) (*Client, error) {
 }
 
 // SwitchContext loads context name from the same kubeconfig as c. The new
-// Client starts in that context's namespace.
+// Client starts in that context's namespace. A nil c has no Source and
+// uses the default lookup; pass the session's Source to Load instead when
+// it is known.
 func (c *Client) SwitchContext(name string) (*Client, error) {
+	if c == nil {
+		return Load(Source{}, name)
+	}
 	return Load(c.Source, name)
 }
 
