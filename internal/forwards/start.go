@@ -180,9 +180,6 @@ func (m *Manager) supervise(id string, attempt uint64, sess *k8s.PortForwardSess
 
 	// No explicit Err, but the forwarder may still have written useful
 	// diagnostics to its stderr capture before the session collapsed.
-	// We deliberately only check stderr here — stdout carries
-	// informational chatter ("Forwarding from 127.0.0.1:8080 -> 80")
-	// which is *not* an error and shouldn't flip the status to red.
 	if sess.Stderr != nil {
 		if condensed := condense(strings.TrimSpace(sess.Stderr())); condensed != "" {
 			m.markError(id, attempt, sess, errors.New(condensed))

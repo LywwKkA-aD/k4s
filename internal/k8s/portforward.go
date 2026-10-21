@@ -3,12 +3,10 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
-	"net/url"
-	"path"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -22,31 +20,6 @@ import (
 // can be exercised in tests without poking at real OS ports.
 var tryListen = func(port uint16) (net.Listener, error) {
 	return net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-}
-
-// captureWriter is the io.Writer we hand to portforward.PortForwarder
-// instead of os.Stdout/Stderr. The bubbletea TUI owns the real
-// terminal; if the forwarder wrote there directly it would smear its
-// "Unable to listen on port X" banner across the rendered table. Here
-// we buffer the bytes and let the supervisor surface them via
-// PortForwardSession.Output once the session ends.
-type captureWriter struct {
-	mu  sync.Mutex
-	buf strings.Builder
-}
-
-// Write implements io.Writer.
-func (w *captureWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.buf.Write(p)
-}
-
-// String returns the captured output so far.
-func (w *captureWriter) String() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.buf.String()
 }
 
 // PortForwardSession is the live handle for one in-process forward.
@@ -68,16 +41,11 @@ type PortForwardSession struct {
 	// when the caller asked for a service/deployment and we want to
 	// surface which replica actually serves the connection.
 	Pod string
-	// Stderr returns whatever the forwarder wrote to its stderr stream.
-	// kubectl prints actual failures here ("bind: permission denied",
-	// "lost connection to pod", …). The supervisor uses this to
-	// surface a useful detail when a session dies.
+	// Stderr returns the last lines, at most 4 KiB, the forwarder wrote to
+	// its error stream: failures such as "bind: permission denied". The
+	// supervisor uses this to surface a useful detail when a session
+	// dies. Its informational output ("Forwarding from …") is dropped.
 	Stderr func() string
-	// Stdout returns the stream the forwarder uses for informational
-	// chatter ("Forwarding from 127.0.0.1:8080 -> 80"). Almost never
-	// useful for error reporting — kept around for completeness and
-	// future "show me the boring details" affordances.
-	Stdout func() string
 }
 
 // Close stops the forward if it hasn't already. Idempotent — safe to call
@@ -114,7 +82,7 @@ func (c *Client) startPodPortForward(namespace, podName string, localPort, remot
 	if c.RestConfig == nil {
 		return nil, fmt.Errorf("client built without rest config; port-forward is unavailable")
 	}
-	serverURL, err := parsePortForwardURL(c.RestConfig.Host, namespace, podName)
+	serverURL, err := portForwardURL(c.RestConfig, namespace, podName)
 	if err != nil {
 		return nil, fmt.Errorf("build portforward URL: %w", err)
 	}
@@ -132,15 +100,11 @@ func (c *Client) startPodPortForward(namespace, podName string, localPort, remot
 	doneCh := make(chan struct{})
 
 	ports := []string{fmt.Sprintf("%d:%d", localPort, remotePort)}
-	// Capture forwarder output instead of routing it to the real
-	// stdout/stderr — the TUI owns those, and a stray "Unable to
-	// listen on port 80" banner from kubectl would shred the render.
-	// Two separate buffers so the supervisor can tell info chatter
-	// ("Forwarding from …" on stdout) apart from real failures
-	// ("bind: permission denied" on stderr).
-	stdout := &captureWriter{}
-	stderr := &captureWriter{}
-	fw, err := portforward.NewForStreaming(dialer, ports, stopCh, readyCh, stdout, stderr)
+	// The TUI owns the terminal, so the forwarder never writes to it. Its
+	// chatter ("Handling connection for 8080", once per connection) is
+	// dropped; its failures are kept, bounded, for the supervisor.
+	stderr := &ring{}
+	fw, err := portforward.NewForStreaming(dialer, ports, stopCh, readyCh, io.Discard, stderr)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("build forwarder: %w", err)
@@ -167,24 +131,8 @@ func (c *Client) startPodPortForward(namespace, podName string, localPort, remot
 		Err:    errCh,
 		Done:   doneCh,
 		Pod:    podName,
-		Stdout: stdout.String,
 		Stderr: stderr.String,
 	}, nil
-}
-
-// parsePortForwardURL parses RestConfig.Host into a URL that preserves any
-// path prefix (e.g. Rancher clusters at /k8s/clusters/c-xxx) and scheme
-// (https or http) instead of hardcoding https and dropping the path.
-func parsePortForwardURL(host, namespace, podName string) (*url.URL, error) {
-	if !strings.Contains(host, "://") {
-		host = "https://" + host
-	}
-	u, err := url.Parse(host)
-	if err != nil {
-		return nil, err
-	}
-	u.Path = path.Join(u.Path, fmt.Sprintf("/api/v1/namespaces/%s/pods/%s/portforward", namespace, podName))
-	return u, nil
 }
 
 // CheckLocalPortAvailable tries to bind 127.0.0.1:port and immediately

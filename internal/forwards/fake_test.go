@@ -44,7 +44,6 @@ func newFakeSession(pod string, stuck bool) *fakeSession {
 		Done:   make(chan struct{}),
 		Pod:    pod,
 		Stderr: s.stderrText,
-		Stdout: func() string { return "" },
 	}
 	if stuck {
 		return s

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"time"
 
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
@@ -55,6 +56,18 @@ type contextRoundTripper struct {
 // RoundTrip implements http.RoundTripper.
 func (c contextRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	return c.next.RoundTrip(req.WithContext(c.ctx))
+}
+
+// portForwardURL is the pod's portforward subresource, built the way
+// kubectl builds it: through a REST client, under any path prefix in the
+// server address (Rancher serves clusters at /k8s/clusters/<id>), with the
+// namespace and pod name escaped as path segments.
+func portForwardURL(cfg *rest.Config, namespace, pod string) (*url.URL, error) {
+	core, err := corev1client.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("build rest client: %w", err)
+	}
+	return core.RESTClient().Post().Resource("pods").Namespace(namespace).Name(pod).SubResource("portforward").URL(), nil
 }
 
 // newPortForwardDialer is kubectl's port-forward transport: SPDY tunnelled

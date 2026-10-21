@@ -41,7 +41,6 @@ func (h *hungTunneler) StartPodPortForward(_ context.Context, _, pod string, _, 
 		Done:   make(chan struct{}),
 		Pod:    pod,
 		Stderr: func() string { return "" },
-		Stdout: func() string { return "" },
 	}
 	close(s.Ready)
 	h.mu.Lock()
