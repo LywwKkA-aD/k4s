@@ -20,9 +20,17 @@ type Deployment struct {
 }
 
 // ListDeployments returns deployments in the given namespace, or in all
-// namespaces when namespace == "".
+// namespaces when namespace == "". It is a consistent read.
 func (c *Client) ListDeployments(ctx context.Context, namespace string) ([]Deployment, error) {
-	list, err := c.Clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
+	return c.ListDeploymentsAt(ctx, namespace, "")
+}
+
+// ListDeploymentsAt is ListDeployments at resourceVersion: "0" lets the
+// apiserver answer from its watch cache, which is what a poll wants (on
+// k3s it spares kine a query); "" is a consistent read, for an explicit
+// refresh.
+func (c *Client) ListDeploymentsAt(ctx context.Context, namespace, resourceVersion string) ([]Deployment, error) {
+	list, err := c.Clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{ResourceVersion: resourceVersion})
 	if err != nil {
 		return nil, fmt.Errorf("list deployments: %w", err)
 	}

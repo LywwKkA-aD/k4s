@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	ktesting "k8s.io/client-go/testing"
 )
 
 func intPtr(i int32) *int32 { return &i }
@@ -79,6 +81,50 @@ func TestListDeploymentsHandlesNilReplicas(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Replicas != 0 {
 		t.Errorf("expected nil Spec.Replicas to surface as 0, got %+v", got)
+	}
+}
+
+// TestListDeploymentsAtPassesTheResourceVersion: a poll lists from the
+// apiserver's watch cache ("0"); 'r' and a plain ListDeployments read
+// consistently ("").
+func TestListDeploymentsAtPassesTheResourceVersion(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		list func(context.Context, *Client) ([]Deployment, error)
+		want string
+	}{
+		{name: "watch cache", want: "0", list: func(ctx context.Context, c *Client) ([]Deployment, error) {
+			return c.ListDeploymentsAt(ctx, "demo", "0")
+		}},
+		{name: "consistent", want: "", list: func(ctx context.Context, c *Client) ([]Deployment, error) {
+			return c.ListDeploymentsAt(ctx, "demo", "")
+		}},
+		{name: "default is consistent", want: "", list: func(ctx context.Context, c *Client) ([]Deployment, error) {
+			return c.ListDeployments(ctx, "demo")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "x", Namespace: "demo"}}
+			cs := fake.NewSimpleClientset(runtime.Object(dep))
+			var seen []string
+			cs.PrependReactor("list", "deployments", func(a ktesting.Action) (bool, runtime.Object, error) {
+				if l, ok := a.(interface{ GetListOptions() metav1.ListOptions }); ok {
+					seen = append(seen, l.GetListOptions().ResourceVersion)
+				}
+				return false, nil, nil
+			})
+			got, err := tc.list(context.Background(), &Client{Clientset: cs, Context: "test"})
+			if err != nil || len(got) != 1 {
+				t.Fatalf("list = %v, %v; want the one deployment", got, err)
+			}
+			if !slices.Equal(seen, []string{tc.want}) {
+				t.Errorf("ResourceVersion = %q, want [%q]", seen, tc.want)
+			}
+		})
 	}
 }
 
