@@ -72,7 +72,7 @@ func TestNamespaceCommand(t *testing.T) {
 	}{
 		{name: "from the dashboard", input: "ns demo", view: "pods", ns: "demo", command: "kubectl get pods -n demo"},
 		{name: "deployments stay deployments", on: "deploy", input: "ns demo", view: "deployments", ns: "demo", command: "kubectl get deployments -n demo"},
-		{name: "top stays top", on: "top", input: "namespaces demo", view: "top", ns: "demo", command: "kubectl top pods -n demo"},
+		{name: "top stays top", on: "top", input: "namespaces demo", view: "top", ns: "demo", command: "kubectl top pods -n demo --sort-by=cpu"},
 		{name: "all namespaces", on: "svc", input: "ns -A", view: "services", ns: "ALL", command: "kubectl get services -A"},
 		{name: "a namespace called all", on: "pods", input: "ns all", view: "pods", ns: "all", command: "kubectl get pods -n all"},
 		{name: "extra blanks and case of the command", input: "  NS   demo ", view: "pods", ns: "demo", command: "kubectl get pods -n demo"},

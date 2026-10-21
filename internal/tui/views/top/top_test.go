@@ -8,7 +8,9 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/top"
 )
 
@@ -61,7 +63,7 @@ func TestNamespaceScope(t *testing.T) {
 	if strings.Contains(screen, tuitest.PodCoreDNS) || strings.Contains(screen, "NAMESPACE") {
 		t.Errorf("namespace-scoped top shows other namespaces:\n%s", screen)
 	}
-	if got := m.Command().String(); got != "kubectl top pods -n demo" {
+	if got := m.Command().String(); got != "kubectl top pods -n demo --sort-by=cpu" {
 		t.Errorf("Command = %q", got)
 	}
 }
@@ -70,11 +72,11 @@ func TestToggleNodes(t *testing.T) {
 	t.Parallel()
 
 	m := mounted(t, tuitest.NewFakeClient(t), "")
-	if got := m.Command().String(); got != "kubectl top pods -A" {
+	if got := m.Command().String(); got != "kubectl top pods -A --sort-by=cpu" {
 		t.Errorf("pods mode = %q", got)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Press("n"))
-	if got := m.Command().String(); got != "kubectl top nodes" {
+	if got := m.Command().String(); got != "kubectl top nodes --sort-by=cpu" {
 		t.Errorf("after n = %q", got)
 	}
 	screen := tuitest.Screen(m)
@@ -118,8 +120,8 @@ func TestRefreshRespectsBusy(t *testing.T) {
 		t.Fatalf("r should issue one fetch:\n%s", tuitest.Describe(first))
 	}
 	m, second := tuitest.Step(t, m, tuitest.Press("r"))
-	if len(second) != 0 {
-		t.Fatalf("r while busy must not fetch again:\n%s", tuitest.Describe(second))
+	if want := (views.StatusMsg{Level: status.Info, Text: "refresh already running"}); len(second) != 1 || second[0] != want {
+		t.Fatalf("r while busy must only say so, not fetch again:\n%s", tuitest.Describe(second))
 	}
 	m, _ = tuitest.Drive(t, m, first...)
 	if _, third := tuitest.Step(t, m, tuitest.Press("r")); len(third) != 1 {

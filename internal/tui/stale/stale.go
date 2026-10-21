@@ -30,9 +30,9 @@ type Health struct {
 // Error status, once however many ticks repeat it; a success forgets it,
 // so the same failure after a recovery is said again.
 func (h Health) Fold(err error) (Health, tea.Cmd) {
-	h.err = err
+	h = h.Track(err)
 	if err == nil {
-		h.good, h.said = true, ""
+		h.said = ""
 		return h, nil
 	}
 	text := err.Error()
@@ -42,6 +42,16 @@ func (h Health) Fold(err error) (Health, tea.Cmd) {
 	h.said = text
 	msg := views.StatusMsg{Level: status.Error, Text: text}
 	return h, func() tea.Msg { return msg }
+}
+
+// Track takes the answer to a list without saying anything, for a view
+// that words its own status.
+func (h Health) Track(err error) Health {
+	h.err = err
+	if err == nil {
+		h.good = true
+	}
+	return h
 }
 
 // Reset forgets everything: the list the view shows is a different one.
