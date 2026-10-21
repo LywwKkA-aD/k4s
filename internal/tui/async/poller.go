@@ -149,10 +149,10 @@ func (p Poller) Due(msg TickMsg) (Poller, bool) {
 }
 
 // Done folds in the answer to the current poll, carried under tok, and
-// arms the next tick when the poller may. A reply for another Token
-// changes nothing. err drives the backoff through the Classifier.
+// arms the next tick when the poller may. A reply for another Token, or one
+// that arrives while no poll is in flight, changes nothing. err drives the backoff through the Classifier.
 func (p Poller) Done(tok Token, err error) (Poller, tea.Cmd) {
-	if !p.Accept(tok) {
+	if !p.Accept(tok) || !p.busy {
 		return p, nil
 	}
 	p.busy = false
