@@ -47,6 +47,10 @@ func TestTailPromptPreviewsTheLogsCommand(t *testing.T) {
 			want: "kubectl logs -f -l 'app=web,pod-template-hash in (h1)' --prefix --tail=250 --max-log-requests=2 -n demo -c app",
 		},
 		{
+			name: "a count over the cap previews the clamped tail", req: deploy, input: []tea.Msg{clear, tuitest.Type("100000")},
+			want: "kubectl logs -f -l 'app=web,pod-template-hash in (h1)' --prefix --tail=2500 --max-log-requests=2 -n demo -c app",
+		},
+		{
 			name: "garbage previews the default", req: deploy, input: []tea.Msg{clear, tuitest.Type("lots")},
 			want: "kubectl logs -f -l 'app=web,pod-template-hash in (h1)' --prefix --tail=100 --max-log-requests=2 -n demo -c app",
 		},

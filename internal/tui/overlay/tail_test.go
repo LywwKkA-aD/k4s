@@ -36,6 +36,7 @@ func TestTailPromptAnswers(t *testing.T) {
 		{name: "zero falls back to the default", input: []tea.Msg{clear, tuitest.Type("0"), tuitest.Enter()}, want: 100},
 		{name: "negative falls back to the default", input: []tea.Msg{clear, tuitest.Type("-5"), tuitest.Enter()}, want: 100},
 		{name: "empty falls back to the default", input: []tea.Msg{clear, tuitest.Enter()}, want: 100},
+		{name: "a count over the cap is clamped", input: []tea.Msg{clear, tuitest.Type("100000"), tuitest.Enter()}, want: 2500},
 		{name: "esc cancels", input: keys("esc")},
 	}
 	for _, tc := range cases {
@@ -95,7 +96,7 @@ func TestTailPromptView(t *testing.T) {
 	t.Parallel()
 
 	o := overlay.NewTail(deployTail())
-	requireShows(t, o, "❯ 100", "Enter run · Esc cancel · default 100")
+	requireShows(t, o, "❯ 100", "Enter run · Esc cancel · default 100", "max 2500 per pod, 5000 in all")
 	o, _ = feed(t, o, tuitest.Press("q"), tuitest.Press(":"))
 	requireShows(t, o, "❯ 100q:")
 	for width := 1; width <= 80; width++ {
@@ -108,4 +109,28 @@ func TestTailPromptIgnoresOtherMessages(t *testing.T) {
 
 	o, _ := feed(t, overlay.NewTail(deployTail()), tuitest.Resize(80, 24))
 	requireShows(t, o, "❯ 100")
+}
+
+func TestTailPromptNamesTheCap(t *testing.T) {
+	t.Parallel()
+
+	pods := func(n int) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = "web-" + string(rune('a'+i))
+		}
+		return out
+	}
+	cases := []struct {
+		pods int
+		want string
+	}{
+		{pods: 1, want: "max 5000 lines"},
+		{pods: 2, want: "max 2500 per pod, 5000 in all"},
+		{pods: 20, want: "max 250 per pod, 5000 in all"},
+	}
+	for _, tc := range cases {
+		o := overlay.NewTail(views.TailPromptRequestMsg{Namespace: "demo", Pods: pods(tc.pods)})
+		requireShows(t, o, tc.want)
+	}
 }

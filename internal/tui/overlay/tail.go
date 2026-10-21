@@ -24,7 +24,8 @@ type tail struct {
 }
 
 // NewTail opens the tail prompt for req, prefilled with 100. Enter sends
-// TailChosenMsg, Esc cancels.
+// TailChosenMsg with the count clamped to the per-pod cap the prompt
+// names; Esc cancels.
 func NewTail(req views.TailPromptRequestMsg) Overlay {
 	n := strconv.Itoa(defaultTail)
 	return tail{req: req, input: newInput("❯ ", n, n)}
@@ -37,7 +38,7 @@ func (t tail) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		case keys.IsEsc(k):
 			return nil, nil
 		case keys.IsEnter(k):
-			return nil, send(TailChosenMsg{Request: t.req, Tail: parseTail(t.input.Value())})
+			return nil, send(TailChosenMsg{Request: t.req, Tail: t.count()})
 		}
 	}
 	var cmd tea.Cmd
@@ -60,6 +61,7 @@ func (t tail) View(width int) string {
 		inputView(t.input, width),
 		"",
 		styles.Hint.Render("Enter run · Esc cancel · default 100"),
+		styles.Hint.Render(capHint(len(t.req.Pods))),
 	)
 	return rows(width, lines...)
 }
@@ -67,7 +69,23 @@ func (t tail) View(width int) string {
 // Command is the logs command Enter would open at the count typed so far.
 func (t tail) Command() kubectl.Cmd {
 	r := t.req
-	return views.LogsCommand(r.Namespace, r.Pods, r.Container, parseTail(t.input.Value()), r.Logs)
+	return views.LogsCommand(r.Namespace, r.Pods, r.Container, t.count(), r.Logs)
+}
+
+// count is the line count typed so far, clamped to what the logs view
+// keeps (views.ClampTail), so the footer previews what will run.
+func (t tail) count() int64 {
+	return views.ClampTail(parseTail(t.input.Value()), len(t.req.Pods))
+}
+
+// capHint names the tail cap: the logs view keeps views.MaxLogLines, shared
+// out across the pods.
+func capHint(pods int) string {
+	limit := strconv.FormatInt(views.TailCap(pods), 10)
+	if pods <= 1 {
+		return "max " + limit + " lines"
+	}
+	return "max " + limit + " per pod, " + strconv.Itoa(views.MaxLogLines) + " in all"
 }
 
 // TakesText reports the count input: y is text there.
