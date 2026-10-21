@@ -83,7 +83,7 @@ func New(client *k8s.Client, namespace string, opts ...Option) Model {
 	if client != nil {
 		m.poll, _ = m.poll.Begin()
 	}
-	m.table = newTable(tableColumns(namespace == ""))
+	m.table = newTable(layout(0, namespace == "").columns())
 	return m
 }
 

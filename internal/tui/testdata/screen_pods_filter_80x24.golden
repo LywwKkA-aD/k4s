@@ -1,15 +1,15 @@
  k4s  ·  ctx: fake  ·  ns: ALL  ·  view: pods
 ──────────────────────────────────────────────────────────────────────────────
 / web
- NAMESPACE           NAME                                  READY    STATUS
-RESTARTS   AGE
+ NAMESPACE    NAME               READY  STATUS            RESTARTS       AGE
 ────────────────────────────────────────────────────────────────────────────────
-────────────────────────────
- demo                web-
-1                                 1/1      Running             0          1h
+ demo         web-1              1/1    Running           0              90m
+ demo         web-2              1/1    Running           0              90m
 
- demo                web-2                                 1/1      Running
-0          1h
+
+
+
+
 
 
 
