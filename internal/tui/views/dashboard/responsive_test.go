@@ -58,8 +58,8 @@ func TestMediumLayout(t *testing.T) {
 
 	screen := warm(t, 120, 34, "2")
 	requireAll(t, screen, []string{
-		"▲ attention  3 CrashLoopBackOff · 1 ImagePullBackOff · 4 workloads · 1 job  △ k3s-agent-1 mem 87% · +2",
-		"▸ next 1/2  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --previous   why does it keep crashing?",
+		"▲ attention  3 CrashLoopBackOff · 1 ImagePullBackOff · 4 workloads · 1 job · +3",
+		"▸ next 1/5  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --previous   why does it keep crashing?",
 		"● api      ready · 8/8 checks · etcd ok",
 		"◆ version  v1.36.3+k3s1 · embedded etcd ",
 		"○ network  102 svc · 1 LoadBalancer <pending>",

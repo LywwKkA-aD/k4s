@@ -53,6 +53,8 @@ func panelCmd(p dash.Panel, s dash.Snapshot) dash.Cmd {
 // focused as a whole.
 func rowsOf(p dash.Panel, s dash.Snapshot, l layout) []row {
 	switch p {
+	case dash.PanelOverview:
+		return nextRows(s, l)
 	case dash.PanelCluster:
 		items := clusterItems(s)
 		out := make([]row, 0, len(items))

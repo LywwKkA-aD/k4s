@@ -3,13 +3,15 @@ package dashboard
 import "charm.land/bubbles/v2/key"
 
 // keyMap is the dashboard's own keys. q, :, ?, Esc, y and ctrl+c are the
-// root's. h and l are deliberately unbound: l means logs everywhere else.
+// root's. h is deliberately unbound and l moves no focus: l means logs
+// everywhere else, and here too.
 type keyMap struct {
 	next, prev  key.Binding
 	jump        key.Binding
 	left, right key.Binding
 	up, down    key.Binding
 	enter       key.Binding
+	logs        key.Binding
 	refresh     key.Binding
 	watch       key.Binding
 
@@ -27,6 +29,7 @@ func newKeyMap() keyMap {
 		up:      key.NewBinding(key.WithKeys("up", "k")),
 		down:    key.NewBinding(key.WithKeys("down", "j")),
 		enter:   key.NewBinding(key.WithKeys("enter")),
+		logs:    key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "logs")),
 		refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		watch:   key.NewBinding(key.WithKeys("w")),
 		panel:   key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab/0-7", "panel")),

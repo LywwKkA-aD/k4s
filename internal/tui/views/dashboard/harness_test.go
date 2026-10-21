@@ -2,6 +2,8 @@ package dashboard_test
 
 import (
 	"context"
+	"fmt"
+	"hash/fnv"
 	"slices"
 	"strings"
 	"sync"
@@ -50,7 +52,22 @@ func (f *feed) fetch(_ context.Context, p dash.Plan, prev dash.Snapshot) dash.Sn
 	if f.vary {
 		wobble(&s, len(f.plans))
 	}
+	s.Hash = hashes(s)
 	return s
+}
+
+// hashes sums each section as dash does, so a fixture that changes what a
+// panel shows changes its hash, and one that does not keeps it.
+func hashes(s dash.Snapshot) dash.Hashes {
+	sum := func(v any) uint64 {
+		h := fnv.New64a()
+		_, _ = fmt.Fprintf(h, "%+v", v)
+		return h.Sum64()
+	}
+	return dash.Hashes{
+		Cluster: sum(s.Cluster), Nodes: sum(s.Nodes), Pods: sum(s.Pods), Workloads: sum(s.Workloads),
+		Events: sum(s.Events), K3s: sum(s.K3s), TopPods: sum(s.TopPods), Verdict: sum(s.Verdict), Next: sum(s.Next),
+	}
 }
 
 // set makes base the fixture of the next answers.

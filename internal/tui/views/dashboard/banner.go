@@ -2,8 +2,8 @@ package dashboard
 
 import (
 	"fmt"
-	"slices"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -12,54 +12,96 @@ import (
 )
 
 // The banner (panel 0) answers the first two questions: is the cluster OK
-// and what to run next. This is its plain form; the wordmark, the toast
-// lane, the heartbeat and cycling through the next suggestions come with
-// M7D.10 and M7D.14.
+// (the verdict row) and what to run next (the next row, a cursor stop per
+// suggestion). The verdict row ends with when the snapshot last changed
+// and the watch state; the wide layout opens with the k4s wordmark.
 
 // widenNote is all the smallest layout has room to say besides the verdict.
 const widenNote = "widen the terminal"
+
+// wordmark is "k4s" in half blocks, two rows; the wide banner only. Its
+// first column is the cursor's.
+var wordmark = [bannerRows]string{" █ ▄ █ █ ▄▀▀", " █▀▄ ▀▀█ ▄▄▀"}
+
+// wordmarkGap separates the wordmark from the verdict and the next row.
+const wordmarkGap = "   "
 
 // bannerLines are the banner's rows for layout l, each exactly l.w wide.
 func bannerLines(f frame, l layout) []string {
 	if l.kind == kindMinimal {
 		if l.banner < 2 {
-			return []string{verdictLine(f, l.w, f.muted(widenNote)+" ")}
+			return []string{verdictLine(f, l.w, "", f.muted(widenNote)+" ")}
 		}
-		return []string{verdictLine(f, l.w, ""), fitText(" "+f.muted(widenNote), l.w)}
+		return []string{verdictLine(f, l.w, "", ""), fitText(" "+f.muted(widenNote), l.w)}
 	}
-	right := f.muted(f.hint) + " "
-	if f.narrow() {
-		right = "" // the watch state stays in the hints, as "w 5s"
+	var marks [bannerRows]string
+	if l.kind == kindWide && l.banner >= bannerRows {
+		for i, row := range wordmark {
+			marks[i] = f.ds.Title.Render(row[len(" "):]) + wordmarkGap
+		}
 	}
-	lines := []string{verdictLine(f, l.w, right)}
+	lines := []string{verdictLine(f, l.w, marks[0], rightNote(f))}
 	if l.banner > 1 {
-		lines = append(lines, fitText(nextLine(f), l.w))
+		lines = append(lines, fitText(nextLine(f, marks[1]), l.w))
 	}
 	return lines
 }
 
-// verdictLine is the first banner row: the cursor column, the verdict on
-// the left and right on the right.
-func verdictLine(f frame, w int, right string) string {
+// verdictLine is the first banner row: the cursor column, mark (the
+// wordmark's row, or nothing), the verdict, and right on the right.
+func verdictLine(f frame, w int, mark, right string) string {
 	lead := " "
-	if f.focus.panel == dash.PanelOverview {
+	if f.focus.panel == dash.PanelOverview && f.focus.row == "" {
 		lead = styles.CursorMarker
 	}
-	room := w - ansi.StringWidth(right) - 2 - 1
-	return spread(lead+verdict(f, room), right, w)
+	head := lead + mark
+	room := w - ansi.StringWidth(right) - 2 - ansi.StringWidth(head)
+	return spread(head+verdict(f, room), right, w)
 }
 
-// verdict is the cluster in a few words: loading, all clear since when,
-// or the chips most severe first with a +N tail for those that do not
-// fit in w columns. A partial picture leads with why (stale, scoped);
-// without chips it then lists what k4s did see.
+// rightNote ends the verdict row: "◆ changed 14:32:05 · watch 5s" in the
+// wide layout, the time alone where the narrow ones keep the watch state
+// in the hints, and "‖ paused 14:32" with watch off.
+func rightNote(f frame) string {
+	var parts []string
+	if f.loaded && !f.changed.IsZero() {
+		when := f.changed.Format("15:04:05")
+		if f.kind == kindWide {
+			when = "changed " + when
+		}
+		parts = append(parts, f.paint(markFact)+" "+when)
+	}
+	switch {
+	case f.paused:
+		parts = append(parts, f.muted(strings.TrimSpace("‖ paused "+clock(f.pausedAt))))
+	case !f.narrow() && f.hint != "":
+		parts = append(parts, f.muted(f.hint))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " · ") + " "
+}
+
+// clock is t as hh:mm, "" for the zero time.
+func clock(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("15:04")
+}
+
+// verdict is the cluster in a few words: loading, all clear since when
+// and what k4s saw, or the chips most severe first with a +N tail for
+// those that do not fit in w columns. A partial picture leads with why
+// (stale, scoped); without chips it then lists what k4s did see.
 func verdict(f frame, w int) string {
 	v := f.snap.Verdict
 	switch {
 	case !f.loaded:
 		return f.paint(markFact) + " loading the cluster…"
 	case v.AllClear:
-		return f.paint(markOK) + " all clear since " + f.since.Format("15:04")
+		return fitFacts(f.paint(markOK)+" all clear since "+clock(f.since), clearFacts(f.snap), w)
 	}
 	lead := bannerNotes(f)
 	if len(v.Chips) == 0 {
@@ -75,7 +117,7 @@ func verdict(f frame, w int) string {
 	if v.Chips[0].Sev == dash.SevFailing {
 		head = markErr
 	}
-	lead = append(lead, f.paint(head)+" attention")
+	lead = append(lead, f.attention(head))
 	chips := make([]string, 0, len(v.Chips))
 	for _, c := range v.Chips {
 		chips = append(chips, f.paint(markOf(c.Sev))+" "+clean(c.Text))
@@ -83,101 +125,62 @@ func verdict(f frame, w int) string {
 	return fitChips(strings.Join(lead, "  "), chips, w)
 }
 
-// fitChips adds as many chips after lead as fit in w columns, then "+N"
-// for the rest.
-func fitChips(lead string, chips []string, w int) string {
-	for n := len(chips); n >= 0; n-- {
-		s := strings.Join(append([]string{lead}, chips[:n]...), "  ")
-		if n < len(chips) {
-			s += fmt.Sprintf("  +%d", len(chips)-n)
-		}
-		if ansi.StringWidth(s) <= w {
-			return s
+// clearFacts are what k4s saw when all is clear: "3/3 nodes Ready · 185
+// pods · 65/65 workloads · 2 warnings in 1h", each only where its source
+// answered.
+func clearFacts(s dash.Snapshot) []string {
+	var out []string
+	if readable(s.Nodes.Avail) {
+		out = append(out, fmt.Sprintf("%d/%d nodes Ready", s.Nodes.Ready, s.Nodes.Total))
+	}
+	if readable(s.Pods.Avail) {
+		out = append(out, plural(s.Pods.Total, "pod", "pods"))
+	}
+	ready, total, known := 0, 0, false
+	for _, k := range []dash.KindSummary{s.Workloads.Deploy, s.Workloads.STS, s.Workloads.DS} {
+		if readable(k.Avail) {
+			ready, total, known = ready+k.Ready, total+k.Total, true
 		}
 	}
-	return lead
+	if known {
+		out = append(out, fmt.Sprintf("%d/%d workloads", ready, total))
+	}
+	if readable(s.Events.Avail) {
+		out = append(out, warningsCount(s.Events)+" in 1h")
+	}
+	return out
 }
 
-// groupedChips is the verdict where the banner is narrower than the wide
-// mockup's: chips of one severity share one glyph, "▲ 3 CrashLoopBackOff
-// · 1 ImagePullBackOff  △ 2 not ready", and a "· +N" tail counts the
-// rest. The medium layout keeps the word "attention" after the worst
-// glyph; the narrow ones drop it and shorten the reasons.
-func groupedChips(f frame, notes []string, chips []dash.Chip, w int) string {
-	for n := len(chips); n > 0; n-- {
-		s := chipGroups(f, notes, chips[:n])
-		if n < len(chips) {
-			s += fmt.Sprintf(" · +%d", len(chips)-n)
-		}
-		if ansi.StringWidth(s) <= w {
-			return s
-		}
+// nextLine is the second banner row: the suggestion under the cursor (or
+// the first) and the question it answers, or the command of the day when
+// nothing needs a fix. The question is never prefixed with #: a pasted
+// line must not carry it as arguments. The narrow layouts keep only the
+// command. mark is the wordmark's row, or nothing.
+func nextLine(f frame, mark string) string {
+	text := nextText(f)
+	if _, sel := f.selectedSuggestion(); sel {
+		return f.ds.Selection.Render(styles.CursorMarker) + mark + f.ds.Selection.Render(ansi.Strip(text))
 	}
-	return strings.Join(append(slices.Clip(notes), f.paint(markOf(chips[0].Sev))+fmt.Sprintf(" +%d", len(chips))), "  ")
+	return " " + mark + text
 }
 
-// chipGroups lays out chips, most severe first, one glyph per run of
-// equal severity.
-func chipGroups(f frame, notes []string, chips []dash.Chip) string {
-	parts := slices.Clip(notes)
-	texts := make([]string, 0, len(chips))
-	flush := func(sev dash.Severity, first bool) {
-		if len(texts) == 0 {
-			return
-		}
-		group := strings.Join(texts, " · ")
-		switch {
-		case first && !f.narrow():
-			parts = append(parts, f.paint(markOf(sev))+" attention", group)
-		default:
-			parts = append(parts, f.paint(markOf(sev))+" "+group)
-		}
-		texts = texts[:0]
+func nextText(f frame) string {
+	if !f.loaded {
+		return f.muted("▸ next  waiting for the first answer")
 	}
-	for i, c := range chips {
-		if i > 0 && c.Sev != chips[i-1].Sev {
-			flush(chips[i-1].Sev, len(parts) == len(notes))
-		}
-		texts = append(texts, chipText(c, f.narrow()))
+	all := suggestions(f.snap)
+	if len(all) == 0 {
+		return ""
 	}
-	flush(chips[len(chips)-1].Sev, len(parts) == len(notes))
-	return strings.Join(parts, "  ")
-}
-
-// chipText is a chip's words for a grouped banner: the workloads chips
-// lose the word their panel number already says ("4 workloads", "1 job"),
-// and the narrow layouts shorten the BackOff reasons.
-func chipText(c dash.Chip, narrow bool) string {
-	t := clean(c.Text)
-	if c.Panel == dash.PanelWorkloads {
-		t = strings.TrimSuffix(strings.TrimSuffix(t, " not ready"), " failed")
+	i, _ := f.selectedSuggestion()
+	i = min(i, len(all)-1)
+	label := "▸ command of the day"
+	if n := len(f.snap.Next); n > 0 {
+		label = nextLabel(f, i, n)
 	}
-	if narrow {
-		t = strings.NewReplacer("CrashLoopBackOff", "CrashLoop", "ImagePullBackOff", "ImagePull").Replace(t)
+	text := f.ds.Title.Render(label) + "  " + f.command(all[i].Cmd)
+	if q := clean(all[i].Question); q != "" && !f.narrow() {
+		text += "   " + f.muted(q)
 	}
-	return t
-}
-
-// nextLine is the second banner row: the first next suggestion and the
-// question it answers, or the command of the day when nothing needs a
-// fix. The question is never prefixed with #: a pasted line must not
-// carry it as arguments. The narrow layouts keep only the command.
-func nextLine(f frame) string {
-	s := f.snap
-	switch {
-	case !f.loaded:
-		return " " + f.muted("▸ next  waiting for the first answer")
-	case len(s.Next) > 0 && f.narrow():
-		return " " + f.ds.Title.Render("▸ next") + "  " + f.command(s.Next[0].Cmd)
-	case len(s.Next) > 0:
-		n := s.Next[0]
-		label := "▸ next"
-		if len(s.Next) > 1 {
-			label = fmt.Sprintf("▸ next 1/%d", len(s.Next))
-		}
-		return " " + f.ds.Title.Render(label) + "  " + f.command(n.Cmd) + "   " + f.muted(clean(n.Question))
-	case !s.Daily.Cmd.IsZero():
-		return " " + f.ds.Title.Render("▸ command of the day") + "  " + f.command(s.Daily.Cmd)
-	}
-	return ""
+	return text
 }

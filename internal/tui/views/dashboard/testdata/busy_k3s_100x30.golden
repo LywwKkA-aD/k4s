@@ -1,4 +1,4 @@
-›▲ 3 CrashLoop · 1 ImagePull · 4 workloads · 1 job  △ k3s-agent-1 mem 87% · 2 not ready · +1        
+›▲ 3 CrashLoop · 1 ImagePull · 4 workloads · 1 job  △ k3s-agent-1 mem 87% · +2           ◆ 14:12:00 
  ▸ next  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --previous                  
    1 cluster    ● api ready · 33 ns · 26/26 pvc Bound · ○ 1 LB <pending>                            
    2 nodes      △ 3/3 Ready · cpu ██▎···  38% · mem ████▏·  69% · △ 1 degraded                      

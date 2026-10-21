@@ -22,7 +22,8 @@ func podItems(s dash.Snapshot) []podItem {
 	out := make([]podItem, 0, len(all))
 	for _, p := range all {
 		key := distinct(seen, p.Key.String())
-		out = append(out, podItem{row: row{key: key, cmd: p.Cmd, target: p.Key, placed: p.Resolved}, pod: p})
+		r := row{key: key, cmd: p.Cmd, target: p.Key, placed: p.Resolved, container: p.Container}
+		out = append(out, podItem{row: r, pod: p})
 	}
 	return out
 }

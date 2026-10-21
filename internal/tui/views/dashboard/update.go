@@ -85,7 +85,9 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 		var gone string
 		m.mem = m.mem.with(msg.Value.snap)
 		m, gone = m.reflow()
-		if gone != "" {
+		// A suggestion that left was fixed or outranked: the cursor
+		// moving on says enough.
+		if gone != "" && m.mem.focus.panel != dash.PanelOverview {
 			note = statusCmd(status.Info, goneText(gone))
 		}
 	}
@@ -142,6 +144,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (views.View, tea.Cmd) {
 		return m.onWatchKey()
 	case key.Matches(msg, m.keys.enter):
 		return m.onEnter()
+	case key.Matches(msg, m.keys.logs):
+		return m.onLogs()
 	}
 	if m.client == nil {
 		return m, nil
@@ -166,6 +170,9 @@ func (m Model) onWatchKey() (views.View, tea.Cmd) {
 		return m, statusCmd(status.Warn, "not connected: nothing to watch")
 	}
 	m.mem.paused = !m.mem.paused
+	if m.mem.paused {
+		m.mem.pausedAt = m.now()
+	}
 	var cmd tea.Cmd
 	m.poll, cmd = m.poll.WithEnabled(!m.mem.paused)
 	return m, cmd
@@ -227,28 +234,52 @@ func hiddenText(p dash.Panel, sh shown) string {
 }
 
 // onEnter opens what the focused row stands for: describe for a pod, a
-// deployment or a service. On the banner it focuses the panel of the most
-// severe finding. Anything else has no k4s view yet, and y copies its
-// command.
+// deployment or a service, and on a next suggestion what it says (logs or
+// describe). On the verdict it focuses the panel of the most severe
+// finding. Anything else has no k4s view yet, and y copies its command.
 func (m Model) onEnter() (views.View, tea.Cmd) {
 	if m.client == nil {
 		return m, nil
 	}
 	f := m.mem.focus
-	if f.panel == dash.PanelOverview && m.mem.snap.Verdict.Focus != dash.PanelOverview {
-		return m.jump(m.mem.snap.Verdict.Focus)
+	if sg, ok := m.suggestionAt(); ok {
+		return m, m.runSuggestion(sg)
+	}
+	if to := m.mem.snap.Verdict.Focus; f.panel == dash.PanelOverview && to != dash.PanelOverview {
+		return m.jump(to)
 	}
 	if r, ok := f.selected(m.rows(f.panel)); ok && describable(r) {
-		req := views.DescribeRequestMsg{Kind: r.target.Kind, Namespace: r.target.Namespace, Name: r.target.Name}
-		return m, func() tea.Msg { return req }
+		return m, describeCmd(r.target)
 	}
-	return m, statusCmd(status.Info, "no k4s view · y copies the command")
+	return m, statusCmd(status.Info, noViewText)
+}
+
+// onLogs is l: the tail prompt for the pod under the cursor, or for the
+// pod a next suggestion reads logs of.
+func (m Model) onLogs() (views.View, tea.Cmd) {
+	if m.client == nil {
+		return m, nil
+	}
+	if sg, ok := m.suggestionAt(); ok {
+		if readsLogs(sg) {
+			return m, logsOfSuggestion(sg)
+		}
+		return m, statusCmd(status.Info, "no logs for this suggestion · y copies the command")
+	}
+	f := m.mem.focus
+	if r, ok := f.selected(m.rows(f.panel)); ok && r.pod() {
+		return m, logsCmd(r.target, r.container)
+	}
+	return m, statusCmd(status.Info, "no logs here: l reads the logs of a pod row")
 }
 
 // enterHint is the enter hint for the footer, "" where Enter only says
 // there is no view, or that the panel it would go to is hidden.
 func (m Model) enterHint() string {
 	f := m.mem.focus
+	if sg, ok := m.suggestionAt(); ok {
+		return suggestionHint(sg)
+	}
 	if to := m.mem.snap.Verdict.Focus; f.panel == dash.PanelOverview && to != dash.PanelOverview {
 		if _, ok := m.lay.placeOf(to); !ok {
 			return ""
@@ -259,6 +290,16 @@ func (m Model) enterHint() string {
 		return "describe"
 	}
 	return ""
+}
+
+// logsHint reports whether l opens logs where the cursor is.
+func (m Model) logsHint() bool {
+	if sg, ok := m.suggestionAt(); ok {
+		return readsLogs(sg)
+	}
+	f := m.mem.focus
+	r, ok := f.selected(m.rows(f.panel))
+	return ok && r.pod()
 }
 
 func statusCmd(level status.Level, text string) tea.Cmd {

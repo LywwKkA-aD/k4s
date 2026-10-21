@@ -165,16 +165,16 @@ func TestAnotherDashboardsReplyIsDropped(t *testing.T) {
 
 // TestEqualSnapshotsRenderTheSame is an idle guard: a poll that brings
 // nothing new repaints byte for byte, and so does one that changes only
-// what is not drawn.
+// what is not drawn (the request and byte counts, which no section hash
+// covers).
 func TestEqualSnapshotsRenderTheSame(t *testing.T) {
 	t.Parallel()
 
-	n, sum := 0, uint64(0)
+	n := 0
 	f := newFeed(func() dash.Snapshot {
 		n++
-		sum++
 		s := busyK3s()
-		s.Requests, s.Bytes, s.Hash = n, n*1000, dash.Hashes{Pods: sum}
+		s.Requests, s.Bytes = n, n*1000
 		return s
 	})
 	m := mount(t, f, wideW, wideH)
@@ -217,12 +217,4 @@ func hint(m dashboard.Model, k string) string {
 		}
 	}
 	return ""
-}
-
-// allClear is the busy fixture with nothing wrong.
-func allClear() dash.Snapshot {
-	s := busyK3s()
-	s.Pods.Problems, s.Next = nil, nil
-	s.Verdict = dash.Verdict{AllClear: true, Cmd: s.Verdict.Cmd}
-	return s
 }

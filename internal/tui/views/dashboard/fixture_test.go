@@ -89,10 +89,21 @@ func busyK3s() dash.Snapshot {
 	}
 	s.Next = []dash.Suggestion{
 		{Cmd: kc("logs", "payments-worker-6c9f7d8b5-xk2lp", "-n", "shop", "-c", "worker", "--previous"), Question: "why does it keep crashing?", Action: dash.ActionLogsPrevious, Target: podKey("shop", "payments-worker-6c9f7d8b5-xk2lp"), Container: "worker", Sev: dash.SevFailing},
-		{Cmd: kc("describe", "pod", "api-7f6d9c4b8-2mzqt", "-n", "staging"), Question: "why can't it pull its image?", Action: dash.ActionDescribe, Sev: dash.SevFailing},
+		{Cmd: kc("describe", "pod", "api-7f6d9c4b8-2mzqt", "-n", "staging"), Question: "why can't it pull its image?", Action: dash.ActionDescribe, Target: podKey("staging", "api-7f6d9c4b8-2mzqt"), Sev: dash.SevFailing},
+		{Cmd: kc("logs", "grafana-5d8f7c6b9-wq2lx", "-n", "monitoring", "-c", "grafana"), Question: "why does it fail its probe?", Action: dash.ActionLogs, Target: podKey("monitoring", "grafana-5d8f7c6b9-wq2lx"), Container: "grafana", Sev: dash.SevWaiting},
+		{Cmd: kc("describe", "job", "nightly-e2e-28741000", "-n", "ci"), Question: "why did the job fail?", Action: dash.ActionRunner, Target: dash.ObjectKey{Kind: "job", Namespace: "ci", Name: "nightly-e2e-28741000"}, Sev: dash.SevFailing},
+		{Cmd: kc("describe", "svc", "traefik", "-n", "kube-system"), Question: "why is the LoadBalancer pending?", Action: dash.ActionDescribe, Target: dash.ObjectKey{Kind: "service", Namespace: "kube-system", Name: "traefik"}, Sev: dash.SevInfo},
 	}
-	s.Daily = dash.Suggestion{Cmd: kc("get", "pods", "-A", "--field-selector=status.phase!=Running,status.phase!=Succeeded")}
+	s.Daily = daily()
 	return s
+}
+
+// daily is the command of the day the fixtures carry.
+func daily() dash.Suggestion {
+	return dash.Suggestion{
+		Cmd:      kc("get", "pods", "-A", "--field-selector=status.phase!=Running,status.phase!=Succeeded"),
+		Question: "which pods are neither running nor done?", Action: dash.ActionCopy, Target: dash.ObjectKey{Kind: "daily"},
+	}
 }
 
 func busyCluster() dash.ClusterPanel {

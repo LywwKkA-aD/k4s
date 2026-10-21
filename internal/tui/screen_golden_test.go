@@ -2,6 +2,7 @@ package tui_test
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -13,14 +14,18 @@ import (
 )
 
 // onTerminal is screen as a terminal width columns wide shows it: lines cut
-// at the edge, trailing blanks dropped.
+// at the edge, trailing blanks dropped, and the wall-clock times the
+// dashboard banner prints ("◆ 14:32:05") masked.
 func onTerminal(screen string, width int) string {
 	lines := strings.Split(screen, "\n")
 	for i, l := range lines {
 		lines[i] = ansi.Truncate(l, width, "")
 	}
-	return tuitest.TrimLines(strings.Join(lines, "\n"))
+	return tuitest.TrimLines(wallClock.ReplaceAllString(strings.Join(lines, "\n"), "hh:mm:ss"))
 }
+
+// wallClock is a time of day as the dashboard prints it.
+var wallClock = regexp.MustCompile(`\b\d\d:\d\d:\d\d\b`)
 
 // TestNarrowScreenGoldens pins whole ANSI-stripped screens on terminals
 // narrower than the tables, where rows, the selected row and the footer

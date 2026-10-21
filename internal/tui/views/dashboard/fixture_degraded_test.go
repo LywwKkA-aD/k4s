@@ -62,8 +62,8 @@ func nsScopedEKS() dash.Snapshot {
 	s.TopPods = dash.TopPodsPanel{Avail: absent(), CmdCPU: kc("top", "pods", "-n", "shop", "--sort-by=cpu")}
 	s.Verdict = dash.Verdict{Partial: true, Cmd: approxCmd("get", "nodes,pods,deploy,sts,ds", "-n", "shop")}
 	s.Next = []dash.Suggestion{
-		{Cmd: kc("auth", "can-i", "--list", "-n", "shop"), Question: "what am I allowed to see here?", Action: dash.ActionCopy, Sev: dash.SevInfo},
-		{Cmd: kc("api-resources", "--api-group=metrics.k8s.io"), Question: "is the metrics API served?", Action: dash.ActionCopy, Sev: dash.SevInfo},
+		{Cmd: kc("auth", "can-i", "--list", "-n", "shop"), Question: "what am I allowed to see here?", Action: dash.ActionCopy, Target: dash.ObjectKey{Kind: "access"}, Sev: dash.SevWaiting},
+		{Cmd: kc("api-resources", "--api-group=metrics.k8s.io"), Question: "is the metrics API served?", Action: dash.ActionCopy, Target: dash.ObjectKey{Kind: "metrics"}, Sev: dash.SevInfo},
 	}
 	return s
 }
@@ -90,7 +90,8 @@ func noMetricsK3s() dash.Snapshot {
 	}
 	s.Verdict.Chips = chips
 	s.Next = append(s.Next, dash.Suggestion{
-		Cmd: kc("api-resources", "--api-group=metrics.k8s.io"), Question: "is the metrics API served?", Action: dash.ActionCopy, Sev: dash.SevInfo,
+		Cmd: kc("api-resources", "--api-group=metrics.k8s.io"), Question: "is the metrics API served?", Action: dash.ActionCopy,
+		Target: dash.ObjectKey{Kind: "metrics"}, Sev: dash.SevInfo,
 	})
 	return s
 }

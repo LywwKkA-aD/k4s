@@ -31,6 +31,10 @@ type Memory struct {
 	since  time.Time // the first all-clear snapshot of the current run
 	focus  focus
 	paused bool
+	// pausedAt is when watch went off; changed is the wall time of the
+	// last snapshot whose section hashes moved.
+	pausedAt time.Time
+	changed  time.Time
 }
 
 // adopt returns the memory to start from for client c listing ns: a fresh
@@ -86,6 +90,9 @@ func (mem Memory) rescoped(ns string) Memory {
 // with folds in a new snapshot. The cursor is put back on its row by the
 // model, which knows which rows the layout draws.
 func (mem Memory) with(s dash.Snapshot) Memory {
+	if !mem.loaded || s.Hash != mem.snap.Hash {
+		mem.changed = s.At
+	}
 	mem.snap = s
 	mem.hist = mem.hist.fold(s)
 	mem.since = allClearSince(mem.since, s)
