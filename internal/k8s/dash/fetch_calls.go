@@ -170,7 +170,13 @@ func (f Fetcher) events(ctx context.Context, r Request) outcome {
 		total += int(*l.RemainingItemCount)
 		capped = true
 	}
-	return outcome{rows: total, bytes: l.Size(), apply: func(s *store) {
+	// A field selector gets a continue token but no remaining count; the
+	// ledger must still read as over the cap or the next refresh lists it all.
+	ledgerRows := total
+	if capped {
+		ledgerRows = max(total, eventCap+1)
+	}
+	return outcome{rows: ledgerRows, bytes: l.Size(), apply: func(s *store) {
 		s.events, s.eventsTotal, s.eventsCapped = rows, total, capped
 	}}
 }

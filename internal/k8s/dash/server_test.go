@@ -49,6 +49,8 @@ type apiserver struct {
 	overrides map[string]http.Handler  // URL path prefix
 	typedErrs map[string]error         // "verb resource" or "* resource"
 	gate      func(*http.Request) bool // true denies the request with 403
+
+	continueOnly bool // a limited list sets Continue but not RemainingItemCount, as with a field selector
 }
 
 // option adjusts the fake before the counting reactor goes in front, so
@@ -86,6 +88,10 @@ func newAPIServer(t testing.TB, c cluster, opts ...option) *apiserver {
 	a.src = Source{Typed: a.cs, REST: restFor(t, srv.URL), Host: srv.URL}
 	return a
 }
+
+// withContinueOnly makes limited lists answer like the real apiserver does
+// under a field selector: a continue token and no remaining count.
+func withContinueOnly() option { return func(a *apiserver) { a.continueOnly = true } }
 
 func minorString(git string) string {
 	parts := strings.SplitN(strings.TrimPrefix(git, "v"), ".", 3)
@@ -149,7 +155,9 @@ func (a *apiserver) listReactor(act ktesting.Action) (bool, runtime.Object, erro
 		kept = kept[:lim]
 		if lm, err := meta.ListAccessor(obj); err == nil {
 			lm.SetContinue("next")
-			lm.SetRemainingItemCount(&rest)
+			if !a.continueOnly {
+				lm.SetRemainingItemCount(&rest)
+			}
 		}
 	}
 	if err := meta.SetList(obj, kept); err != nil {
