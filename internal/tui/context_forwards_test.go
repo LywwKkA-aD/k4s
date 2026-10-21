@@ -159,6 +159,12 @@ func requireStatusLine(t *testing.T, m Model, level status.Level, text string) {
 	}
 }
 
+// switchBudget bounds how long :ctx may take with hung forwards. It sits
+// far below the 2s stop deadline, so a switch that waited for the old
+// sessions still fails; a tighter bound flakes under -race on shared CI
+// runners (20ms was seen).
+const switchBudget = 250 * time.Millisecond
+
 func TestContextSwitchStopsHungForwardsInTheBackground(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	mgr, _ := hungForwards(t, 3)
@@ -166,8 +172,8 @@ func TestContextSwitchStopsHungForwardsInTheBackground(t *testing.T) {
 	begin := time.Now().Add(-took)
 
 	t.Logf("Update took %v", took)
-	if took >= 10*time.Millisecond {
-		t.Errorf("Update took %v with 3 hung forwards, want under 10ms", took)
+	if took >= switchBudget {
+		t.Errorf("Update took %v with 3 hung forwards, want under %v", took, switchBudget)
 	}
 	requireStatusLine(t, m, status.Info, "stopping 3 forwards…")
 	if m.forwardMgr == nil {
