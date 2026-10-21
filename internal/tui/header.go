@@ -79,12 +79,14 @@ func (m Model) headerParts() headerParts {
 	return p
 }
 
-// headerNamespace is the namespace as the header shows it.
+// headerNamespace is the namespace as the header and the window title show
+// it. It comes from the kubeconfig or the command line, so it is made
+// inert like the context name.
 func headerNamespace(ns string) string {
 	if ns == "" {
 		return "ALL"
 	}
-	return ns
+	return sanitize.Line(ns)
 }
 
 // layoutHeader fits p into width cells (see fitHeader); a width of 0 or

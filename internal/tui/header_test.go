@@ -211,6 +211,26 @@ func TestHeaderTruncationOrder(t *testing.T) {
 	tuitest.Golden(t, "header_truncation", out.String())
 }
 
+// escapingNamespace would set the terminal's title (OSC 0) if it reached
+// the terminal as it is.
+const escapingNamespace = "a\x1b]0;x\x07b"
+
+// TestHeaderNamespaceIsInert: the namespace comes from the kubeconfig or
+// the command line and is drawn as text, its escape sequence gone.
+func TestHeaderNamespaceIsInert(t *testing.T) {
+	t.Parallel()
+
+	c := clusterAt(t, "lab", "https://10.0.0.5:6443").WithNamespace(escapingNamespace)
+	m, _ := tuitest.Mount(t, tui.New(c, nil), 80, 24)
+	raw, _, _ := strings.Cut(tuitest.Frame(m), "\n")
+	if strings.ContainsRune(raw, '\a') || strings.Contains(raw, "\x1b]") {
+		t.Errorf("header carries the namespace's control bytes: %q", raw)
+	}
+	if h := header(m); !strings.Contains(h, "ns ab · ") {
+		t.Errorf("header = %q, want the namespace as ab", h)
+	}
+}
+
 func TestWindowTitle(t *testing.T) {
 	t.Parallel()
 
@@ -226,6 +246,9 @@ func TestWindowTitle(t *testing.T) {
 		{name: "control characters never reach the terminal", client: func(t *testing.T) *k8s.Client {
 			return clusterAt(t, "lab\x07\x1b]0;evil", "https://10.0.0.5:6443")
 		}, want: "k4s · lab/ALL"},
+		{name: "a namespace never retitles the terminal", client: func(t *testing.T) *k8s.Client {
+			return clusterAt(t, "lab", "https://10.0.0.5:6443").WithNamespace(escapingNamespace)
+		}, want: "k4s · lab/ab"},
 		{name: "no client", client: func(*testing.T) *k8s.Client { return nil }, want: "k4s"},
 	}
 	for _, tc := range cases {
