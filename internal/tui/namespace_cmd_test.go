@@ -4,8 +4,57 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
+
+// TestNamespaceCommandToTheSameNamespace: asking for the namespace a list
+// already shows changes nothing, leaves no history entry and says so.
+func TestNamespaceCommandToTheSameNamespace(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		setup []tea.Msg
+		input string
+		want  string
+		back  string // command row after one Esc
+	}{
+		{name: "named", setup: then(colon("deploy"), colon("ns demo")), input: "ns demo", want: "already in demo", back: "kubectl get deployments -A"},
+		{name: "all namespaces", setup: colon("svc"), input: "ns -A", want: "already in all namespaces", back: "kubectl get all -A"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), tc.setup...)
+			before := commandRow(m)
+			m, out := tuitest.Drive(t, m, colon(tc.input)...)
+			if row := statusRow(footer(m)); row != tc.want {
+				t.Errorf("status row = %q, want %q", row, tc.want)
+			}
+			if got := commandRow(m); got != before {
+				t.Errorf("command row = %q, want it unchanged at %q", got, before)
+			}
+			if reqs := tuitest.Requests(out); len(reqs) != 0 {
+				t.Errorf("rebuilt the view:\n%s", tuitest.Describe(reqs))
+			}
+			m, _ = tuitest.Drive(t, m, tuitest.Esc())
+			if got := commandRow(m); got != tc.back {
+				t.Errorf("command row after Esc = %q, want %q", got, tc.back)
+			}
+		})
+	}
+}
+
+// TestNamespaceCommandToTheSameNamespaceFromTheDashboard: only a
+// namespaced list is left alone; elsewhere the command still opens pods.
+func TestNamespaceCommandToTheSameNamespaceFromTheDashboard(t *testing.T) {
+	t.Parallel()
+
+	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), colon("ns -A")...)
+	requireView(t, m, "pods")
+}
 
 // TestNamespaceCommand: `:ns <name>` scopes the list view in place, or
 // opens pods in that namespace from any other view; `:ns -A` is all

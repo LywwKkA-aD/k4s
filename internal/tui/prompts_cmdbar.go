@@ -9,6 +9,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/command"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
@@ -67,12 +68,22 @@ func (m Model) switchNamespace(arg string) (Model, tea.Cmd) {
 	view, st := m.current.Title(), stateOf(m.current).WithoutSelection()
 	if !isNamespacedList(view) {
 		view, st = viewPods, views.State{}
+	} else if ns == m.namespace {
+		return m.setStatus(status.Info, "already in "+namespaceLabel(ns))
 	}
 	m = m.pushHistory()
 	m.namespace = ns
 	m = m.replaceView(view)
 	m, cmd := m.restore(st)
 	return m, tea.Batch(cmd, m.relayoutCmd())
+}
+
+// namespaceLabel names ns for a message: "" is every namespace.
+func namespaceLabel(ns string) string {
+	if ns == "" {
+		return "all namespaces"
+	}
+	return ns
 }
 
 // isNamespacedList reports a view that lists one namespace at a time.
