@@ -34,6 +34,25 @@ func TestDegradedSources(t *testing.T) {
 			not:  []string{"0/0 Ready"},
 		},
 		{
+			// Panel 3 cannot show pods per node when it shows no pods.
+			name: "nodes and pods forbidden, no namespace to fall back to",
+			change: func(s *dash.Snapshot) {
+				s.Nodes = dash.NodesPanel{Avail: denied("auth", "can-i", "list", "nodes"), Cmd: s.Nodes.Cmd}
+				s.Pods = dash.PodsPanel{Avail: denied("auth", "can-i", "list", "pods", "-A"), Cmd: s.Pods.Cmd}
+			},
+			want: []string{"— nodes: list forbidden", ":ns <name> to see pods per node"},
+			not:  []string{"still shown in 3 pods"},
+		},
+		{
+			name: "nodes forbidden, pods never answered",
+			change: func(s *dash.Snapshot) {
+				s.Nodes = dash.NodesPanel{Avail: denied("auth", "can-i", "list", "nodes"), Cmd: s.Nodes.Cmd}
+				s.Pods.Avail = dash.Avail{State: dash.StateStale, Stale: time.Minute, Unanswered: true}
+			},
+			want: []string{"— nodes: list forbidden"},
+			not:  []string{"still shown in 3 pods", "to see pods per node"},
+		},
+		{
 			name: "no metrics-server on k3s",
 			change: func(s *dash.Snapshot) {
 				s.Nodes.Metrics = dash.Avail{State: dash.StateAbsent}

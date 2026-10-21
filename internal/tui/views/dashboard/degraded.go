@@ -159,14 +159,12 @@ func nodesDenied(f frame, h int) []string {
 	if readable(s.Cluster.You.Avail) && s.Cluster.You.Text != "" {
 		who = " for " + clean(s.Cluster.You.Text)
 	}
-	where := ""
-	if s.Pods.Scope != "" {
-		where = " (ns " + clean(s.Pods.Scope) + ")"
-	}
 	out := []string{
 		" " + f.paint(markUnknown) + " nodes: list forbidden" + who,
 		"   " + f.command(s.Nodes.Avail.CanI),
-		"   pods per node" + where + " still shown in 3 pods",
+	}
+	if where := podsPerNodeNote(s); where != "" {
+		out = append(out, "   "+where)
 	}
 	if readable(s.Nodes.Metrics) || s.Nodes.Metrics.State == dash.StateUnknown {
 		return out
@@ -180,4 +178,19 @@ func nodesDenied(f frame, h int) []string {
 		out = append(out, " "+l)
 	}
 	return out
+}
+
+// podsPerNodeNote says where the pods per node are while nodes are
+// denied: in panel 3 when it shows pods, behind :ns when no list is
+// allowed at all, and nowhere while the pods have not answered.
+func podsPerNodeNote(s dash.Snapshot) string {
+	switch {
+	case readable(s.Pods.Avail) && s.Pods.Scope != "":
+		return "pods per node (ns " + clean(s.Pods.Scope) + ") still shown in 3 pods"
+	case readable(s.Pods.Avail):
+		return "pods per node still shown in 3 pods"
+	case noScope(s):
+		return ":ns <name> to see pods per node"
+	}
+	return ""
 }
