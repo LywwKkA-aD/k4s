@@ -1,0 +1,23 @@
+ k4s  ·  ctx: fake  ·  ns: ALL  ·  view: dashboard
+──────────────────────────────────────────────────────────────────────────────
+         ╭────────────────────────────────────────────────────────────╮
+         │                                                            │
+         │   help                                                     │
+         │                                                            │
+         │   global                                                   │
+         │     q       quit                                           │
+         │     ctrl+c  force quit                                     │
+         │     esc     back                                           │
+         │     :       command bar                                    │
+         │     ?       this help                                      │
+         │                                                            │
+         │   view: dashboard                                          │
+         │     r  refresh                                             │
+         │     w  watch                                               │
+         │                                                            │
+         │   commands                                                 │
+         │     :dashboard    home                                     │
+──────────────────────────────────────────────────────────────────────────────
+ q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  r refresh  ·  w
+ watch
+ ≈ kubectl get all -A --watch
