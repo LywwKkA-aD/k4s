@@ -94,7 +94,7 @@ func TestDescribeFailures(t *testing.T) {
 	}{
 		{name: "no kubeconfig", m: describe.New(nil, describe.KindPod, "demo", "x"), want: "no kubeconfig"},
 		{name: "missing object", m: describe.New(tuitest.NewFakeClient(t), describe.KindPod, "demo", "nope"), want: "describe failed: get pod:"},
-		{name: "unsupported kind", m: describe.New(tuitest.NewFakeClient(t), describe.Kind("secret"), "demo", "x"), want: "describe failed: unsupported kind: secret"},
+		{name: "a kind only kubectl describes", m: describe.New(tuitest.NewFakeClient(t), describe.Kind("secret"), "demo", "x"), want: "describe secret needs kubectl"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

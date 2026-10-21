@@ -1,12 +1,14 @@
 // Package describe is the describe view: `kubectl describe <kind> <name>`
 // run through the session's kubectl, exactly as the footer shows it, with
 // the built-in describer as the fallback when kubectl is missing, fails or
-// times out. The title says which one wrote the text.
+// times out. The title says which one wrote the text. The built-in
+// describer knows pods, deployments and services; for any other kind,
+// such as a node, the view says what kubectl needs when it cannot run.
 package describe
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -34,15 +36,22 @@ const (
 	sourceKubectl = "via kubectl"
 )
 
-// Kind enumerates the resources the describe view supports.
+// Kind is the kind the view describes, as kubectl describe takes it.
 type Kind string
 
-// Supported kinds.
+// The kinds the built-in describer writes; kubectl describes any kind.
 const (
 	KindPod        Kind = "pod"
 	KindDeployment Kind = "deployment"
 	KindService    Kind = "service"
 )
+
+// builtIns are the built-in describer's functions by kind.
+var builtIns = map[Kind]func(*k8s.Client, context.Context, string, string) (string, error){
+	KindPod:        (*k8s.Client).DescribePod,
+	KindDeployment: (*k8s.Client).DescribeDeployment,
+	KindService:    (*k8s.Client).DescribeService,
+}
 
 // Model is the describe view.
 type Model struct {
@@ -128,7 +137,7 @@ type output struct {
 }
 
 // fetch describes the object under the current Token: kubectl first, the
-// built-in describer when kubectl cannot.
+// built-in describer when kubectl cannot and knows the kind.
 func (m Model) fetch() tea.Cmd {
 	k, c, kind, ns, name, cmd := m.kubectl, m.client, m.kind, m.namespace, m.name, m.command()
 	limit := m.builtInTimeout
@@ -141,26 +150,22 @@ func (m Model) fetch() tea.Cmd {
 			}
 			kubectlErr = err
 		}
-		text, err := builtIn(ctx, limit, c, kind, ns, name)
+		describe, ok := builtIns[kind]
+		if !ok {
+			return output{}, kubectlOnlyError{kind: kind, err: kubectlErr}
+		}
+		text, err := builtIn(ctx, limit, func(ctx context.Context) (string, error) { return describe(c, ctx, ns, name) })
 		return output{text: text, builtin: true, kubectlErr: kubectlErr}, err
 	})
 }
 
-// builtIn describes the object in-process within limit of its own: a
-// kubectl that failed fast leaves the rest of its budget unused, and the
+// builtIn runs the built-in describer within limit of its own: a kubectl
+// that failed fast leaves the rest of its budget unused, and the
 // placeholder must not wait for it on a hung API server.
-func builtIn(ctx context.Context, limit time.Duration, c *k8s.Client, kind Kind, ns, name string) (string, error) {
+func builtIn(ctx context.Context, limit time.Duration, describe func(context.Context) (string, error)) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
-	switch kind {
-	case KindPod:
-		return c.DescribePod(ctx, ns, name)
-	case KindDeployment:
-		return c.DescribeDeployment(ctx, ns, name)
-	case KindService:
-		return c.DescribeService(ctx, ns, name)
-	}
-	return "", fmt.Errorf("unsupported kind: %s", kind)
+	return describe(ctx)
 }
 
 // Update handles size, refresh and content; scroll and search keys go to
@@ -213,6 +218,11 @@ func (m Model) onContent(msg async.Result[output]) (Model, tea.Cmd) {
 		// in an empty pager, at the top.
 		m.pager = m.pager.Refresh(sanitize.Text(out.text))
 	}
+	var only kubectlOnlyError
+	if errors.As(msg.Err, &only) {
+		warn := views.StatusMsg{Level: status.Warn, Text: only.Error()}
+		return m, func() tea.Msg { return warn }
+	}
 	return m, fallbackStatus(out.kubectlErr)
 }
 
@@ -248,7 +258,11 @@ func (m Model) View() string {
 	if !m.loaded {
 		return styles.Hint.Render("loading describe…")
 	}
-	if m.err != nil {
+	var only kubectlOnlyError
+	switch {
+	case errors.As(m.err, &only):
+		return styles.Warn.Render(only.Error())
+	case m.err != nil:
 		return styles.Warn.Render("describe failed: " + sanitize.Line(m.err.Error()))
 	}
 	return m.pager.View()

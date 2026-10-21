@@ -114,6 +114,30 @@ func clientVersion(ctx context.Context, r Runner) (string, error) {
 	return string(v), nil
 }
 
+// kubectlOnlyError is a describe of a kind the built-in describer does
+// not know, when kubectl could not describe it either: err is why, nil
+// when the view was given no kubectl to run.
+type kubectlOnlyError struct {
+	kind Kind
+	err  error
+}
+
+// Error says what the describe needs, as the body and the status show it.
+func (e kubectlOnlyError) Error() string {
+	what := "describe " + sanitize.Line(string(e.kind))
+	switch {
+	case e.err == nil:
+		return what + " needs kubectl"
+	case errors.Is(e.err, kubectl.ErrNotFound):
+		return what + " needs kubectl (not found on PATH)"
+	case errors.Is(e.err, context.DeadlineExceeded):
+		return "kubectl " + what + " timed out"
+	}
+	return "kubectl " + what + " failed: " + sanitize.Line(e.err.Error())
+}
+
+func (e kubectlOnlyError) Unwrap() error { return e.err }
+
 // fallbackNote is the status that says why the built-in describer runs
 // instead of kubectl.
 func fallbackNote(err error) (text string, missing bool) {
