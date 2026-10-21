@@ -4,6 +4,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 // fallBack answers RBAC refusing the pod metrics of every namespace by
@@ -27,5 +28,5 @@ func (m Model) fallBack(err error) (Model, tea.Cmd, bool) {
 	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	m.mint = m.mint.Next()
 	m.poll = m.poll.Restart(m.mint)
-	return m, tea.Batch(say, m.fetch()), true
+	return m, tea.Batch(say, m.fetch(), views.NamespaceFallback(ns)), true
 }

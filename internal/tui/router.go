@@ -53,6 +53,8 @@ func (m Model) onRequest(msg tea.Msg) (next tea.Model, cmd tea.Cmd, ok bool) {
 	switch msg := msg.(type) {
 	case views.NamespaceSelectedMsg:
 		next, cmd = m.onNamespaceSelected(msg)
+	case views.NamespaceFallbackMsg:
+		next = m.onNamespaceFallback(msg)
 	case views.ContextSelectedMsg:
 		next, cmd = m.onContextSelected(msg)
 	case views.DescribeRequestMsg:
@@ -105,6 +107,17 @@ func (m Model) onNamespaceSelected(msg views.NamespaceSelectedMsg) (tea.Model, t
 	m = m.enterNamespace(msg.Namespace)
 	m = m.replaceView(viewPods)
 	return m, m.relayoutCmd()
+}
+
+// onNamespaceFallback follows a list that fell back from every namespace
+// to msg.Namespace: the header and every history entry pushed from now on
+// name it, and the view, which already lists it, stays. A fallback that
+// arrives once the root is in a namespace, or the list is gone, is stale.
+func (m Model) onNamespaceFallback(msg views.NamespaceFallbackMsg) Model {
+	if m.namespace != "" || !isNamespacedList(m.current.Title()) {
+		return m
+	}
+	return m.enterNamespace(msg.Namespace)
 }
 
 func (m Model) onDescribeRequest(msg views.DescribeRequestMsg) (tea.Model, tea.Cmd) {

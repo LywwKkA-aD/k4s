@@ -69,6 +69,23 @@ type NamespaceSelectedMsg struct {
 	Namespace string
 }
 
+// NamespaceFallbackMsg is emitted by a list view asked for every namespace
+// when RBAC refused that and it lists the kubeconfig context's namespace,
+// Namespace, instead. The root makes Namespace the active namespace
+// without rebuilding the view, so the header names it and Esc back to the
+// list does not ask for every namespace again. Build it with
+// NamespaceFallback.
+type NamespaceFallbackMsg struct {
+	Namespace string
+}
+
+// NamespaceFallback is the Cmd a list view returns, next to its first list
+// in namespace, when it falls back from every namespace to namespace.
+func NamespaceFallback(namespace string) tea.Cmd {
+	msg := NamespaceFallbackMsg{Namespace: namespace}
+	return func() tea.Msg { return msg }
+}
+
 // ContextSelectedMsg is emitted by the contexts view when the user picks a
 // kubeconfig context. The root model rebuilds k8s.Client against that
 // context from the same kubeconfig, drops navigation history and every

@@ -102,7 +102,7 @@ func (m Model) fallBack() (Model, tea.Cmd) {
 	m.table.SetRows(nil)
 	m = m.resized(tea.WindowSizeMsg{Width: m.width, Height: m.bodyH})
 	said := statusCmd(status.Warn, "cluster-wide list forbidden; showing "+ns+" · "+canI(""))
-	return m, tea.Batch(said, m.list(k8s.FromCache()))
+	return m, tea.Batch(said, m.list(k8s.FromCache()), views.NamespaceFallback(ns))
 }
 
 func (m Model) onKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 // fallBack answers RBAC refusing the services of every namespace by
@@ -28,5 +29,5 @@ func (m Model) fallBack(err error) (Model, tea.Cmd, bool) {
 	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	m.tok = m.tok.Next()
 	m.poll = m.poll.Restart(m.tok)
-	return m, tea.Batch(say, m.list(k8s.FromCache())), true
+	return m, tea.Batch(say, m.list(k8s.FromCache()), views.NamespaceFallback(ns)), true
 }
