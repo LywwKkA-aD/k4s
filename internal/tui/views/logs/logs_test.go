@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
@@ -263,16 +264,37 @@ func TestPaintHighlightsEverySpan(t *testing.T) {
 	t.Parallel()
 	text := "hello alpha world alpha"
 	spans := newQuery("alpha").find(text)
-	out := paint(text, nil, spans, 1)
+	p := newPainter()
+	out := p.paint(text, marks{}, spans, 1)
 	if got := ansi.Strip(out); got != text {
 		t.Errorf("painting changed the text: %q", got)
 	}
-	want := styles.Highlight.Render("alpha") + " world " + styles.Highlight.Underline(true).Render("alpha")
-	if !strings.HasSuffix(out, want) {
+	if got := p.match.on + "alpha" + p.match.off; got != styles.Highlight.Render("alpha") {
+		t.Errorf("marks draw a match as %q, the style as %q", got, styles.Highlight.Render("alpha"))
+	}
+	want := p.match.on + "alpha" + p.match.off + " world " + p.current.on + "alpha" + p.current.off
+	if !strings.HasSuffix(out, want) || p.current == p.match {
 		t.Errorf("paint = %q, want the plain match then the current one", out)
 	}
-	if got := paint("hello", nil, nil, noCurrent); got != "hello" {
+	if got := p.paint("hello", marks{}, nil, noCurrent); got != "hello" {
 		t.Errorf("no spans should pass the text through, got %q", got)
+	}
+
+	errLine := logLine{pod: "web-1", text: "boom alpha", kind: lineStreamErr}
+	painted := p.line(errLine, formatRawLine(errLine, false, false, ""), []span{{5, 10}}, noCurrent)
+	if got := ansi.Strip(painted); got != "[web-1] stream error: boom alpha" {
+		t.Errorf("painted error line = %q", got)
+	}
+	done := logLine{pod: "web-1", kind: lineStreamDone}
+	if got := p.line(done, "as cached", nil, noCurrent); got != "as cached" {
+		t.Errorf("a closed-stream line is drawn from the cache, got %q", got)
+	}
+}
+
+func TestMarksOfAStyleWithoutEscapes(t *testing.T) {
+	t.Parallel()
+	if got := marksOf(lipgloss.NewStyle()); got != (marks{}) {
+		t.Errorf("an empty style has marks %q", got)
 	}
 }
 

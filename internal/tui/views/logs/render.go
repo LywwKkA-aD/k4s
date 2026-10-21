@@ -54,6 +54,10 @@ func (m *Model) syncViewport() {
 	width := m.viewport.Width()
 	rows := make([]string, 0, len(m.rendered))
 	starts := make([]int, len(m.rendered)+1)
+	var p painter
+	if len(m.matches) > 0 {
+		p = newPainter()
+	}
 	next := 0
 	for i, line := range m.rendered {
 		for next < len(m.matches) && m.matches[next].line < i {
@@ -64,7 +68,7 @@ func (m *Model) syncViewport() {
 			next++
 		}
 		if next > from {
-			line = m.paintMatches(i, from, next)
+			line = m.paintMatches(p, i, from, next)
 		}
 		starts[i] = len(rows)
 		rows = m.appendRows(rows, line, width)
@@ -78,7 +82,7 @@ func (m *Model) syncViewport() {
 }
 
 // paintMatches draws line i with matches[from:to], all on that line.
-func (m Model) paintMatches(i, from, to int) string {
+func (m Model) paintMatches(p painter, i, from, to int) string {
 	spans := make([]span, 0, to-from)
 	for _, mt := range m.matches[from:to] {
 		spans = append(spans, mt.span)
@@ -87,8 +91,7 @@ func (m Model) paintMatches(i, from, to int) string {
 	if m.matchIdx >= from && m.matchIdx < to {
 		current = m.matchIdx - from
 	}
-	ln := m.rawLines[i]
-	return formatLine(ln, len(m.pods) > 1, m.showPodNames, m.podColors[ln.pod], spans, current)
+	return p.line(m.rawLines[i], m.rendered[i], spans, current)
 }
 
 // appendRows adds the rows line takes on screen: several when wrapped,
