@@ -137,18 +137,7 @@ func counts(e eventInfo, key ObjectKey, age time.Duration, f flagged) bool {
 	short := key.Kind + "/" + key.Name
 	switch key.Kind {
 	case "pod":
-		if f.pods == nil {
-			return true
-		}
-		r, ok := f.pods[key]
-		if !ok {
-			r, ok = f.podNames[key.Name]
-		}
-		if !ok {
-			return false
-		}
-		recovered := classOf(r.status, r.ready, r.readyOf, r.readyOK) == ClassOK
-		return !recovered || !slices.Contains(probeReasons, e.reason)
+		return podCounts(e, key, f)
 	case "node":
 		return f.nodes == nil || f.nodes[key.Name]
 	case "replicaset":
@@ -161,4 +150,21 @@ func counts(e eventInfo, key ObjectKey, age time.Duration, f flagged) bool {
 		return f.workloads == nil || f.workloads[key] || f.workloadNames[short]
 	}
 	return true
+}
+
+// podCounts looks the pod up by namespace when its list placed it, by name
+// when it did not.
+func podCounts(e eventInfo, key ObjectKey, f flagged) bool {
+	if f.pods == nil {
+		return true
+	}
+	r, ok := f.pods[key]
+	if !ok {
+		r, ok = f.podNames[key.Name]
+	}
+	if !ok {
+		return false
+	}
+	recovered := classOf(r.status, r.ready, r.readyOf, r.readyOK) == ClassOK
+	return !recovered || !slices.Contains(probeReasons, e.reason)
 }
