@@ -246,11 +246,14 @@ func (m Model) onEnter() (views.View, tea.Cmd) {
 }
 
 // enterHint is the enter hint for the footer, "" where Enter only says
-// there is no view.
+// there is no view, or that the panel it would go to is hidden.
 func (m Model) enterHint() string {
 	f := m.mem.focus
-	if f.panel == dash.PanelOverview && m.mem.snap.Verdict.Focus != dash.PanelOverview {
-		return "go to " + panelNames[m.mem.snap.Verdict.Focus]
+	if to := m.mem.snap.Verdict.Focus; f.panel == dash.PanelOverview && to != dash.PanelOverview {
+		if _, ok := m.lay.placeOf(to); !ok {
+			return ""
+		}
+		return "go to " + panelNames[to]
 	}
 	if r, ok := f.selected(m.rows(f.panel)); ok && r.target.Kind == "pod" && r.placed {
 		return "describe"
