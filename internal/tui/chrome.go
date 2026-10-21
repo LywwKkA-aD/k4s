@@ -10,6 +10,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
@@ -103,9 +104,25 @@ func (m Model) footerTopRow(width int) string {
 		return m.overlay.View(width)
 	}
 	if msg, ok := m.status.Current(m.now()); ok {
-		return statusStyle(msg.Level).Render(ansi.Truncate(msg.Text, width, "…"))
+		return statusStyle(msg.Level).Render(ansi.Truncate(statusMark(msg.Level)+msg.Text, width, "…"))
 	}
 	return styles.Hint.Render(ansi.Truncate(strings.Join(m.footerBindings(), "  ·  "), width, "…"))
+}
+
+// statusMark leads a status message with the dashboard's glyph for its
+// level, so the level never shows by colour alone: mono, NO_COLOR and a
+// reader who cannot tell the colours apart still see it. Info is neutral
+// progress and has none.
+func statusMark(level status.Level) string {
+	switch level {
+	case status.OK:
+		return styles.GlyphOK + " "
+	case status.Warn:
+		return styles.GlyphWarn + " "
+	case status.Error:
+		return styles.GlyphErr + " "
+	}
+	return ""
 }
 
 // footerCommandRow is the active command as the user would paste it:

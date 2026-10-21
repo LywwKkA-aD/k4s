@@ -69,7 +69,7 @@ func TestPreflightErrorShowsAtStart(t *testing.T) {
 			t.Parallel()
 			c := tuitest.NewFakeClient(t)
 			m := startedWith(t, c, nil, tui.WithSession(startup.Session{Client: c, PreflightErr: tc.err}))
-			if got := footer(m); !strings.HasPrefix(got, " "+tc.want+"\n") {
+			if got := footer(m); statusRow(got) != tc.want {
 				t.Errorf("footer = %q, want the status %q", got, tc.want)
 			}
 		})
