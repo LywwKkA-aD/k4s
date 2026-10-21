@@ -2,15 +2,14 @@ package k8s
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
-	"strings"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/logsink"
 	"github.com/LywwKkA-aD/k4s/internal/version"
 )
@@ -74,21 +73,11 @@ func withStdinUnavailable(cfg *rest.Config, unavailable bool, msg string) *rest.
 // loginHint tells the user how to refresh credentials that need a terminal
 // while the TUI owns it; r then retries the list.
 func loginHint(contextName string, src Source) string {
-	cmd := "kubectl --context " + shellQuote(contextName)
+	cmd := "kubectl --context " + kubectl.Quote(contextName)
 	if arg := src.KubeconfigArg(); arg != "" {
-		cmd += " --kubeconfig " + shellQuote(arg)
+		cmd += " --kubeconfig " + kubectl.Quote(arg)
 	}
 	return "log in first: run `" + cmd + " get ns` in a terminal, then press r"
-}
-
-var shellSafe = regexp.MustCompile(`^[A-Za-z0-9@%+=:,./_-]+$`)
-
-// shellQuote makes s one POSIX shell word, so a copied hint pastes as-is.
-func shellQuote(s string) string {
-	if shellSafe.MatchString(s) {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // newClientset builds the clientset with exec credential plugin stderr
