@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,6 +38,7 @@ func TestCopyTakesTheFooterCommand(t *testing.T) {
 		name  string
 		setup []tea.Msg
 		want  string
+		note  string // status row prefix, "copied" by default
 	}{
 		{name: "list view", setup: colon("pods"), want: "kubectl get pods -A"},
 		{
@@ -48,6 +50,7 @@ func TestCopyTakesTheFooterCommand(t *testing.T) {
 			name:  "approximate command",
 			setup: []tea.Msg{views.LogsRequestMsg{Namespace: demo, Pods: []string{tuitest.PodWeb1, tuitest.PodWeb2}, Tail: 50}},
 			want:  "kubectl logs -f web-1 --tail=50 -n demo",
+			note:  "copied (approximate)",
 		},
 		{
 			name: "container picker copies its own command",
@@ -69,7 +72,8 @@ func TestCopyTakesTheFooterCommand(t *testing.T) {
 			if !ok || got != tc.want {
 				t.Fatalf("clipboard = %q, %v; want %q\n%s", got, ok, tc.want, tuitest.Describe(out))
 			}
-			if row := statusRow(footer(m)); row != "copied: "+tc.want {
+			note := cmp.Or(tc.note, "copied")
+			if row := statusRow(footer(m)); row != note+": "+tc.want {
 				t.Errorf("status row = %q", row)
 			}
 			// The overlay or view underneath stays as it was.
