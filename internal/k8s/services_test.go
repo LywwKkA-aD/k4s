@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func TestListServicesRendersClusterIPType(t *testing.T) {
@@ -28,7 +29,7 @@ func TestListServicesRendersClusterIPType(t *testing.T) {
 	}
 	c := &Client{Clientset: fake.NewSimpleClientset(runtime.Object(svc)), Context: "test"}
 
-	got, err := c.ListServices(context.Background(), "demo")
+	got, err := c.ListServices(context.Background(), "demo", "")
 	if err != nil {
 		t.Fatalf("ListServices: %v", err)
 	}
@@ -57,7 +58,7 @@ func TestListServicesRendersHeadlessServiceClusterIP(t *testing.T) {
 	}
 	c := &Client{Clientset: fake.NewSimpleClientset(runtime.Object(svc)), Context: "test"}
 
-	got, _ := c.ListServices(context.Background(), "demo")
+	got, _ := c.ListServices(context.Background(), "demo", "")
 	if got[0].ClusterIP != "<none>" {
 		t.Errorf("headless cluster IP = %q, want <none>", got[0].ClusterIP)
 	}
@@ -114,7 +115,7 @@ func TestListServicesRendersNodePortAndLoadBalancer(t *testing.T) {
 		Context: "test",
 	}
 
-	got, _ := c.ListServices(context.Background(), "demo")
+	got, _ := c.ListServices(context.Background(), "demo", "")
 
 	by := map[string]Service{}
 	for _, s := range got {
@@ -146,7 +147,7 @@ func TestListServicesEmptyPortsRendersAsNone(t *testing.T) {
 	}
 	c := &Client{Clientset: fake.NewSimpleClientset(runtime.Object(svc)), Context: "test"}
 
-	got, _ := c.ListServices(context.Background(), "demo")
+	got, _ := c.ListServices(context.Background(), "demo", "")
 	if got[0].Ports != "<none>" {
 		t.Errorf("ports = %q, want <none>", got[0].Ports)
 	}
@@ -229,5 +230,45 @@ func TestPodsAndContainersForServiceMissingServiceErrors(t *testing.T) {
 	_, _, err := c.PodsAndContainersForService(context.Background(), "demo", "absent")
 	if err == nil {
 		t.Errorf("expected error for missing service")
+	}
+}
+
+// TestListServicesPassesTheResourceVersion: a poll reads the apiserver's
+// watch cache ("0"), a manual refresh is a consistent read ("").
+func TestListServicesPassesTheResourceVersion(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		rv   string
+	}{
+		{name: "poll from the watch cache", rv: "0"},
+		{name: "consistent read", rv: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "demo"}}
+			cs := fake.NewSimpleClientset(svc)
+			seen := make(chan string, 1)
+			cs.PrependReactor("list", "services", func(a k8stesting.Action) (bool, runtime.Object, error) {
+				l, ok := a.(interface{ GetListOptions() metav1.ListOptions })
+				if !ok {
+					t.Errorf("list action %T carries no ListOptions", a)
+					return false, nil, nil
+				}
+				seen <- l.GetListOptions().ResourceVersion
+				return false, nil, nil
+			})
+			c := &Client{Clientset: cs}
+
+			got, err := c.ListServices(context.Background(), "demo", tc.rv)
+			if err != nil || len(got) != 1 {
+				t.Fatalf("ListServices = %v, %v; want the one service", got, err)
+			}
+			if rv := <-seen; rv != tc.rv {
+				t.Errorf("ResourceVersion = %q, want %q", rv, tc.rv)
+			}
+		})
 	}
 }
