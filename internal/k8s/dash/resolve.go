@@ -46,6 +46,7 @@ type want struct {
 	key  resolveKey
 	sig  string
 	rank int
+	ns   string // namespace of the list the row came from; "" looks across all
 }
 
 // maxPodLookups bounds pod rows worth a lookup: the panel shows fewer.
@@ -64,12 +65,10 @@ const (
 )
 
 // wanted lists the lookups the current rows call for, most urgent first.
-func wanted(st store, scope Scope, k3s bool, now time.Time) []want {
+func wanted(st store, k3s bool, now time.Time) []want {
 	var out []want
-	out = append(out, podWants(st, scope, now)...)
-	if scope.Namespace == "" {
-		out = append(out, workloadWants(st, k3s)...)
-	}
+	out = append(out, podWants(st, now)...)
+	out = append(out, workloadWants(st, k3s)...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].rank < out[j].rank })
 	return out
 }
@@ -100,15 +99,16 @@ func prune(cache map[resolveKey]resolveEntry, ws []want) map[resolveKey]resolveE
 	return keep
 }
 
-func podWants(st store, scope Scope, now time.Time) []want {
+func podWants(st store, now time.Time) []want {
 	shapes := map[string][]string{}
+	spaces := map[string]string{}
 	ranks := map[string]int{}
 	restarted := 0
 	for _, r := range rankedPods(st.pods) {
 		c := classOf(r.status, r.ready, r.readyOf, r.readyOK)
 		// A namespaced list already names the namespace; only a crash still
 		// needs its container.
-		if !validName(r.name) || (scope.Namespace != "" && c != ClassCrash) {
+		if !validName(r.name) || (r.namespace != "" && c != ClassCrash) {
 			continue
 		}
 		rank, ok := podRank(c, r, now, &restarted)
@@ -120,6 +120,7 @@ func podWants(st store, scope Scope, now time.Time) []want {
 				continue
 			}
 			ranks[r.name] = rank
+			spaces[r.name] = r.namespace
 		}
 		shapes[r.name] = append(shapes[r.name], r.node+"|"+strconv.Itoa(int(c)))
 	}
@@ -127,7 +128,7 @@ func podWants(st store, scope Scope, now time.Time) []want {
 	for name, rank := range ranks {
 		sig := shapes[name]
 		slices.Sort(sig)
-		out = append(out, want{key: resolveKey{"pod", name}, sig: strings.Join(sig, ","), rank: rank})
+		out = append(out, want{key: resolveKey{"pod", name}, sig: strings.Join(sig, ","), rank: rank, ns: spaces[name]})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].rank != out[j].rank {
@@ -181,7 +182,7 @@ func workloadWants(st store, k3s bool) []want {
 		}
 		for _, r := range rows {
 			rank, ok := keep(r)
-			if !ok || !validName(r.name) || counts[r.name] < 0 {
+			if !ok || r.namespace != "" || !validName(r.name) || counts[r.name] < 0 {
 				continue
 			}
 			out = append(out, want{key: resolveKey{kind, r.name}, sig: strconv.Itoa(counts[r.name]), rank: rank})
@@ -207,14 +208,14 @@ func workloadWants(st store, k3s bool) []want {
 	cron := make([]workloadRow, 0, len(st.cronjobs))
 	for _, c := range st.cronjobs {
 		if c.suspend {
-			cron = append(cron, workloadRow{name: c.name})
+			cron = append(cron, workloadRow{name: c.name, namespace: c.namespace})
 		}
 	}
 	add("cronjob", cron, func(workloadRow) (int, bool) { return rankSuspended, true })
 	svc := make([]workloadRow, 0, len(st.services))
 	for _, s := range st.services {
 		if s.pending {
-			svc = append(svc, workloadRow{name: s.name})
+			svc = append(svc, workloadRow{name: s.name, namespace: s.namespace})
 		}
 	}
 	add("service", svc, func(workloadRow) (int, bool) { return rankWaitingWorkload, true })
