@@ -4,59 +4,42 @@ package namespaces
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
-	fetchTimeout  = 5 * time.Second
-	minTableRows  = 5
-	watchInterval = 5 * time.Second
-	allRowName    = "<all>"
+	// listTimeout bounds one list. Namespaces are few, so the 15s budget
+	// of an all-namespaces list does not apply.
+	listTimeout  = 5 * time.Second
+	minTableRows = 5
+	allRowName   = "<all>"
 )
-
-// viewGen numbers Model instances. Ticks and fetch replies carry the gen
-// they were scheduled under, and Update drops any from another instance.
-// The message type cannot do this: when the view is rebuilt (Esc back or a
-// repeated command) the old instance's pending tick reaches the new one,
-// where it would start a second refresh chain, and its fetch reply could
-// overwrite fresh rows.
-var viewGen atomic.Int64
-
-func nextGen() int64 { return viewGen.Add(1) }
-
-// tickMsg is the watch tick of the instance whose gen it carries.
-type tickMsg struct {
-	gen int64
-	t   time.Time
-}
 
 // Model is the namespaces list view.
 type Model struct {
 	client *k8s.Client
+	// poll owns the refresh cadence and fences replies: a list answered
+	// for another instance of this view carries another Token.
+	poll   async.Poller
 	table  table.Model
 	raw    []k8s.Namespace
 	err    error
 	loaded bool
-	// busy suppresses overlapping fetches: fetchTimeout == watchInterval,
-	// so without the guard requests stack up every tick against a dead API.
-	busy  bool
-	bodyH int
-	gen   int64
-
-	watchEnabled bool
-	filter       filter.Model
+	bodyH  int
+	filter filter.Model
+	// pending is the row a Restore asked for, held until the first list.
+	pending pendingRow
 
 	selectKey  key.Binding
 	watchKey   key.Binding
@@ -64,21 +47,44 @@ type Model struct {
 	filterKey  key.Binding
 }
 
-type namespacesMsg struct {
-	gen   int64
-	items []k8s.Namespace
-	err   error
+// Option configures New.
+type Option func(options) options
+
+type options struct {
+	clock async.Clock
 }
 
-// New constructs the namespaces view.
-func New(client *k8s.Client) Model {
-	cols := []table.Column{
-		{Title: "NAME", Width: 32},
-		{Title: "STATUS", Width: 12},
-		{Title: "AGE", Width: 18},
+// WithClock arms the refresh ticks on clock instead of real timers; tests
+// pass an asynctest.Clock and fire the ticks themselves.
+func WithClock(clock async.Clock) Option {
+	return func(o options) options {
+		o.clock = clock
+		return o
 	}
+}
+
+// New constructs the namespaces view. With a client its first list is
+// already under way: Init sends it.
+func New(client *k8s.Client, opts ...Option) Model {
+	var o options
+	for _, opt := range opts {
+		o = opt(o)
+	}
+	poll := async.NewPoller(async.New(), async.Config{
+		Timeout: listTimeout,
+		Enabled: client != nil,
+		Clock:   o.clock,
+	})
+	if client != nil {
+		poll, _ = poll.Begin()
+	}
+
 	t := table.New(
-		table.WithColumns(cols),
+		table.WithColumns([]table.Column{
+			{Title: "NAME", Width: 32},
+			{Title: "STATUS", Width: 12},
+			{Title: "AGE", Width: 18},
+		}),
 		table.WithFocused(true),
 		table.WithHeight(20),
 	)
@@ -86,49 +92,31 @@ func New(client *k8s.Client) Model {
 	styles.FitTable(&t)
 
 	return Model{
-		client:       client,
-		table:        t,
-		watchEnabled: true,
-		filter:       filter.New(),
-		gen:          nextGen(),
-		selectKey: key.NewBinding(
-			key.WithKeys("enter"),
-			key.WithHelp("enter", "select"),
-		),
-		watchKey: key.NewBinding(
-			key.WithKeys("w"),
-			key.WithHelp("w", "watch"),
-		),
-		refreshKey: key.NewBinding(
-			key.WithKeys("r"),
-			key.WithHelp("r", "refresh"),
-		),
-		filterKey: key.NewBinding(
-			key.WithKeys("/"),
-			key.WithHelp("/", "filter"),
-		),
+		client:     client,
+		poll:       poll,
+		table:      t,
+		filter:     filter.New(),
+		selectKey:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
+		watchKey:   key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "watch")),
+		refreshKey: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+		filterKey:  key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
 	}
 }
 
-func tickCmd(gen int64) tea.Cmd {
-	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg{gen: gen, t: t} })
-}
-
-// Init kicks off the first fetch and the watch ticker.
+// Init sends the first list, as a refresh tick would.
 func (m Model) Init() tea.Cmd {
-	if m.client == nil {
-		return tickCmd(m.gen)
+	if !m.poll.Busy() {
+		return nil
 	}
-	return tea.Batch(fetchCmd(m.gen, m.client), tickCmd(m.gen))
+	return m.list(k8s.FromCache())
 }
 
-func fetchCmd(gen int64, c *k8s.Client) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
-		items, err := c.ListNamespaces(ctx)
-		return namespacesMsg{gen: gen, items: items, err: err}
-	}
+// list asks for the namespaces under the poller's current Token.
+func (m Model) list(opts ...k8s.ListOption) tea.Cmd {
+	c := m.client
+	return async.Run(m.poll.Token(), m.poll.Timeout(), func(ctx context.Context) ([]k8s.Namespace, error) {
+		return c.ListNamespaces(ctx, opts...)
+	})
 }
 
 // Update handles size, refresh, selection and forwards keystrokes to the table.
@@ -139,143 +127,77 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		m.bodyH = msg.Height
 		m.filter.SetWidth(msg.Width)
 		m.table.SetHeight(max(m.tableHeight(), minTableRows))
-	case tickMsg:
-		if msg.gen != m.gen {
-			return m, nil
-		}
-		cmds := []tea.Cmd{tickCmd(m.gen)}
-		if m.watchEnabled && m.client != nil && !m.busy {
-			m.busy = true
-			cmds = append(cmds, fetchCmd(m.gen, m.client))
-		}
-		return m, tea.Batch(cmds...)
-	case tea.PasteMsg:
-		cmd, _ := m.feedFilter(msg)
-		return m, cmd
-	case tea.KeyPressMsg:
-		if cmd, consumed := m.feedFilter(msg); consumed {
-			return m, cmd
-		}
-		if cmd, handled := m.handleKey(msg); handled {
-			return m, cmd
-		}
-	case namespacesMsg:
-		if msg.gen != m.gen {
-			return m, nil
-		}
-		m.busy = false
-		m.err = msg.err
-		m.loaded = true
-		if msg.err == nil {
-			m.raw = msg.items
-			m.applyFilter()
+	case async.TickMsg:
+		var due bool
+		if m.poll, due = m.poll.Due(msg); due {
+			return m, m.list(k8s.FromCache())
 		}
 		return m, nil
+	case async.Result[[]k8s.Namespace]:
+		return m.onList(msg)
+	case tea.PasteMsg:
+		next, cmd, _ := m.feedFilter(msg)
+		return next, cmd
+	case tea.KeyPressMsg:
+		if next, cmd, consumed := m.feedFilter(msg); consumed {
+			return next, cmd
+		}
+		if next, cmd, handled := m.handleKey(msg); handled {
+			return next, cmd
+		}
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
 }
 
-// handleKey returns (cmd, true) when the key matched a binding.
-func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+// onList takes a list reply meant for this view. Done arms the next tick,
+// so its Cmd must reach Bubble Tea even when the list failed.
+func (m Model) onList(msg async.Result[[]k8s.Namespace]) (views.View, tea.Cmd) {
+	if !m.poll.Accept(msg.Token) {
+		return m, nil
+	}
+	var next tea.Cmd
+	m.poll, next = m.poll.Done(msg.Token, msg.Err)
+	m.loaded = true
+	m.err = msg.Err
+	if msg.Err != nil {
+		return m, next
+	}
+	m.raw = msg.Value
+	m, gone := m.withRows().landPending()
+	return m, tea.Batch(next, gone)
+}
+
+// handleKey reports handled when the key matched a binding.
+func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.filterKey):
 		var cmd tea.Cmd
 		m.filter, cmd = m.filter.Open()
-		m.applyFilter()
-		return cmd, true
+		return m.withRows(), cmd, true
 	case key.Matches(msg, m.watchKey):
-		m.watchEnabled = !m.watchEnabled
-		return nil, true
-	case key.Matches(msg, m.refreshKey) && m.client != nil && !m.busy:
-		m.busy = true
-		return fetchCmd(m.gen, m.client), true
-	case key.Matches(msg, m.selectKey) && m.loaded && len(m.table.Rows()) > 0:
+		var cmd tea.Cmd
+		m.poll, cmd = m.poll.WithEnabled(!m.poll.Enabled() && m.client != nil)
+		return m, cmd, true
+	case key.Matches(msg, m.refreshKey) && m.client != nil:
+		var ok bool
+		if m.poll, ok = m.poll.Begin(); !ok {
+			return m, nil, true
+		}
+		return m, m.list(), true
+	case key.Matches(msg, m.selectKey) && m.loaded:
 		row := m.table.SelectedRow()
 		if row == nil {
-			return nil, false
+			return m, nil, false
 		}
 		name := row[0]
 		if name == allRowName {
 			name = ""
 		}
-		return func() tea.Msg {
-			return views.NamespaceSelectedMsg{Namespace: name}
-		}, true
+		return m, func() tea.Msg { return views.NamespaceSelectedMsg{Namespace: name} }, true
 	}
-	return nil, false
-}
-
-func (m Model) tableHeight() int {
-	if m.filter.Active() {
-		return m.bodyH - 1
-	}
-	return m.bodyH
-}
-
-// feedFilter hands a key press or a paste to the open filter and refilters
-// the rows. It reports false when the filter is closed or let the key pass.
-func (m *Model) feedFilter(msg tea.Msg) (tea.Cmd, bool) {
-	if !m.filter.IsOpen() {
-		return nil, false
-	}
-	var cmd tea.Cmd
-	var consumed bool
-	m.filter, cmd, consumed = m.filter.Update(msg)
-	if consumed {
-		m.applyFilter()
-	}
-	return cmd, consumed
-}
-
-// applyFilter rebuilds visible rows. The synthetic "<all>" row is kept
-// regardless of the filter — it is the user's escape hatch to reset the
-// active namespace and is not a "real" namespace they would want to filter
-// out by name.
-func (m *Model) applyFilter() {
-	items := m.raw
-	if m.filter.Active() {
-		items = make([]k8s.Namespace, 0, len(m.raw))
-		for _, n := range m.raw {
-			if m.filter.Match(n.Name) {
-				items = append(items, n)
-			}
-		}
-	}
-	m.table.SetRows(toRows(items))
-	m.table.SetHeight(max(m.tableHeight(), minTableRows))
-}
-
-func toRows(items []k8s.Namespace) []table.Row {
-	rows := make([]table.Row, 0, len(items)+1)
-	rows = append(rows, table.Row{allRowName, "", ""})
-	for _, n := range items {
-		age := ""
-		if !n.Age.IsZero() {
-			age = n.Age.Format("2006-01-02 15:04")
-		}
-		rows = append(rows, table.Row{n.Name, string(n.Status), age})
-	}
-	return rows
-}
-
-// View renders the table or a placeholder.
-func (m Model) View() string {
-	if m.client == nil {
-		return styles.Warn.Render("no kubeconfig")
-	}
-	if !m.loaded {
-		return styles.Hint.Render("loading namespaces…")
-	}
-	if m.err != nil {
-		return styles.Warn.Render("namespaces unavailable: " + m.err.Error())
-	}
-	body := m.table.View()
-	if !m.filter.Active() {
-		return body
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.filter.View(), body)
+	return m, nil, false
 }
 
 // Title implements views.View. Stable routing name.
@@ -287,9 +209,11 @@ func (m Model) Command() kubectl.Cmd {
 	return kubectl.New("get", "namespaces")
 }
 
-// Help implements views.View.
+// Help implements views.View. The w hint is the refresh cadence.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.selectKey, m.filterKey, m.watchKey, m.refreshKey}
+	watch := m.watchKey
+	watch.SetHelp("w", m.poll.Hint())
+	return []key.Binding{m.selectKey, m.filterKey, watch, m.refreshKey}
 }
 
 // CapturesKeys implements views.View.

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,6 +14,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/namespaces"
@@ -23,9 +25,23 @@ const (
 	height = 30
 )
 
+// fresh builds the view on a manual clock, so no test waits on a tick.
+func fresh(c *k8s.Client) (namespaces.Model, *asynctest.Clock) {
+	clk := asynctest.NewClock(time.Time{})
+	return namespaces.New(c, namespaces.WithClock(clk)), clk
+}
+
+// clocked is fresh, sized and started.
+func clocked(t *testing.T, c *k8s.Client) (namespaces.Model, *asynctest.Clock) {
+	t.Helper()
+	m, clk := fresh(c)
+	m, _ = tuitest.Mount(t, m, width, height)
+	return m, clk
+}
+
 func mounted(t *testing.T, c *k8s.Client) namespaces.Model {
 	t.Helper()
-	m, _ := tuitest.Mount(t, namespaces.New(c), width, height)
+	m, _ := clocked(t, c)
 	return m
 }
 
@@ -189,24 +205,28 @@ func TestRefreshRespectsBusy(t *testing.T) {
 	}
 }
 
-func TestStaleGenerationReplyIsDropped(t *testing.T) {
+// TestAnotherInstancesReplyIsDropped: the view rebuilt on Esc must not take
+// the list its predecessor asked for, nor let it end its own first load.
+func TestAnotherInstancesReplyIsDropped(t *testing.T) {
 	t.Parallel()
 
 	c := tuitest.NewFakeClient(t)
-	_, oldReplies := tuitest.Init(t, namespaces.New(c))
-	fresh, _ := tuitest.Drive(t, namespaces.New(c), tuitest.Resize(width, height))
-	fresh, inFlight := tuitest.Step(t, fresh, tuitest.Press("r"))
-	fresh, _ = tuitest.Drive(t, fresh, oldReplies...)
+	old, _ := fresh(c)
+	_, oldReplies := tuitest.Init(t, old)
+	newer, _ := fresh(c)
+	newer, _ = tuitest.Drive(t, newer, tuitest.Resize(width, height))
+	inFlight := tuitest.Collect(t, newer.Init())
+	newer, _ = tuitest.Drive(t, newer, oldReplies...)
 
-	if !strings.Contains(tuitest.Screen(fresh), "loading namespaces") {
-		t.Errorf("a reply addressed to an older view was applied:\n%s", tuitest.Screen(fresh))
+	if !strings.Contains(tuitest.Screen(newer), "loading namespaces") {
+		t.Errorf("a reply addressed to an older view was applied:\n%s", tuitest.Screen(newer))
 	}
-	if _, again := tuitest.Step(t, fresh, tuitest.Press("r")); len(again) != 0 {
-		t.Errorf("the stale reply released the busy flag:\n%s", tuitest.Describe(again))
+	if _, again := tuitest.Step(t, newer, tuitest.Press("r")); len(again) != 0 {
+		t.Errorf("the stale reply ended the first load:\n%s", tuitest.Describe(again))
 	}
-	fresh, _ = tuitest.Drive(t, fresh, inFlight...)
-	if !strings.Contains(tuitest.Screen(fresh), tuitest.NamespaceDemo) {
-		t.Errorf("own reply not applied:\n%s", tuitest.Screen(fresh))
+	newer, _ = tuitest.Drive(t, newer, inFlight...)
+	if !strings.Contains(tuitest.Screen(newer), tuitest.NamespaceDemo) {
+		t.Errorf("own reply not applied:\n%s", tuitest.Screen(newer))
 	}
 }
 
