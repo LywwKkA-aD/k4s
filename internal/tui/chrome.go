@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/cellbuf"
 
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -128,8 +129,11 @@ func statusMark(level status.Level) string {
 // footerCommandRow is the active command as the user would paste it:
 // with the --context and --kubeconfig it needs to reach this cluster, and
 // ApproxMark in front when k4s does not do exactly what it says.
+// Quoting keeps a namespace or context from the kubeconfig whole for the
+// shell, not inert for the terminal, so the row is drawn sanitized while
+// y copies the command as it is.
 func (m Model) footerCommandRow(width int) string {
-	shown := m.decorate(m.activeCommand()).Display()
+	shown := sanitize.Line(m.decorate(m.activeCommand()).Display())
 	if shown == "" {
 		return ""
 	}

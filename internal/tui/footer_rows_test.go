@@ -81,3 +81,24 @@ func TestLongFooterRowsEndInAnEllipsis(t *testing.T) {
 		t.Errorf("command row = %q", command)
 	}
 }
+
+// TestFooterCommandRowIsInert: the namespace in the command row comes from
+// the kubeconfig or -n and is drawn as text, its escape sequence gone,
+// while y still copies the command a shell needs to reach it.
+func TestFooterCommandRowIsInert(t *testing.T) {
+	t.Parallel()
+
+	c := tuitest.NewFakeClient(t).WithNamespace(escapingNamespace)
+	m, _ := tuitest.Drive(t, started(t, c), colon("pods")...)
+	if raw := tuitest.Frame(m); strings.ContainsRune(raw, '\a') || strings.Contains(raw, "\x1b]") {
+		t.Errorf("frame carries the namespace's control bytes: %q", raw)
+	}
+	if row := commandRow(m); row != "kubectl get pods -n 'ab'" {
+		t.Errorf("command row = %q, want the namespace as 'ab'", row)
+	}
+	_, out := tuitest.Drive(t, m, tuitest.Press("y"))
+	want := "kubectl get pods -n '" + escapingNamespace + "'"
+	if got, ok := tuitest.Clipboard(out); !ok || got != want {
+		t.Errorf("clipboard = %q, %v; want %q", got, ok, want)
+	}
+}
