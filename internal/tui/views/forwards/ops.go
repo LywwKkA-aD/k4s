@@ -48,10 +48,14 @@ func stopCmd(mgr *forwards.Manager, f forwards.Forward) tea.Cmd {
 }
 
 // restartCmd starts the forward again only once the old session is down:
-// one still closing may hold the local port.
+// one still closing may hold the local port. A Manager that refuses starts
+// is asked first, so the refusal does not leave the forward stopped.
 func restartCmd(mgr *forwards.Manager, f forwards.Forward) tea.Cmd {
 	return func() tea.Msg {
-		err := mgr.Stop(f.ID)
+		err := mgr.Blocked()
+		if err == nil {
+			err = mgr.Stop(f.ID)
+		}
 		if err == nil {
 			err = start(mgr, f)
 		}
