@@ -104,6 +104,13 @@ func (m Model) SetContent(text string) Model {
 	return m
 }
 
+// Refresh shows fresh text for the same object where the reader was,
+// clamped to the new end. A committed search carries over.
+func (m Model) Refresh(text string) Model {
+	m.raw = text
+	return m.rewrap()
+}
+
 // CapturesKeys reports whether the search prompt is open; the host then
 // hands it every key.
 func (m Model) CapturesKeys() bool { return m.open }

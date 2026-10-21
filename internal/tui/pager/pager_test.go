@@ -212,6 +212,27 @@ func TestNewContentKeepsTheSearch(t *testing.T) {
 	}
 }
 
+// TestRefreshKeepsThePosition: fresh text for the same object stays where
+// the reader was, clamped to the new end; SetContent starts at the top.
+func TestRefreshKeepsThePosition(t *testing.T) {
+	t.Parallel()
+
+	m := feed(t, sized(text(50), 40, 10), tuitest.Press("pgdown"))
+	at := screen(m)[0]
+	if at == "line 01" {
+		t.Fatal("pgdown did not scroll")
+	}
+	if got := screen(m.Refresh(text(50)))[0]; got != at {
+		t.Errorf("after Refresh the first line is %q, want %q", got, at)
+	}
+	if got := m.Refresh(text(12)).Position(); got != "end" {
+		t.Errorf("Refresh with shorter text: Position = %q, want end", got)
+	}
+	if got := screen(m.SetContent(text(50)))[0]; got != "line 01" {
+		t.Errorf("after SetContent the first line is %q, want line 01", got)
+	}
+}
+
 func TestHelpNamesTheKeys(t *testing.T) {
 	t.Parallel()
 

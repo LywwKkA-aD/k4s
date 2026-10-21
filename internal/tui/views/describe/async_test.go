@@ -49,3 +49,23 @@ func TestRefreshWhileFetchingIsIgnored(t *testing.T) {
 		t.Errorf("r after the answer should fetch once:\n%s", tuitest.Describe(out))
 	}
 }
+
+// TestRefreshKeepsTheScroll: r fetches the same object again and the text
+// stays where the reader was.
+func TestRefreshKeepsTheScroll(t *testing.T) {
+	t.Parallel()
+
+	m := loadedPod(t, 100, 12)
+	m, _ = tuitest.Drive(t, m, tuitest.Press("pgdown"))
+	before := tuitest.Screen(m)
+	if strings.HasPrefix(before, "Name:") {
+		t.Fatalf("pgdown did not scroll:\n%s", before)
+	}
+	m, out := tuitest.Drive(t, m, tuitest.Press("r"))
+	if len(out) == 0 {
+		t.Fatal("r fetched nothing")
+	}
+	if after := tuitest.Screen(m); after != before {
+		t.Errorf("r moved the text:\n%s\nwant as before:\n%s", after, before)
+	}
+}

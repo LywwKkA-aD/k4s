@@ -151,6 +151,26 @@ func TestYAMLRefresh(t *testing.T) {
 	}
 }
 
+// TestYAMLRefreshKeepsTheScroll: r fetches the object again and the text
+// stays where the reader was.
+func TestYAMLRefreshKeepsTheScroll(t *testing.T) {
+	t.Parallel()
+
+	m, _ := tuitest.Mount(t, yaml.New(tuitest.NewFakeClient(t), ref("pod", tuitest.NamespaceDemo, tuitest.PodMulti)), 100, 10)
+	m, _ = tuitest.Drive(t, m, tuitest.Press("pgdown"))
+	before := tuitest.Screen(m)
+	if strings.HasPrefix(before, "apiVersion:") {
+		t.Fatalf("pgdown did not scroll:\n%s", before)
+	}
+	m, out := tuitest.Drive(t, m, tuitest.Press("r"))
+	if len(out) == 0 {
+		t.Fatal("r fetched nothing")
+	}
+	if after := tuitest.Screen(m); after != before {
+		t.Errorf("r moved the text:\n%s\nwant as before:\n%s", after, before)
+	}
+}
+
 func TestYAMLSearchAndBack(t *testing.T) {
 	t.Parallel()
 

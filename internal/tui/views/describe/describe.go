@@ -198,7 +198,10 @@ func (m Model) onContent(msg async.Result[output]) (Model, tea.Cmd) {
 	m.builtin = out.builtin
 	m.source = sourceOf(out)
 	if msg.Err == nil {
-		m.pager = m.pager.SetContent(sanitize.Text(out.text))
+		// The view shows one object, so a later answer is the same text
+		// refreshed and the reader stays where they were; the first lands
+		// in an empty pager, at the top.
+		m.pager = m.pager.Refresh(sanitize.Text(out.text))
 	}
 	return m, fallbackStatus(out.kubectlErr)
 }

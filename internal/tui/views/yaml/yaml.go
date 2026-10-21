@@ -121,7 +121,10 @@ func (m Model) onManifest(msg async.Result[manifest]) Model {
 	}
 	m.err, m.loaded = msg.Err, true
 	if msg.Err == nil {
-		m.pager = m.pager.SetContent(sanitize.Text(msg.Value.text))
+		// The view shows one object, so a later answer is the same text
+		// refreshed and the reader stays where they were; the first lands
+		// in an empty pager, at the top.
+		m.pager = m.pager.Refresh(sanitize.Text(msg.Value.text))
 	}
 	return m
 }
