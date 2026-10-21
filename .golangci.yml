@@ -60,6 +60,7 @@ linters:
             - "**/internal/cli/**"
             - "**/internal/startup/**"
             - "**/internal/cluster/**"
+            - "**/internal/sanitize/**"
           deny:
             - pkg: github.com/LywwKkA-aD/k4s/internal/tui
               desc: core packages must not import the TUI
