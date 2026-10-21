@@ -1,2 +1,2 @@
  ▲ unknown command: nope
- kubectl get all -A
+ ≈ kubectl get nodes,pods,deploy,sts,ds -A

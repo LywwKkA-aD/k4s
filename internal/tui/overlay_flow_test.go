@@ -107,7 +107,7 @@ func TestCommandBarSitsInTheFooter(t *testing.T) {
 	if got := strings.TrimSpace(block[1]); got != ": pods, ns, dashboard" {
 		t.Errorf("first footer row = %q", got)
 	}
-	if got := strings.TrimSpace(block[2]); got != "kubectl get all -A" {
+	if got := strings.TrimSpace(block[2]); got != "≈ kubectl get nodes,pods,deploy,sts,ds -A" {
 		t.Errorf("command row = %q", got)
 	}
 	body := len(after) - len(block)

@@ -21,6 +21,9 @@ import (
 // exitInterrupted is the shell convention for a run ended by SIGINT.
 const exitInterrupted = 130
 
+// renderFPS caps how often Bubble Tea flushes frames (spec §6, M2).
+const renderFPS = 20
+
 func main() {
 	// Flags come first: --version and --help must not touch the terminal
 	// or load a kubeconfig.
@@ -56,7 +59,9 @@ func run(opts cli.Options) error {
 	}
 	logsink.HoldPluginStderr()
 
-	var progOpts []tea.ProgramOption
+	// The renderer wakes at this rate for the whole session, idle or not;
+	// 20 is enough for the dashboard's springs and half the default.
+	progOpts := []tea.ProgramOption{tea.WithFPS(renderFPS)}
 	if profile, ok := styles.ColorProfile(); ok {
 		progOpts = append(progOpts, tea.WithColorProfile(profile))
 	}

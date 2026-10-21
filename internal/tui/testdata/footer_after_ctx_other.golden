@@ -1,4 +1,4 @@
-dashboard: kubectl --context other get all -A
+dashboard: ≈ kubectl --context other get nodes,pods,deploy,sts,ds -n demo
 pods: kubectl --context other get pods -n demo
 deployments: kubectl --context other get deployments -n demo
 services: kubectl --context other get services -n demo

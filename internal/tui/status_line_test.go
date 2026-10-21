@@ -61,7 +61,7 @@ func TestStatusMsgShowsInTheFooter(t *testing.T) {
 		if got := statusRow(footer(m)); got != "service web has no selector" {
 			t.Errorf("level %d: status row = %q", level, got)
 		}
-		if !strings.Contains(footer(m), "kubectl get all -A") {
+		if !strings.Contains(footer(m), "kubectl get nodes,pods,deploy,sts,ds -A") {
 			t.Errorf("level %d: the status pushed the command out of the footer:\n%s", level, footer(m))
 		}
 	}

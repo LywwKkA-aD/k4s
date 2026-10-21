@@ -36,7 +36,8 @@ func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.C
 	m.status = m.status.Clear()
 	m.startup = startup.Session{Source: m.startup.Source, Distro: cluster.Detect("", client.Context, nil)}
 	m, errCmd := m.resetForwards(client)
-	m.current = dashboard.New(m.client, nil)
+	m.dashMem = dashboard.Memory{}
+	m.current = m.newDashboard()
 	return m, tea.Batch(m.relayoutCmd(), errCmd, loginProbe(client, false), m.fetchVersion())
 }
 

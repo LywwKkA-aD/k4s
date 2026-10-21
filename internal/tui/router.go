@@ -33,6 +33,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.setStatus(msg.Level, msg.Text)
 	case views.StatusAboutMsg:
 		return m.setStatusAbout(msg.Level, msg.Text, msg.Cmd)
+	case tea.FocusMsg, tea.BlurMsg:
+		return m.onTerminalFocus(msg)
 	case status.ExpireMsg:
 		m.status = m.status.Expire(msg, m.now())
 		return m, nil

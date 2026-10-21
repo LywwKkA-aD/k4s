@@ -7,7 +7,6 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/contexts"
-	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/deployments"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/events"
@@ -164,6 +163,7 @@ func isRebuildableView(title string) bool {
 
 // replaceView builds the named view without touching history.
 func (m Model) replaceView(name string) Model {
+	m = m.keepDashboard(m.current)
 	if m.build != nil {
 		return m.swap(m.build(m, name))
 	}
@@ -190,7 +190,7 @@ func (m Model) newView(name string) views.View {
 	case viewNodes:
 		return nodes.New(m.client)
 	case viewDashboard:
-		return dashboard.New(m.client, m.loadErr)
+		return m.newDashboard()
 	case viewContexts:
 		return contexts.New(currentContextName(m.client), m.kubeconfigSource())
 	case viewTop:
@@ -233,6 +233,7 @@ func (m Model) restore(st views.State) (Model, tea.Cmd) {
 // and installs the incoming one.
 func (m Model) swap(next views.View) Model {
 	if m.current != nil {
+		m = m.keepDashboard(m.current)
 		_ = m.current.Close()
 	}
 	m.current = next

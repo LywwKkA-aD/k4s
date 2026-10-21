@@ -77,6 +77,11 @@ type Model struct {
 	usedNamespaces []string
 	current        views.View
 	history        []historyEntry
+	// dashMem is what the last dashboard learned (see dashboard.Memory):
+	// one field rather than a history entry, so it survives goHome.
+	dashMem dashboard.Memory
+	// blurred is the terminal's focus as it last reported it.
+	blurred bool
 	// build makes the view for a name; nil means newView. Tests use it to
 	// put stub views in history.
 	build func(m Model, name string) views.View
@@ -137,13 +142,13 @@ func New(client *k8s.Client, loadErr error, opts ...Option) Model {
 		loadErr:    loadErr,
 		forwardMgr: mgr,
 		keys:       keys.Default(),
-		current:    dashboard.New(client, loadErr),
 		now:        time.Now,
 	}
 	for _, opt := range opts {
 		opt(&model)
 	}
 	model = model.withClient(client)
+	model.current = model.newDashboard()
 	model.overlay = restoreOverlay(mgr, currentContextName(client), model.now)
 	return model
 }

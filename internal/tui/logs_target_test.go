@@ -59,7 +59,7 @@ func TestTailPromptFooterPreviewsTheStream(t *testing.T) {
 		t.Fatalf("command row after typing 20 = %q", got)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())
-	if got := commandRow(m); got != "kubectl get all -A" {
+	if got := commandRow(m); got != "≈ kubectl get nodes,pods,deploy,sts,ds -A" {
 		t.Fatalf("command row after Esc = %q, want the view's", got)
 	}
 }

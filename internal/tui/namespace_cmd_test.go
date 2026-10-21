@@ -22,7 +22,7 @@ func TestNamespaceCommandToTheSameNamespace(t *testing.T) {
 		back  string // command row after one Esc
 	}{
 		{name: "named", setup: then(colon("deploy"), colon("ns demo")), input: "ns demo", want: "already in demo", back: "kubectl get deployments -A"},
-		{name: "all namespaces", setup: colon("svc"), input: "ns -A", want: "already in all namespaces", back: "kubectl get all -A"},
+		{name: "all namespaces", setup: colon("svc"), input: "ns -A", want: "already in all namespaces", back: "≈ kubectl get nodes,pods,deploy,sts,ds -A"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

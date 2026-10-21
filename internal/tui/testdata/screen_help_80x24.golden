@@ -14,10 +14,10 @@
          │             in tmux: set -g set-clipboard on               │
          │                                                            │
          │   view: dashboard                                          │
-         │     r  refresh                                             │
-         │     w  watch                                               │
-         │                                                            │
-         │   commands                                                 │
+         │     tab/0-7  panel                                         │
+         │     ←→       neighbour                                     │
+         │     ↑↓       row                                           │
+         │     r        refresh                                       │
 ──────────────────────────────────────────────────────────────────────────────
- q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  r r…
- kubectl get all -A
+ q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  tab…
+ ≈ kubectl get nodes,pods,deploy,sts,ds -A
