@@ -175,7 +175,7 @@ func TestViewStates(t *testing.T) {
 		{
 			name:    "namespace scoped table",
 			m:       func(t *testing.T) pods.Model { return mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo) },
-			want:    []string{"NAME", "READY", "STATUS", "RESTARTS", "AGE", tuitest.PodWeb1, tuitest.PodMulti, "2/2", "CrashLoopBackOff", "7", "1h"},
+			want:    []string{"NAME", "READY", "STATUS", "RESTARTS", "AGE", tuitest.PodWeb1, tuitest.PodMulti, "2/2", "CrashLoopBackOff", "7", "90m"},
 			notWant: []string{"NAMESPACE", tuitest.PodCoreDNS},
 		},
 		{

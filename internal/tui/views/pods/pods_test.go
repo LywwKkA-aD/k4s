@@ -43,3 +43,30 @@ func TestNoClientNeverPolls(t *testing.T) {
 		t.Errorf("poller without a client: enabled=%v busy=%v", m.poll.Enabled(), m.poll.Busy())
 	}
 }
+
+func TestLayoutSharesTheWidth(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		width         int
+		showNamespace bool
+		wantNamespace int
+		wantName      int
+	}{
+		{name: "80 one namespace", width: 80, wantName: 30},
+		{name: "80 all namespaces", width: 80, showNamespace: true, wantNamespace: 11, wantName: 17},
+		{name: "unsized is 80", width: 0, showNamespace: true, wantNamespace: 11, wantName: 17},
+		{name: "narrow keeps the minimums", width: 40, showNamespace: true, wantNamespace: minNamespaceWidth, wantName: minNameWidth},
+		{name: "wide caps both", width: 300, showNamespace: true, wantNamespace: maxNamespaceWidth, wantName: maxNameWidth},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := layout(tc.width, tc.showNamespace)
+			if got.namespace != tc.wantNamespace || got.name != tc.wantName {
+				t.Errorf("layout(%d, %v) = %+v, want namespace %d name %d", tc.width, tc.showNamespace, got, tc.wantNamespace, tc.wantName)
+			}
+		})
+	}
+}

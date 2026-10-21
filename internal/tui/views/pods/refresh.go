@@ -87,6 +87,8 @@ func (m Model) onList(msg async.Result[[]k8s.Pod]) (Model, tea.Cmd) {
 func (m Model) resized(msg tea.WindowSizeMsg) Model {
 	m.bodyH = msg.Height
 	m.filter.SetWidth(msg.Width)
+	m.table.SetColumns(layout(msg.Width, m.namespace == "").columns())
+	styles.FitTable(&m.table)
 	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	return m
 }

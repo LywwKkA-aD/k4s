@@ -1,20 +1,20 @@
  k4s  ·  ctx: fake  ·  ns: ALL  ·  view: pods
 ──────────────────────────────────────────────────────────────────────────────
- NAMESPACE           NAME                                  READY    STATUS
-RESTARTS   AGE
+ NAMESPACE    NAME               READY  STATUS            RESTARTS       AGE
 ────────────────────────────────────────────────────────────────────────────────
-────────────────────────────
- demo                crash-
-0                               0/1      CrashLoopBackOff    7          1h
+ demo         crash-0            0/1    CrashLoopBackOff  7              90m
+ demo         multi-0            2/2    Running           0              90m
+ demo         web-1              1/1    Running           0              90m
+ demo         web-2              1/1    Running           0              90m
+ kube-system  coredns-0          1/1    Running           0              90m
 
- demo                multi-0                               2/2      Running
-0          1h
- demo                web-1                                 1/1      Running
-0          1h
- demo                web-2                                 1/1      Running
-0          1h
- kube-system         coredns-0                             1/1      Running
-0          1h
+
+
+
+
+
+
+
 
 
 
