@@ -64,6 +64,11 @@ type Client struct {
 	RestConfig      *rest.Config
 	KubeconfigPaths []string
 
+	// CurrentContext is the kubeconfig's current-context, "" if it sets
+	// none. It differs from Context after --context or a context switch,
+	// which is when a pasted kubectl command needs --context.
+	CurrentContext string
+
 	// Source is where the kubeconfig came from; SwitchContext reloads it.
 	Source Source
 	// ContextNamespace is the namespace the kubeconfig context sets, "" if
@@ -121,6 +126,7 @@ func Load(src Source, contextName string) (*Client, error) {
 	return &Client{
 		Clientset:        cs,
 		Context:          target,
+		CurrentContext:   raw.CurrentContext,
 		RestConfig:       cfg,
 		KubeconfigPaths:  rules.GetLoadingPrecedence(),
 		Source:           src,

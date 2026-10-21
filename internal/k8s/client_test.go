@@ -185,6 +185,44 @@ func TestLoadSources(t *testing.T) {
 	}
 }
 
+// TestLoadRecordsTheCurrentContext: CurrentContext is the file's
+// current-context whichever context was loaded, so a footer command can
+// tell when it needs --context.
+func TestLoadRecordsTheCurrentContext(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		current string
+		load    string
+		want    string
+	}{
+		{name: "current context", current: "alpha", want: "alpha"},
+		{name: "another context", current: "alpha", load: "beta", want: "alpha"},
+		{name: "file without one", current: `""`, load: "beta", want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			src := Source{Paths: []string{writeKubeconfig(t, tc.current)}, Origin: OriginFlag}
+			c, err := Load(src, tc.load)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if c.CurrentContext != tc.want {
+				t.Errorf("CurrentContext = %q, want %q", c.CurrentContext, tc.want)
+			}
+			next, err := c.SwitchContext("beta")
+			if err != nil {
+				t.Fatalf("SwitchContext: %v", err)
+			}
+			if next.CurrentContext != tc.want {
+				t.Errorf("CurrentContext after SwitchContext = %q, want %q", next.CurrentContext, tc.want)
+			}
+		})
+	}
+}
+
 func TestLoadNamespaceFromContext(t *testing.T) {
 	t.Parallel()
 
