@@ -47,9 +47,11 @@ func fire(t *testing.T, clk *asynctest.Clock) async.TickMsg {
 	return tick
 }
 
-// poll answers the poll in flight with err and runs the Cmd that follows.
+// poll answers the poll in flight with err and runs the Cmd that follows. It
+// begins one first when none is in flight.
 func poll(t *testing.T, p async.Poller, err error) async.Poller {
 	t.Helper()
+	p, _ = p.Begin()
 	p, cmd := p.Done(p.Token(), err)
 	run(t, cmd)
 	return p
@@ -93,6 +95,7 @@ func TestZeroPollerAcceptsNothing(t *testing.T) {
 	t.Parallel()
 	var zero async.Poller
 	other, clk := newPoller(async.Config{})
+	other, _ = other.Begin()
 	poll(t, other, nil) // arms its tick on clk
 
 	if zero.Accept(async.Token{}) {
@@ -138,6 +141,31 @@ func TestPollerArmsAfterTheReply(t *testing.T) {
 }
 
 // The first load of a view with watch off still runs; no tick follows it.
+// A duplicate reply under the current Token, with no poll in flight, must
+// neither fold into the backoff nor arm a second tick chain.
+func TestPollerDropsRepliesWhileIdle(t *testing.T) {
+	t.Parallel()
+	p, clk := newPoller(async.Config{})
+	p, _ = p.Begin()
+	p = poll(t, p, nil)
+
+	dup, cmd := p.Done(p.Token(), errTimeout)
+	if cmd != nil {
+		t.Fatal("a duplicate reply armed a second tick")
+	}
+	if dup.Delay() != async.DefaultInterval || dup.BackedOff() {
+		t.Fatalf("a duplicate reply moved the delay to %v", dup.Delay())
+	}
+	if got := len(clk.Delays()); got != 1 {
+		t.Fatalf("%d ticks armed, want 1", got)
+	}
+
+	idle, _ := newPoller(async.Config{})
+	if got, cmd := idle.Done(idle.Token(), errTimeout); cmd != nil || got.Armed() {
+		t.Fatal("a reply to a poll never begun armed a tick")
+	}
+}
+
 func TestDisabledPollerPollsOnDemandOnly(t *testing.T) {
 	t.Parallel()
 	clk := asynctest.NewClock(epoch)
@@ -356,6 +384,7 @@ func TestWithInterval(t *testing.T) {
 func TestRealClockIsTheDefault(t *testing.T) {
 	t.Parallel()
 	p := async.NewPoller(async.New(), async.Config{Enabled: true})
+	p, _ = p.Begin()
 	p, cmd := p.Done(p.Token(), nil)
 	if cmd == nil || !p.Armed() {
 		t.Fatal("a poller without a clock did not arm")
