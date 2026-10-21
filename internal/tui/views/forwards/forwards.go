@@ -33,6 +33,11 @@ type Model struct {
 	// cursor, the keys and Command read them, never a fresh List, so a key
 	// acts on the row the user sees.
 	shown []forwards.Forward
+	// busy holds the ids whose operation is running. A key on such a row is
+	// ignored until the result lands: a repeat would run the operation twice
+	// and report a delete the user wanted as a gone forward. Rebuilt, never
+	// mutated, so copies of the Model do not share it.
+	busy map[string]struct{}
 	// changes was taken in New before the first List, so the wait Init
 	// arms sees every change since.
 	changes <-chan struct{}
@@ -109,6 +114,7 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		m.show(m.manager.List())
 		return m, m.wait(changes)
 	case forwardOpResultMsg:
+		m.busy = without(m.busy, msg.fwd.ID)
 		m.refresh()
 		return m, statusCmd(msg.status())
 	case tea.KeyPressMsg:

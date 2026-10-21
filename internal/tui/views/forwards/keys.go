@@ -1,6 +1,8 @@
 package forwards
 
 import (
+	"maps"
+
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
@@ -52,6 +54,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (next Model, cmd tea.Cmd, handled 
 	if !ok {
 		return m, statusCmd(views.StatusMsg{Level: status.Warn, Text: "no port-forward selected"}), true
 	}
+	if _, running := m.busy[f.ID]; running {
+		return m, nil, true
+	}
+	m.busy = with(m.busy, f.ID)
 	switch {
 	case key.Matches(msg, m.keys.start):
 		return m, startCmd(m.manager, f), true
@@ -61,4 +67,18 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (next Model, cmd tea.Cmd, handled 
 		return m, restartCmd(m.manager, f), true
 	}
 	return m, removeCmd(m.manager, f), true
+}
+
+func with(set map[string]struct{}, id string) map[string]struct{} {
+	out := make(map[string]struct{}, len(set)+1)
+	maps.Copy(out, set)
+	out[id] = struct{}{}
+	return out
+}
+
+func without(set map[string]struct{}, id string) map[string]struct{} {
+	out := make(map[string]struct{}, len(set))
+	maps.Copy(out, set)
+	delete(out, id)
+	return out
 }
