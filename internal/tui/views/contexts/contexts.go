@@ -33,6 +33,7 @@ type Model struct {
 	err    error
 
 	currentContext string
+	source         k8s.Source
 
 	selectKey  key.Binding
 	refreshKey key.Binding
@@ -45,8 +46,10 @@ type contextsMsg struct {
 
 // New constructs the contexts view. currentContext is what the active
 // k8s.Client is currently using — passed in so the picker can render an
-// indicator on that row.
-func New(currentContext string) Model {
+// indicator on that row. src names the kubeconfig files the session
+// loaded, so the picker lists the contexts :ctx can switch to; the zero
+// Source is kubectl's own lookup.
+func New(currentContext string, src k8s.Source) Model {
 	t := table.New(
 		table.WithColumns([]table.Column{
 			{Title: "", Width: 2},
@@ -63,6 +66,7 @@ func New(currentContext string) Model {
 	return Model{
 		table:          t,
 		currentContext: currentContext,
+		source:         src,
 		selectKey: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "switch"),
@@ -75,11 +79,11 @@ func New(currentContext string) Model {
 }
 
 // Init kicks off the first kubeconfig read.
-func (m Model) Init() tea.Cmd { return fetchCmd() }
+func (m Model) Init() tea.Cmd { return fetchCmd(m.source) }
 
-func fetchCmd() tea.Cmd {
+func fetchCmd(src k8s.Source) tea.Cmd {
 	return tea.Tick(loadDelay, func(time.Time) tea.Msg {
-		items, err := k8s.ListContexts("")
+		items, err := k8s.ListContextsFrom(src)
 		return contextsMsg{items: items, err: err}
 	})
 }
@@ -99,7 +103,7 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.refreshKey):
-			return m, fetchCmd()
+			return m, fetchCmd(m.source)
 		case key.Matches(msg, m.selectKey) && m.loaded && len(m.table.Rows()) > 0:
 			row := m.table.SelectedRow()
 			if row == nil {

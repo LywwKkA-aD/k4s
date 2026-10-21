@@ -1,0 +1,2 @@
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  enter describe  ·  l logs  ·  e exec  ·  f port-forward  ·  / filter  ·  w watch  ·  r refresh
+ kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get pods -A

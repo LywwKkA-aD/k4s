@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/contexts"
@@ -41,7 +42,7 @@ func run(m *testing.M) int {
 
 func mounted(t *testing.T, current string) contexts.Model {
 	t.Helper()
-	m, _ := tuitest.Mount(t, contexts.New(current), 120, 20)
+	m, _ := tuitest.Mount(t, contexts.New(current, k8s.Source{}), 120, 20)
 	return m
 }
 
@@ -91,7 +92,7 @@ func TestEnterSelectsContext(t *testing.T) {
 func TestEnterBeforeLoadDoesNothing(t *testing.T) {
 	t.Parallel()
 
-	m := contexts.New(alpha)
+	m := contexts.New(alpha, k8s.Source{})
 	if !strings.Contains(tuitest.Screen(m), "loading kubeconfig") {
 		t.Errorf("before the read: %q", tuitest.Screen(m))
 	}
@@ -113,7 +114,7 @@ func TestRefreshRereadsKubeconfig(t *testing.T) {
 func TestStaticContract(t *testing.T) {
 	t.Parallel()
 
-	m := contexts.New("")
+	m := contexts.New("", k8s.Source{})
 	if m.Title() != "contexts" || m.Command().String() != "kubectl config get-contexts" {
 		t.Errorf("Title=%q Command=%q", m.Title(), m.Command().String())
 	}
@@ -144,5 +145,33 @@ func TestKubeconfigProblems(t *testing.T) {
 				t.Errorf("screen = %q, want %q", screen, tc.want)
 			}
 		})
+	}
+}
+
+// TestListsTheSessionKubeconfig: the picker reads the files the session
+// loaded (--kubeconfig, the k3s fallback), not whatever KUBECONFIG says.
+func TestListsTheSessionKubeconfig(t *testing.T) {
+	t.Parallel()
+
+	path, err := tuitest.WriteKubeconfig(t.TempDir(), "gamma", "gamma", "delta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := k8s.Source{Paths: []string{path}, Origin: k8s.OriginFlag}
+	m, _ := tuitest.Mount(t, contexts.New("gamma", src), 120, 20)
+	screen := tuitest.Screen(m)
+	for _, w := range []string{"gamma-cluster", "delta-cluster"} {
+		if !strings.Contains(screen, w) {
+			t.Errorf("screen lacks %q:\n%s", w, screen)
+		}
+	}
+	if strings.Contains(screen, "alpha-cluster") {
+		t.Errorf("the picker read KUBECONFIG instead of the session's file:\n%s", screen)
+	}
+
+	missing := k8s.Source{Paths: []string{path + ".gone"}, Origin: k8s.OriginFlag}
+	m, _ = tuitest.Mount(t, contexts.New("", missing), 120, 20)
+	if screen := tuitest.Screen(m); !strings.Contains(screen, "contexts unavailable:") {
+		t.Errorf("a missing session file: %q", screen)
 	}
 }

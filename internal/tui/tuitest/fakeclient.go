@@ -80,7 +80,8 @@ func WithReactor(verb, resource string, fn k8stesting.ReactionFunc) FakeOption {
 }
 
 // NewFakeClient returns a k8s.Client backed by fake.NewSimpleClientset and
-// seeded with DemoObjects unless WithObjects says otherwise. Its discovery
+// seeded with DemoObjects unless WithObjects says otherwise. Its context is
+// also the kubeconfig's current-context, as for a plain start. Its discovery
 // REST client serves metrics.k8s.io from memory, so the top view works too.
 // RestConfig stays nil, which makes port-forward start fail cleanly.
 func NewFakeClient(t testing.TB, opts ...FakeOption) *k8s.Client {
@@ -109,8 +110,9 @@ func NewFakeClient(t testing.TB, opts ...FakeOption) *k8s.Client {
 		t.Fatalf("fake clientset discovery is %T", cs.Discovery())
 	}
 	return &k8s.Client{
-		Clientset: &clientset{Clientset: cs, discovery: &metricsDiscovery{FakeDiscovery: fd, rest: metrics}},
-		Context:   cfg.context,
+		Clientset:      &clientset{Clientset: cs, discovery: &metricsDiscovery{FakeDiscovery: fd, rest: metrics}},
+		Context:        cfg.context,
+		CurrentContext: cfg.context,
 	}
 }
 
