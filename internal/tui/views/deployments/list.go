@@ -34,20 +34,22 @@ func (m Model) onTick(msg async.TickMsg) (Model, tea.Cmd) {
 }
 
 // onList folds a list reply in. The poller arms the next tick; an error
-// keeps the old rows behind the error text.
+// keeps the old rows under a stale banner and is said once.
 func (m Model) onList(msg async.Result[[]k8s.Deployment]) (Model, tea.Cmd) {
 	if !m.poll.Accept(msg.Token) {
 		return m, nil
 	}
-	var arm tea.Cmd
+	var arm, said tea.Cmd
 	m.poll, arm = m.poll.Done(msg.Token, msg.Err)
-	m.err, m.loaded = msg.Err, true
+	m.health, said = m.health.Fold(msg.Err)
+	m.loaded = true
+	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	if msg.Err != nil {
-		return m, arm
+		return m, tea.Batch(arm, said)
 	}
 	m.raw = msg.Value
 	m, gone := m.withRows().settleRestore()
-	return m, tea.Batch(arm, gone)
+	return m, tea.Batch(arm, said, gone)
 }
 
 // feedFilter hands a key press or a paste to the open filter and refilters
@@ -95,11 +97,17 @@ func (m Model) visible() []k8s.Deployment {
 	return out
 }
 
+// tableHeight is the body less the lines above the table: the filter bar
+// and the stale banner.
 func (m Model) tableHeight() int {
+	h := m.bodyH
 	if m.filter.Active() {
-		return m.bodyH - 1
+		h--
 	}
-	return m.bodyH
+	if m.health.Stale() {
+		h--
+	}
+	return h
 }
 
 // selected is the deployment under the cursor.

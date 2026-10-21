@@ -23,6 +23,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -66,8 +67,10 @@ type Model struct {
 
 	raw []k8s.Deployment
 	// shown are the rows of the table, raw narrowed by the filter.
-	shown  []k8s.Deployment
-	err    error
+	shown []k8s.Deployment
+	// health is the last list answer: an error over earlier rows is a stale
+	// view, one before any rows is the body.
+	health stale.Health
 	loaded bool
 
 	// tok is the mint row actions take their tokens from.
@@ -197,8 +200,8 @@ func (m Model) View() string {
 	if !m.loaded {
 		return styles.Hint.Render("loading deployments…")
 	}
-	if m.err != nil {
-		return styles.Warn.Render("deployments unavailable: " + m.err.Error())
+	if m.health.Failed() {
+		return styles.Warn.Render("deployments unavailable: " + m.health.Err().Error())
 	}
 	body := m.table.View()
 	if len(m.shown) == 0 {
@@ -208,10 +211,17 @@ func (m Model) View() string {
 			body = styles.Hint.Render("no deployments")
 		}
 	}
-	if !m.filter.Active() {
+	above := make([]string, 0, 3)
+	if m.filter.Active() {
+		above = append(above, m.filter.View())
+	}
+	if banner := m.health.Banner(); banner != "" {
+		above = append(above, banner)
+	}
+	if len(above) == 0 {
 		return body
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.filter.View(), body)
+	return lipgloss.JoinVertical(lipgloss.Left, append(above, body)...)
 }
 
 // Title implements views.View. Stable routing name.
