@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 	"k8s.io/client-go/util/homedir"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
@@ -82,6 +83,9 @@ type Model struct {
 	dashMem dashboard.Memory
 	// blurred is the terminal's focus as it last reported it.
 	blurred bool
+	// profile is the colour profile the program reported; the dashboard
+	// holds still on ASCII and NoTTY.
+	profile colorprofile.Profile
 	// build makes the view for a name; nil means newView. Tests use it to
 	// put stub views in history.
 	build func(m Model, name string) views.View

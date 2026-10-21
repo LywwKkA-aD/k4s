@@ -27,13 +27,16 @@ import (
 type feed struct {
 	mu    sync.Mutex
 	clock *asynctest.Clock
-	base  func() dash.Snapshot
-	vary  bool
-	plans []dash.Plan
+	// frames is the motion clock, apart from the poll's so that counting
+	// ticks never counts frames.
+	frames *asynctest.Clock
+	base   func() dash.Snapshot
+	vary   bool
+	plans  []dash.Plan
 }
 
 func newFeed(base func() dash.Snapshot) *feed {
-	return &feed{clock: asynctest.NewClock(start), base: base}
+	return &feed{clock: asynctest.NewClock(start), frames: asynctest.NewClock(start), base: base}
 }
 
 func (f *feed) fetch(_ context.Context, p dash.Plan, prev dash.Snapshot) dash.Snapshot {
@@ -102,11 +105,45 @@ func wobble(s *dash.Snapshot, n int) {
 }
 
 func (f *feed) options() []dashboard.Option {
-	return []dashboard.Option{dashboard.WithFetch(f.fetch), dashboard.WithClock(f.clock.Now), dashboard.WithTicker(f.clock)}
+	return []dashboard.Option{
+		dashboard.WithFetch(f.fetch), dashboard.WithClock(f.clock.Now), dashboard.WithTicker(f.clock),
+		dashboard.WithFrames(f.frames),
+	}
 }
 
-// mount builds the dashboard over f on a fake client, sized w x h, and
-// runs its first refresh.
+// maxFrames bounds settle: no event may run longer than this many frames.
+const maxFrames = 64
+
+// settle fires the motion clock until nothing moves and returns the
+// frames it fired: the animation frames and the spinner's delay. A clock
+// still running after maxFrames fails the test.
+func (f *feed) settle(t testing.TB, m dashboard.Model) (dashboard.Model, []tea.Msg) {
+	t.Helper()
+	var fired []tea.Msg
+	for f.frames.Pending() > 0 {
+		if len(fired) >= maxFrames {
+			t.Fatalf("the motion clock still runs after %d frames", maxFrames)
+		}
+		msg, _ := f.frames.Fire()
+		fired = append(fired, msg)
+		m, _ = tuitest.Drive(t, m, msg)
+	}
+	return m, fired
+}
+
+// framesIn counts the animation frames among msgs.
+func framesIn(msgs []tea.Msg) int {
+	n := 0
+	for _, msg := range msgs {
+		if fmt.Sprintf("%T", msg) == "dashboard.animFrameMsg" {
+			n++
+		}
+	}
+	return n
+}
+
+// mount builds the dashboard over f on a fake client, sized w x h, runs
+// its first refresh and lets the motion it starts come to rest.
 func mount(t testing.TB, f *feed, w, h int) dashboard.Model {
 	t.Helper()
 	return mountOn(t, tuitest.NewFakeClient(t), f, w, h)
@@ -117,6 +154,7 @@ func mountOn(t testing.TB, c *k8s.Client, f *feed, w, h int) dashboard.Model {
 	t.Helper()
 	m := dashboard.New(c, nil, f.options()...)
 	m, _ = tuitest.Mount(t, m, w, h)
+	m, _ = f.settle(t, m)
 	return m
 }
 

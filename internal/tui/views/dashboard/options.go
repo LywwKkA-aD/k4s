@@ -4,9 +4,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/charmbracelet/colorprofile"
+
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
+	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
 // FetchFunc runs one refresh: the requests p makes due, folded into the
@@ -25,6 +28,8 @@ type config struct {
 	clock   async.Clock
 	fetch   FetchFunc
 	session kubectl.Session
+	frames  async.Clock
+	profile colorprofile.Profile
 }
 
 // WithSession is how a pasted command reaches the cluster k4s shows (see
@@ -93,8 +98,30 @@ func WithFetch(f FetchFunc) Option {
 	}
 }
 
+// WithFrames arms the motion clock (and the spinner's delay) on clock
+// instead of tea.Tick, so tests step through the frames by hand.
+func WithFrames(clock async.Clock) Option {
+	return func(c config) config {
+		c.frames = clock
+		return c
+	}
+}
+
+// WithColorProfile is the terminal's colour profile as the program last
+// reported it (tea.ColorProfileMsg): on ASCII and NoTTY nothing moves.
+// The root passes it on, since only the first dashboard sees the message.
+func WithColorProfile(p colorprofile.Profile) Option {
+	return func(c config) config {
+		c.profile = p
+		return c
+	}
+}
+
 func newConfig(opts []Option) config {
-	c := config{now: time.Now}
+	c := config{now: time.Now, frames: async.RealClock{}}
+	if p, ok := styles.ColorProfile(); ok {
+		c.profile = p
+	}
 	for _, o := range opts {
 		c = o(c)
 	}

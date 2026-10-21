@@ -98,5 +98,5 @@ func chipText(c dash.Chip, narrow bool) string {
 
 // attention is the verdict word after the worst glyph: "▲ attention".
 func (f frame) attention(k mark) string {
-	return f.paint(k) + " attention"
+	return f.paint(k) + " " + f.verdictWord("attention")
 }

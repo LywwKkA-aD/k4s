@@ -37,6 +37,13 @@ type Memory struct {
 	changed  time.Time
 	// topByMemory is panel 7 sorted by memory (s), not CPU.
 	topByMemory bool
+	// slowView is set once renders ran slow: motion stays off until :ctx.
+	slowView bool
+	// beat is the heartbeat's step: one per snapshot that changed.
+	beat int
+	// fresh holds the problem rows that appeared after the first snapshot,
+	// by rowName, with when they appeared.
+	fresh map[string]time.Time
 }
 
 // adopt returns the memory to start from for client c listing ns: a fresh
@@ -95,6 +102,7 @@ func (mem Memory) with(s dash.Snapshot) Memory {
 	if !mem.loaded || s.Hash != mem.snap.Hash {
 		mem.changed = s.At
 	}
+	mem.fresh = freshRows(mem.fresh, mem.snap, s, mem.loaded)
 	mem.snap = s
 	mem.hist = mem.hist.fold(s)
 	mem.since = allClearSince(mem.since, s)

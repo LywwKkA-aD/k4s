@@ -18,6 +18,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
@@ -64,6 +65,14 @@ type Model struct {
 	next    time.Duration
 
 	keys keyMap
+
+	// mo is what moves on the motion clock, frames the clock it is armed
+	// on; profile is the terminal's colour profile, and perf times the
+	// renders, both for the switches that turn motion off.
+	mo      motion
+	frames  async.Clock
+	profile colorprofile.Profile
+	perf    *renderClock
 }
 
 // New builds the dashboard for client, or the disconnected screen
@@ -97,6 +106,10 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 		cadence: baseCadence,
 		next:    baseCadence,
 		keys:    newKeyMap(),
+		mo:      newMotion(),
+		frames:  cfg.frames,
+		profile: cfg.profile,
+		perf:    &renderClock{},
 	}
 	m.poll = async.NewPoller(async.New(), async.Config{
 		Enabled: fetch != nil && !mem.paused,
@@ -115,7 +128,11 @@ func (m Model) Init() tea.Cmd {
 	if !m.poll.Busy() {
 		return nil
 	}
-	return m.fetchCmd(m.plan(false))
+	fetch := m.fetchCmd(m.plan(false))
+	if m.mem.loaded || m.still() {
+		return fetch
+	}
+	return tea.Batch(fetch, m.spinCmd())
 }
 
 // Memory returns what this dashboard learned, for the next one: see

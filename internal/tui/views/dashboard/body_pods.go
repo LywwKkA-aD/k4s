@@ -36,7 +36,7 @@ var podSteps = []podCols{
 // the rows that need a look.
 func podsBody(f frame, w, h int) panelBody {
 	p := f.snap.Pods
-	body := panelBody{info: podsInfo(f.snap)}
+	body := panelBody{info: podsInfo(f)}
 	switch {
 	case p.Avail.State == dash.StateForbidden:
 		denied := " " + f.paint(markUnknown) + " pods forbidden"
@@ -74,11 +74,11 @@ func podsHead(f frame, w int, items []podItem, h int) []string {
 	counts := phaseCounts(f.snap.Pods)
 	if f.narrow() {
 		tally := phaseTally(f, counts)
-		bar := viz.PhaseBar(f.th, max(w-2-2-ansi.StringWidth(tally)-1, 0), counts, 1)
+		bar := viz.PhaseBar(f.th, max(w-2-2-ansi.StringWidth(tally)-1, 0), counts, f.prog)
 		return fitHead(h, need, []string{" " + bar + "  " + tally})
 	}
-	total := "  " + strconv.Itoa(f.snap.Pods.Total)
-	bar := " " + viz.PhaseBar(f.th, max(w-2-len(total), 0), counts, 1) + total
+	total := "  " + padLeft(strconv.Itoa(f.roll(f.snap.Pods.Total)), len(strconv.Itoa(f.snap.Pods.Total)))
+	bar := " " + viz.PhaseBar(f.th, max(w-2-len(total), 0), counts, f.prog) + total
 	legend := " " + viz.PhaseLegend(f.th, w-2, counts)
 	if f.kind != kindWide {
 		return fitHead(h, need, []string{bar, legend}, []string{bar})
@@ -190,7 +190,7 @@ func podTable(f frame, w int, items []podItem, room int) (lines []string, hidden
 	rows := max(room-1, 0)
 	start := window(len(items), rows, sel)
 	for i := start; i < min(len(items), start+rows); i++ {
-		text := f.paint(markOf(items[i].pod.Sev)) + " " + c.join(cells[i])
+		text := f.paint(markOf(items[i].pod.Sev)) + " " + c.join(cells[i]) + f.newTag(items[i].pod.Key)
 		lines = append(lines, f.listLine(text, i == sel))
 	}
 	return lines, len(items) - (len(lines) - 1)
@@ -248,19 +248,22 @@ func podRowCells(p dash.PodRow, cols podCols) []string {
 	return cells
 }
 
-// podsInfo is the top border's note: "185 · 33 ns", or "41 · ns shop".
-func podsInfo(s dash.Snapshot) string {
+// podsInfo is the top border's note: "185 · 33 ns", or "41 · ns shop";
+// the total rolls up with the bars.
+func podsInfo(f frame) string {
+	s := f.snap
 	p := s.Pods
+	total := f.roll(p.Total)
 	if !readable(p.Avail) {
 		return ""
 	}
 	if p.Scope != "" {
-		return fmt.Sprintf("%d · ns %s", p.Total, clean(p.Scope))
+		return fmt.Sprintf("%d · ns %s", total, clean(p.Scope))
 	}
 	if readable(s.Cluster.Namespaces.Avail) {
-		return fmt.Sprintf("%d · %d ns", p.Total, s.Cluster.Namespaces.Count)
+		return fmt.Sprintf("%d · %d ns", total, s.Cluster.Namespaces.Count)
 	}
-	return strconv.Itoa(p.Total)
+	return strconv.Itoa(total)
 }
 
 // podsFooter is the bottom border's note: the cursor's place, rows left

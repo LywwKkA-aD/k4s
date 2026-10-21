@@ -9,6 +9,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/viz"
 )
 
 // The banner (panel 0) answers the first two questions: is the cluster OK
@@ -37,7 +38,7 @@ func bannerLines(f frame, l layout) []string {
 	var marks [bannerRows]string
 	if l.kind == kindWide && l.banner >= bannerRows {
 		for i, row := range wordmark {
-			marks[i] = f.ds.Title.Render(row[len(" "):]) + wordmarkGap
+			marks[i] = f.wordmarkRow(row[len(" "):]) + wordmarkGap
 		}
 	}
 	lines := []string{verdictLine(f, l.w, marks[0], rightNote(f))}
@@ -45,6 +46,26 @@ func bannerLines(f frame, l layout) []string {
 		lines = append(lines, fitText(nextLine(f, marks[1]), l.w))
 	}
 	return lines
+}
+
+// wordmarkRow paints one row of the wordmark: the accent at rest, the
+// gradient sliding across it while it shimmers.
+func (f frame) wordmarkRow(row string) string {
+	if f.glow.wordmark == 0 {
+		return f.ds.Title.Render(row)
+	}
+	w := len([]rune(row))
+	return glowText(row, w, f.glow.wordmark*w/viz.MaxFrames)
+}
+
+// verdictWord paints the verdict's word, "attention" or "all clear": the
+// gradient sweeps across it when the verdict flips.
+func (f frame) verdictWord(word string) string {
+	if f.glow.verdict == 0 {
+		return word
+	}
+	w := len([]rune(word))
+	return glowText(word, w, f.glow.verdict*w/sweepFrames)
 }
 
 // verdictLine is the first banner row: the cursor column, mark (the
@@ -59,9 +80,9 @@ func verdictLine(f frame, w int, mark, right string) string {
 	return spread(head+verdict(f, room), right, w)
 }
 
-// rightNote ends the verdict row: "◆ changed 14:32:05 · watch 5s" in the
-// wide layout, the time alone where the narrow ones keep the watch state
-// in the hints, and "‖ paused 14:32" with watch off.
+// rightNote ends the verdict row: "◆ changed 14:32:05 · watch 5s ⣽" in
+// the wide layout, the time and the heartbeat where the narrow ones keep
+// the watch state in the hints, and "‖ paused 14:32" with watch off.
 func rightNote(f frame) string {
 	var parts []string
 	if f.loaded && !f.changed.IsZero() {
@@ -77,10 +98,14 @@ func rightNote(f frame) string {
 	case !f.narrow() && f.hint != "":
 		parts = append(parts, f.muted(f.hint))
 	}
-	if len(parts) == 0 {
+	note := strings.Join(parts, " · ")
+	if f.beat != "" {
+		note = strings.TrimPrefix(note+" "+f.ds.Heartbeat.Render(f.beat), " ")
+	}
+	if note == "" {
 		return ""
 	}
-	return strings.Join(parts, " · ") + " "
+	return note + " "
 }
 
 // clock is t as hh:mm, "" for the zero time.
@@ -101,7 +126,7 @@ func verdict(f frame, w int) string {
 	case !f.loaded:
 		return f.paint(markFact) + " loading the cluster…"
 	case v.AllClear:
-		return fitFacts(f.paint(markOK)+" all clear since "+clock(f.since), clearFacts(f.snap), w)
+		return fitFacts(f.paint(markOK)+" "+f.verdictWord("all clear")+" since "+clock(f.since), clearFacts(f.snap), w)
 	}
 	lead := bannerNotes(f)
 	if len(v.Chips) == 0 {

@@ -31,6 +31,16 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		return m.onTerminalFocus(false)
 	case tea.BlurMsg:
 		return m.onTerminalFocus(true)
+	case animFrameMsg:
+		return m.onFrame(msg)
+	case spinDueMsg:
+		return m.onSpinDue(msg)
+	case tea.ColorProfileMsg:
+		m.profile = msg.Profile
+		if m.still() {
+			m.mo = m.mo.halt()
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		return m.onKey(msg)
 	}
@@ -80,9 +90,11 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 		return m, nil // another view's reply, or one this view moved past
 	}
 	m.forced = false
-	var note tea.Cmd
+	m.mo.spinning = false
+	var note, motion tea.Cmd
 	if msg.Err == nil {
 		var gone string
+		first, prev := !m.mem.loaded, m.mem.snap
 		m.mem = m.mem.with(msg.Value.snap)
 		m, gone = m.reflow()
 		// A suggestion that left was fixed or outranked: the cursor
@@ -90,9 +102,10 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 		if gone != "" && m.mem.focus.panel != dash.PanelOverview {
 			note = statusCmd(status.Info, goneText(gone))
 		}
+		m, motion = m.moved(first, prev, m.mem.snap)
 	}
 	next, cmd := m.settle(m.plan(false), msg.Token, msg.Err)
-	return next, tea.Batch(cmd, note)
+	return next, tea.Batch(cmd, note, motion)
 }
 
 // settle ends the poll under tok: the next tick is armed at the plan's
@@ -126,6 +139,9 @@ func (m Model) onTerminalFocus(blurred bool) (views.View, tea.Cmd) {
 		return m, nil
 	}
 	m.blurred = blurred
+	if blurred {
+		m.mo = m.mo.halt()
+	}
 	return m.retime()
 }
 
@@ -165,7 +181,9 @@ func (m Model) onRefreshKey() (views.View, tea.Cmd) {
 		return m, statusCmd(status.Info, "refresh already running")
 	}
 	m.forced = true
-	return m, m.fetchCmd(m.plan(true))
+	fetch := m.fetchCmd(m.plan(true))
+	m, spin := m.spinLater()
+	return m, tea.Batch(fetch, spin)
 }
 
 func (m Model) onWatchKey() (views.View, tea.Cmd) {
@@ -207,8 +225,19 @@ func (m Model) move(msg tea.KeyPressMsg) (views.View, tea.Cmd) {
 	if f.panel == m.mem.focus.panel && f.row == m.mem.focus.row {
 		return m, nil
 	}
+	return m.focusOn(f)
+}
+
+// focusOn moves the focus to f, sweeping the border of a panel newly
+// focused.
+func (m Model) focusOn(f focus) (views.View, tea.Cmd) {
+	moved := f.panel != m.mem.focus.panel
 	m.mem.focus = f
-	return m.relayout(), nil
+	m = m.relayout()
+	if !moved {
+		return m, nil
+	}
+	return m.sweepFocus(f.panel)
 }
 
 // order is the tab order: the banner, then every panel on screen.
@@ -220,8 +249,7 @@ func (m Model) jump(p dash.Panel) (views.View, tea.Cmd) {
 	if _, ok := m.lay.placeOf(p); !ok && p != dash.PanelOverview {
 		return m, statusCmd(status.Info, hiddenText(p, m.shown()))
 	}
-	m.mem.focus = m.mem.focus.at(p)
-	return m.relayout(), nil
+	return m.focusOn(m.mem.focus.at(p))
 }
 
 // hiddenText says why panel p is not on screen.

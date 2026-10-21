@@ -104,7 +104,7 @@ func kindBar(f frame, k readyKind, barW, countW int) string {
 		{Phase: viz.PhaseFailing, Count: failing},
 		{Phase: viz.PhaseOther, Count: max(k.sum.Total-k.sum.Ready-waiting-failing, 0)},
 	}
-	return viz.PhaseBar(f.th, barW, counts, 1) + "  " + padLeft(readyCount(k.sum), countW)
+	return viz.PhaseBar(f.th, barW, counts, f.prog) + "  " + padLeft(readyCount(k.sum), countW)
 }
 
 func jobsText(f frame) string {
@@ -169,7 +169,7 @@ func workloadTable(f frame, w int, items []workloadItem, room int) (lines []stri
 	room = max(room-1, 0)
 	start := window(len(items), room, sel)
 	for i := start; i < min(len(items), start+room); i++ {
-		text := f.paint(workloadMark(items[i].w)) + " " + c.join(cells[i])
+		text := f.paint(workloadMark(items[i].w)) + " " + c.join(cells[i]) + f.newTag(items[i].w.Key)
 		lines = append(lines, f.listLine(text, i == sel))
 	}
 	return lines, len(items) - (len(lines) - 1)

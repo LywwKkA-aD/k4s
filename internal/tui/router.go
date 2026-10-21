@@ -35,6 +35,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.setStatusAbout(msg.Level, msg.Text, msg.Cmd)
 	case tea.FocusMsg, tea.BlurMsg:
 		return m.onTerminalFocus(msg)
+	case tea.ColorProfileMsg:
+		return m.onColorProfile(msg)
 	case status.ExpireMsg:
 		m.status = m.status.Expire(msg, m.now())
 		return m, nil
