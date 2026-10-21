@@ -62,7 +62,7 @@ func TestPodStateOf(t *testing.T) {
 	}{
 		{
 			name: "a running container restarted after an OOM kill", pod: podWith(corev1.PodRunning, oom),
-			want: k8s.ContainerState{Name: "app", Restarts: 2, Started: start, LastExit: &k8s.ContainerExit{Reason: "OOMKilled", Code: 137}},
+			want: k8s.ContainerState{Name: "app", Restarts: 2, Running: true, Started: start, LastExit: &k8s.ContainerExit{Reason: "OOMKilled", Code: 137}},
 		},
 		{
 			name: "crash loop back-off keeps the last exit", pod: podWith(corev1.PodRunning, crashing),
@@ -89,15 +89,15 @@ func TestPodStateOf(t *testing.T) {
 			},
 		},
 		{
-			name: "a pod being deleted", pod: deleting, want: k8s.ContainerState{Name: "app", Started: start},
+			name: "a pod being deleted", pod: deleting, want: k8s.ContainerState{Name: "app", Running: true, Started: start},
 			check: func(t *testing.T, s k8s.PodState) {
 				if !s.Deleting || s.Finished() {
 					t.Errorf("deleting = %+v", s)
 				}
 			},
 		},
-		{name: "a named container", pod: annotated, container: "proxy", want: k8s.ContainerState{Name: "proxy", Restarts: 1, Started: start}},
-		{name: "the default container annotation", pod: annotated, want: k8s.ContainerState{Name: "proxy", Restarts: 1, Started: start}},
+		{name: "a named container", pod: annotated, container: "proxy", want: k8s.ContainerState{Name: "proxy", Restarts: 1, Running: true, Started: start}},
+		{name: "the default container annotation", pod: annotated, want: k8s.ContainerState{Name: "proxy", Restarts: 1, Running: true, Started: start}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -122,7 +122,8 @@ func TestContainerStateHasLog(t *testing.T) {
 		c    k8s.ContainerState
 		want bool
 	}{
-		{name: "running", c: k8s.ContainerState{Started: time.Unix(1, 0)}, want: true},
+		{name: "running", c: k8s.ContainerState{Running: true}, want: true},
+		{name: "a start time alone", c: k8s.ContainerState{Started: time.Unix(1, 0)}},
 		{name: "ended", c: k8s.ContainerState{Exit: &k8s.ContainerExit{}}, want: true},
 		{name: "crash looping", c: k8s.ContainerState{Waiting: "CrashLoopBackOff", Restarts: 3}, want: true},
 		{name: "being created", c: k8s.ContainerState{Waiting: "ContainerCreating"}},

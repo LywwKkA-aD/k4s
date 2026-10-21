@@ -37,7 +37,9 @@ type ContainerState struct {
 	// Waiting is why the container waits (ContainerCreating,
 	// CrashLoopBackOff, or Unschedulable for a pod not yet placed).
 	Waiting string
-	// Started is when the running instance started; zero unless it runs.
+	// Running is set while the current instance runs; Started is when it
+	// started, zero when the status does not say.
+	Running bool
 	Started time.Time
 	// Exit is how the current instance ended; nil unless it has.
 	Exit *ContainerExit
@@ -54,7 +56,7 @@ type ContainerExit struct {
 // HasLog reports whether the container has run, so its log can be read:
 // it runs, has ended, or has restarted before.
 func (c ContainerState) HasLog() bool {
-	return !c.Started.IsZero() || c.Exit != nil || c.LastExit != nil || c.Restarts > 0
+	return c.Running || c.Exit != nil || c.LastExit != nil || c.Restarts > 0
 }
 
 // Finished reports a pod that ran to completion or failed: its log is
@@ -116,7 +118,7 @@ func containerStateOf(cs corev1.ContainerStatus) ContainerState {
 	out := ContainerState{Name: cs.Name, Restarts: cs.RestartCount, LastExit: exitOf(cs.LastTerminationState.Terminated)}
 	switch st := cs.State; {
 	case st.Running != nil:
-		out.Started = st.Running.StartedAt.Time
+		out.Running, out.Started = true, st.Running.StartedAt.Time
 	case st.Terminated != nil:
 		out.Exit = exitOf(st.Terminated)
 	case st.Waiting != nil:
