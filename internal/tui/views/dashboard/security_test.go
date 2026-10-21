@@ -22,6 +22,10 @@ func hostile() dash.Snapshot {
 	s.Pods.Problems[0].Cmd = dash.Cmd{Args: []string{"describe", "pod", "payments" + osc52 + "-worker", "-n", "shop"}}
 	s.Verdict.Chips[0].Text = "3 Crash" + osc52
 	s.Next[0].Question = "why?" + osc52
+	s.Workloads.Rows[0].Key.Name = "payments" + osc52 + "-worker"
+	s.Events.Rows[0].Reason = "Back\x1b[2JOff"
+	s.Events.Rows[0].Message = "Back-off" + osc52 + " restarting failed container"
+	s.Events.Rows[0].Object.Name = "loki\x1b[H-backend-0"
 	return s
 }
 
@@ -39,7 +43,7 @@ func TestClusterTextIsInert(t *testing.T) {
 		}
 	}
 	screen := tuitest.Screen(m)
-	for _, want := range []string{"devops", "payments-worker", "CrashLoop", "v1.36.3+k3s1"} {
+	for _, want := range []string{"devops", "payments-worker", "CrashLoop", "v1.36.3+k3s1", "shop/payments-worker", "BackOff", "Back-off restarting", "pod/loki-backend-0"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("screen lacks the cleaned %q", want)
 		}

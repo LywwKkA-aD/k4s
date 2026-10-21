@@ -127,6 +127,10 @@ func bodyOf(f frame, p dash.Panel, w, h int) panelBody {
 		return nodesBody(f, w, h)
 	case dash.PanelPods:
 		return podsBody(f, w, h)
+	case dash.PanelWorkloads:
+		return workloadsBody(f, w, h)
+	case dash.PanelEvents:
+		return eventsBody(f, w, h)
 	}
 	return summaryBody(f, p)
 }

@@ -13,6 +13,6 @@
 ┃ ▲ monitoring/loki-backend-0             1/2    CrashLoopBackOff  12          ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/9 · +6 · 6 need attention · 2 restarting ━┛
    4 workloads  ▲ 61/65 ready · ▲ 1 job failed · ○ 1 cronjob suspended          
-   5 events     △ 9 warnings in 1h · BackOff · FailedScheduling · Unhealthy     
+   5 events     △ 10 warnings in 1h · BackOff ×4 · FailedMount · FailedScheduli…
    6 k3s        ● 4/4 components · ◆ etcd snapshot 4h ago                       
    7 top pods   ◆ prometheus-k8s-0 1420m · ◆ payments-api-5f7b8c9d4-tq8vn 910m …

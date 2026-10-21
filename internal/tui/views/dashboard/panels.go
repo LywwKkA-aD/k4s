@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
@@ -48,7 +49,7 @@ func panelCmd(p dash.Panel, s dash.Snapshot) dash.Cmd {
 }
 
 // rowsOf lists the rows the cursor can stand on in panel p as layout l
-// draws it, in drawing order. Panels 4 to 7 have none yet: they are
+// draws it, in drawing order. Panels 6 and 7 have none yet: they are
 // focused as a whole.
 func rowsOf(p dash.Panel, s dash.Snapshot, l layout) []row {
 	switch p {
@@ -68,8 +69,31 @@ func rowsOf(p dash.Panel, s dash.Snapshot, l layout) []row {
 			out = append(out, it.row)
 		}
 		return out
+	case dash.PanelWorkloads:
+		items := workloadItems(s)
+		out := make([]row, 0, len(items))
+		for _, it := range items {
+			out = append(out, it.row)
+		}
+		return out
+	case dash.PanelEvents:
+		items := eventItems(s)
+		out := make([]row, 0, len(items))
+		for _, it := range items {
+			out = append(out, it.row)
+		}
+		return out
 	}
 	return nil
+}
+
+// describeKinds are the kinds k4s has a describe view for.
+var describeKinds = []string{"pod", "deployment", "service"}
+
+// describable reports a row Enter opens in k4s's describe view: an object
+// of a kind it describes, placed in its namespace.
+func describable(r row) bool {
+	return r.placed && slices.Contains(describeKinds, r.target.Kind)
 }
 
 // toKubectl turns a data-layer command into the footer's, its arguments

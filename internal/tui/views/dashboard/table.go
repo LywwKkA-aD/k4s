@@ -1,10 +1,13 @@
 package dashboard
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
@@ -97,4 +100,52 @@ func (f frame) listLine(text string, sel bool) string {
 		return f.ds.Selection.Render(styles.CursorMarker + ansi.Strip(text))
 	}
 	return " " + text
+}
+
+// atLeast returns c with column i at least w wide, so a column keeps its
+// place while the rows that set its width come and go.
+func (c cols) atLeast(i, w int) cols {
+	widths := slices.Clone(c.widths)
+	widths[i] = max(widths[i], w)
+	c.widths = widths
+	return c
+}
+
+// fitHead is the first of steps (the lines above a list, fullest first)
+// that leaves need of h lines for the list, or nothing: a list loses rows
+// down to need before the lines above it go.
+func fitHead(h, need int, steps ...[]string) []string {
+	for _, s := range steps {
+		if h-len(s) >= need {
+			return s
+		}
+	}
+	return nil
+}
+
+// selectedIn is the index of the row the cursor stands on in panel p, -1
+// when the cursor is elsewhere.
+func (f frame) selectedIn(p dash.Panel, rows []row) int {
+	if f.focus.panel != p || f.focus.row == "" {
+		return -1
+	}
+	return slices.IndexFunc(rows, func(r row) bool { return r.key == f.focus.row })
+}
+
+// listFooter is a list's bottom border note: the cursor's place, the rows
+// left out, then notes.
+func (f frame) listFooter(p dash.Panel, total, hidden int, notes ...string) string {
+	var parts []string
+	if f.focus.panel == p && f.focus.row != "" {
+		parts = append(parts, fmt.Sprintf("%d/%d", f.focus.index+1, total))
+	}
+	if hidden > 0 {
+		parts = append(parts, fmt.Sprintf("+%d", hidden))
+	}
+	for _, n := range notes {
+		if n != "" {
+			parts = append(parts, n)
+		}
+	}
+	return strings.Join(parts, " · ")
 }
