@@ -19,6 +19,7 @@ func (m *Model) openSearch() {
 }
 
 func (m *Model) cancelSearch() {
+	m.repaint()
 	m.search = query{}
 	m.matches = nil
 	m.matchIdx = 0
@@ -72,6 +73,7 @@ func (m Model) onPaste(msg tea.PasteMsg) (views.View, tea.Cmd) {
 // It searches the sanitized line text, never the prefix, so the pod name
 // and the colour codes around it never match.
 func (m *Model) computeMatches() {
+	m.repaint()
 	m.matches = matchesFrom(m.search, m.rawLines, 0)
 	if m.matchIdx >= len(m.matches) {
 		m.matchIdx = 0
@@ -97,6 +99,7 @@ func (m *Model) gotoMatch(direction int) {
 	if len(m.matches) == 0 {
 		return
 	}
+	m.repaint()
 	m.matchIdx = (m.matchIdx + direction + len(m.matches)) % len(m.matches)
 	m.autoFollow = false
 	m.focusMatch()

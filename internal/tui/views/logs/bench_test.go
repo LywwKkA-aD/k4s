@@ -49,3 +49,29 @@ func BenchmarkSync(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkBatchOfLongLines is one line arriving on a backlog of 64 KiB
+// lines, which the byte budget bounds and the layout cache keeps from
+// being laid out again.
+func BenchmarkBatchOfLongLines(b *testing.B) {
+	for _, wrap := range []bool{false, true} {
+		b.Run(fmt.Sprintf("wrap=%v", wrap), func(b *testing.B) {
+			m := New(nil, "ns", []string{"a"}, 100, "")
+			next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+			m = next.(Model)
+			m.wrap = wrap
+			long := make([]logEvent, 0, 200)
+			for _, l := range longLines(0, 200) {
+				long = append(long, logEvent{Pod: "a", Line: l})
+			}
+			next, _ = m.Update(logEventsBatch{tok: m.sess.tok, events: long})
+			m = next.(Model)
+			one := logEventsBatch{tok: m.sess.tok, events: []logEvent{{Pod: "a", Line: longLines(0, 1)[0]}}}
+			b.ResetTimer()
+			for range b.N {
+				next, _ = m.Update(one)
+				m = next.(Model)
+			}
+		})
+	}
+}

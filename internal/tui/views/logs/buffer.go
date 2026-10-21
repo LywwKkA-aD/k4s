@@ -66,6 +66,8 @@ func (m *Model) settle(first int) {
 func (m *Model) clearLogs() {
 	m.rawLines = nil
 	m.rendered = nil
+	m.cells = nil
+	m.bytes = 0
 	m.matches = nil
 	m.matchIdx = 0
 	m.syncViewport()
@@ -76,22 +78,38 @@ func (m *Model) clearLogs() {
 // just join the cache.
 func (m *Model) appendOne(pod, text string, kind lineKind) {
 	ln := logLine{pod: pod, text: text, kind: kind}
+	m.bytes += len(text)
 	m.rawLines = append(m.rawLines, ln)
 	m.rendered = append(m.rendered, formatRawLine(ln, len(m.pods) > 1, m.showPodNames, m.podColors[ln.pod]))
 }
 
-// trim drops the oldest lines beyond views.MaxLogLines and returns how
-// many went. Matches move with their lines: the ones on dropped lines go,
-// and the current match stays on its line, or falls to the first match
-// left when its own line went. The kept lines are copied, so no earlier
-// copy of the model shares their backing array.
+// trim drops the oldest lines beyond views.MaxLogLines, or beyond
+// maxBacklogBytes of text, and returns how many went; the newest line
+// always stays. Matches move with their lines: the ones on dropped lines
+// go, and the current match stays on its line, or falls to the first
+// match left when its own line went. The kept lines are copied, so no
+// earlier copy of the model shares their backing array.
 func (m *Model) trim() int {
-	drop := len(m.rawLines) - views.MaxLogLines
-	if drop <= 0 {
+	drop := max(len(m.rawLines)-views.MaxLogLines, 0)
+	bytes := m.bytes
+	for _, ln := range m.rawLines[:drop] {
+		bytes -= len(ln.text)
+	}
+	for drop < len(m.rawLines)-1 && bytes > maxBacklogBytes {
+		bytes -= len(m.rawLines[drop].text)
+		drop++
+	}
+	if drop == 0 {
 		return 0
 	}
-	m.rawLines = append(make([]logLine, 0, views.MaxLogLines+drainBatchCap), m.rawLines[drop:]...)
-	m.rendered = append(make([]string, 0, views.MaxLogLines+drainBatchCap), m.rendered[drop:]...)
+	keep := len(m.rawLines) - drop + drainBatchCap
+	m.rawLines = append(make([]logLine, 0, keep), m.rawLines[drop:]...)
+	m.rendered = append(make([]string, 0, keep), m.rendered[drop:]...)
+	m.cells = m.cells[min(drop, len(m.cells)):]
+	m.bytes = bytes
+	if len(m.matches) > 0 && m.matches[m.matchIdx].line < drop {
+		m.repaint()
+	}
 	m.matches, m.matchIdx = shiftMatches(m.matches, m.matchIdx, drop)
 	return drop
 }
@@ -122,4 +140,5 @@ func (m *Model) rebuildRendered() {
 		rendered[i] = formatRawLine(ln, multi, m.showPodNames, m.podColors[ln.pod])
 	}
 	m.rendered = rendered
+	m.cells = nil
 }

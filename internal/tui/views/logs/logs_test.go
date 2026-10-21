@@ -602,20 +602,26 @@ func TestHScrollMovesByConstantStep(t *testing.T) {
 	}
 }
 
-func TestApplyXOffsetSkipsLeftColumns(t *testing.T) {
+func TestLayoutRows(t *testing.T) {
 	t.Parallel()
-	in := "0123456789"
-	got := applyXOffset(in, 3)
-	if got != "3456789" {
-		t.Errorf("applyXOffset(3) = %q, want %q", got, "3456789")
+	cases := []struct {
+		name string
+		line string
+		key  layoutKey
+		want []string
+	}{
+		{name: "unsized keeps the line", line: "0123456789", want: []string{"0123456789"}},
+		{name: "clipped from the offset", line: "0123456789", key: layoutKey{width: 4, xOffset: 3}, want: []string{"3456"}},
+		{name: "clipped without an offset", line: "hello world", key: layoutKey{width: 5}, want: []string{"hello"}},
+		{name: "wrapped", line: "aaaaaa bbbbbb", key: layoutKey{wrap: true, width: 6}, want: []string{"aaaaaa", "bbbbbb"}},
 	}
-}
-
-func TestApplyXOffsetZeroIsIdentity(t *testing.T) {
-	t.Parallel()
-	in := "hello"
-	if applyXOffset(in, 0) != "hello" {
-		t.Errorf("offset=0 should pass through unchanged")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := layoutRows(tc.line, tc.key); strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Errorf("layoutRows = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

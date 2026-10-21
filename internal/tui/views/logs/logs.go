@@ -101,6 +101,14 @@ type Model struct {
 	// formatting every line again. Lines with a search match are painted
 	// afresh at sync time.
 	rendered []string
+	// bytes is the text the backlog holds, bounded by maxBacklogBytes.
+	bytes int
+	// cells mirrors rawLines with each line laid out for cellsKey, so a
+	// batch lays out its own lines only. paintGen numbers the search
+	// paint: a painted cell from an older generation is drawn again.
+	cells    []cell
+	cellsKey layoutKey
+	paintGen uint64
 	// rowStart[i] is the viewport row line i starts on, and its last entry
 	// the row count: wrapped lines take several rows.
 	rowStart []int
@@ -187,6 +195,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 		viewport:    newViewport(),
 		podColors:   assignPodColors(pods),
 		autoFollow:  true,
+		paintGen:    noPaint + 1,
 		searchInput: si,
 		keys:        newKeyMap(),
 	}
