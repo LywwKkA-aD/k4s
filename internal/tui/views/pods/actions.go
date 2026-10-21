@@ -80,7 +80,7 @@ func (m Model) actionPod() (k8s.Pod, tea.Cmd, bool) {
 		return k8s.Pod{}, statusCmd(status.Warn, "no kubeconfig"), false
 	case !m.loaded:
 		return k8s.Pod{}, statusCmd(status.Info, "pods are still loading"), false
-	case m.err != nil:
+	case m.health.Failed():
 		return k8s.Pod{}, statusCmd(status.Warn, "pods unavailable, press r"), false
 	}
 	pod, ok := m.cursorPod()

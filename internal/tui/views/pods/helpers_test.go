@@ -13,6 +13,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/pods"
@@ -77,6 +78,12 @@ func (l *rvLog) all() []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return slices.Clone(l.rvs)
+}
+
+// onlyRefreshNotice reports that msgs are the one status r gives while a
+// list is in flight, with no fetch behind it.
+func onlyRefreshNotice(msgs []tea.Msg) bool {
+	return len(msgs) == 1 && msgs[0] == views.StatusMsg{Level: status.Info, Text: "refresh already running"}
 }
 
 // watchHint is the help text of the view's w binding.
