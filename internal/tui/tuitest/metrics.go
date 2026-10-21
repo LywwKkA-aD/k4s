@@ -63,12 +63,16 @@ func demoPodMetrics() []podMetrics {
 }
 
 // metricsRoundTripper serves metrics.k8s.io from memory, or status for
-// every request when it is not 200.
+// every request when it is not 200, or 503 while the outage is down.
 type metricsRoundTripper struct {
 	status int
+	outage *Outage
 }
 
 func (rt metricsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if rt.outage.isDown() {
+		return respond(req, http.StatusServiceUnavailable, nil), nil
+	}
 	if rt.status != http.StatusOK {
 		return respond(req, rt.status, nil), nil
 	}
@@ -124,7 +128,7 @@ func respond(req *http.Request, status int, body []byte) *http.Response {
 
 // newMetricsREST builds a real rest.RESTClient whose transport never leaves
 // the process. A negative QPS turns client-side throttling off.
-func newMetricsREST(status int) (rest.Interface, error) {
+func newMetricsREST(status int, outage *Outage) (rest.Interface, error) {
 	cfg := &rest.Config{
 		Host:    "https://fake.invalid",
 		APIPath: "/apis",
@@ -133,7 +137,7 @@ func newMetricsREST(status int) (rest.Interface, error) {
 			NegotiatedSerializer: scheme.Codecs.WithoutConversion(),
 		},
 	}
-	rc, err := rest.UnversionedRESTClientForConfigAndClient(cfg, &http.Client{Transport: metricsRoundTripper{status: status}})
+	rc, err := rest.UnversionedRESTClientForConfigAndClient(cfg, &http.Client{Transport: metricsRoundTripper{status: status, outage: outage}})
 	if err != nil {
 		return nil, fmt.Errorf("metrics rest client: %w", err)
 	}
