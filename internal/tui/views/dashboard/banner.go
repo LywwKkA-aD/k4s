@@ -43,7 +43,11 @@ func bannerLines(f frame, l layout) []string {
 	}
 	lines := []string{verdictLine(f, l.w, marks[0], rightNote(f))}
 	if l.banner > 1 {
-		lines = append(lines, fitText(nextLine(f, marks[1]), l.w))
+		next := fitText(nextLine(f, marks[1]), l.w)
+		if note := f.toastNote(); note != "" {
+			next = spread(nextLine(f, marks[1]), note, l.w)
+		}
+		lines = append(lines, next)
 	}
 	return lines
 }

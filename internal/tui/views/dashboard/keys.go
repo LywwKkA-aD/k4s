@@ -13,6 +13,7 @@ type keyMap struct {
 	enter       key.Binding
 	logs        key.Binding
 	sort        key.Binding
+	zoom        key.Binding
 	refresh     key.Binding
 	watch       key.Binding
 
@@ -32,6 +33,7 @@ func newKeyMap() keyMap {
 		enter:   key.NewBinding(key.WithKeys("enter")),
 		logs:    key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "logs")),
 		sort:    key.NewBinding(key.WithKeys("s")),
+		zoom:    key.NewBinding(key.WithKeys("z")),
 		refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		watch:   key.NewBinding(key.WithKeys("w")),
 		panel:   key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab/0-7", "panel")),

@@ -252,7 +252,7 @@ func TestNewProblemRowsAreTagged(t *testing.T) {
 	m = advance(t, m, f, 5*time.Second)
 	row := func() string {
 		for _, l := range strings.Split(tuitest.Screen(m), "\n") {
-			if strings.Contains(l, "runner-build-8812-k7x2p ") && strings.Contains(l, "Pending") {
+			if strings.Contains(l, "runner-build-8812-k7x2p ") && strings.Contains(l, "<none>") {
 				return l
 			}
 		}

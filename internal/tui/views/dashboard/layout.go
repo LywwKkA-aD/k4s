@@ -87,9 +87,11 @@ type layout struct {
 	w, h   int
 	banner int
 	places []place
-	// sh and open are the inputs besides the size it was built from.
+	// sh and open are the inputs besides the size it was built from;
+	// zoom is the panel drawn over the whole body, 0 for none.
 	sh   shown
 	open dash.Panel
+	zoom dash.Panel
 }
 
 // buildLayout lays out a w x h body. expanded is the compact layout's open

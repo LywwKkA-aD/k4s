@@ -44,6 +44,8 @@ type Memory struct {
 	// fresh holds the problem rows that appeared after the first snapshot,
 	// by rowName, with when they appeared.
 	fresh map[string]time.Time
+	// ring is the changes k4s saw between polls, newest first.
+	ring []change
 }
 
 // adopt returns the memory to start from for client c listing ns: a fresh
@@ -92,6 +94,7 @@ func (mem Memory) rescoped(ns string) Memory {
 	mem.snap = mem.snap.Rescope(dash.Scope{Namespace: ns, Context: mem.client.ContextNamespace})
 	mem.hist = mem.hist.rescoped()
 	mem.since = time.Time{}
+	mem.ring, mem.fresh = nil, nil
 	mem.focus.row, mem.focus.index = "", 0
 	return mem
 }

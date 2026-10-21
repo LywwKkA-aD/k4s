@@ -45,6 +45,11 @@ type frame struct {
 	fresh map[string]time.Time
 	// glow is the gradient sweeps in progress.
 	glow glow
+	// ring is the changes seen between polls, toast the one on show, and
+	// zoom the panel drawn over the whole body.
+	ring  []change
+	toast toast
+	zoom  dash.Panel
 	// topByMemory sorts panel 7 by memory instead of CPU.
 	topByMemory bool
 	// kind is the layout drawn: the narrow ones say less per line.
