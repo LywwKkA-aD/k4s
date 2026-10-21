@@ -193,7 +193,8 @@ func TestMonoProfile(t *testing.T) {
 	}{
 		{name: "terminal keeps attributes", tty: true, term: "xterm-256color", want: colorprofile.ASCII},
 		{name: "unset TERM on a terminal", tty: true, term: "", want: colorprofile.ASCII},
-		{name: "dumb terminal", tty: true, term: "dumb", want: colorprofile.NoTTY},
+		// NoTTY would also strip cursor movement and the alt screen.
+		{name: "dumb terminal keeps positioning", tty: true, term: "dumb", want: colorprofile.ASCII},
 		{name: "not a terminal", tty: false, term: "xterm-256color", want: colorprofile.NoTTY},
 	}
 	for _, tc := range cases {
@@ -271,5 +272,33 @@ func TestTextInputStyles(t *testing.T) {
 		if !slices.Contains(sgrCodes(render("po")), 7) {
 			t.Errorf("mono=%v: cursor is not a reverse-video block", p.mono)
 		}
+	}
+}
+
+func TestTruecolorFromColorterm(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		tty       bool
+		term      string
+		colorterm string
+		want      bool
+	}{
+		{name: "tmux with truecolor", tty: true, term: "tmux-256color", colorterm: "truecolor", want: true},
+		{name: "screen with 24bit", tty: true, term: "screen-256color", colorterm: "24bit", want: true},
+		{name: "case does not matter", tty: true, term: "xterm-256color", colorterm: "TrueColor", want: true},
+		{name: "no COLORTERM: let detection decide", tty: true, term: "tmux-256color", colorterm: "", want: false},
+		{name: "other COLORTERM values", tty: true, term: "xterm", colorterm: "yes", want: false},
+		{name: "not a terminal", tty: false, term: "tmux-256color", colorterm: "truecolor", want: false},
+		{name: "dumb terminal", tty: true, term: "dumb", colorterm: "truecolor", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := wantsTruecolor(tc.tty, tc.term, tc.colorterm); got != tc.want {
+				t.Fatalf("wantsTruecolor(%v, %q, %q) = %v, want %v", tc.tty, tc.term, tc.colorterm, got, tc.want)
+			}
+		})
 	}
 }
