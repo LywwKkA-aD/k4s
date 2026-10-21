@@ -53,12 +53,10 @@ func TestDropsBackOff(t *testing.T) {
 	r := onePod(t, webPod("web-h1-a", "h1", 0))
 	retries := make([]time.Duration, 0, 6)
 	for range 6 {
-		before := len(r.clock.Delays())
 		r.feed(r.end("web-h1-a", io.ErrUnexpectedEOF))
-		r.advance(explainDebounce)
-		delays := r.clock.Delays()[before:]
-		retries = append(retries, delays[len(delays)-1])
-		r.advance(delays[len(delays)-1])
+		wait := r.untilRetry("web-h1-a")
+		retries = append(retries, wait)
+		r.advance(wait)
 	}
 	want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 30 * time.Second, 30 * time.Second}
 	if !slices.Equal(retries, want) {
@@ -66,11 +64,26 @@ func TestDropsBackOff(t *testing.T) {
 	}
 	// A line proves the connection: the next drop starts over.
 	r.feed(r.line("web-h1-a", stamped(9, 0), "back"), r.end("web-h1-a", io.ErrUnexpectedEOF))
-	before := len(r.clock.Delays())
-	r.advance(explainDebounce)
-	if got := r.clock.Delays()[before:]; got[len(got)-1] != time.Second {
+	if got := r.untilRetry("web-h1-a"); got != time.Second {
 		t.Errorf("after a line the retry waits %v", got)
 	}
+}
+
+// untilRetry moves the clock on until pod's drop is judged, the next check
+// coming at most checkSpacing after the last one, and returns the wait
+// before the reconnect.
+func (r *rig) untilRetry(pod string) time.Duration {
+	r.t.Helper()
+	for range 2 * int(checkSpacing/explainDebounce) {
+		before := len(r.clock.Delays())
+		r.advance(explainDebounce)
+		if r.m.streams.pods[pod].phase == phaseRetry {
+			delays := r.clock.Delays()[before:]
+			return delays[len(delays)-1]
+		}
+	}
+	r.t.Fatalf("the drop of %s was never judged", pod)
+	return 0
 }
 
 func TestARestartReattachesToTheNewInstance(t *testing.T) {
@@ -111,7 +124,7 @@ func TestAnExitWaitsForTheRestart(t *testing.T) {
 		cs.RestartCount = 1
 		cs.State = corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: created}}
 	})
-	r.advance(2*time.Second + explainDebounce)
+	r.advance(checkSpacing)
 	r.shows("[web-h1-a] ◇ container restarted (Error, exit 1) · reattached")
 	r.src.opened(t, "web-h1-a", 2)
 }
@@ -200,7 +213,7 @@ func TestAPodThatIsNotStartedWaits(t *testing.T) {
 		p.Status.Phase = corev1.PodRunning
 		p.Status.ContainerStatuses[0].State = corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: created}}
 	})
-	r.advance(2*time.Second + explainDebounce)
+	r.advance(checkSpacing)
 	if opts := r.src.opened(t, "web-h1-a", 2); opts.Since.IsZero() && opts.Tail != 100 {
 		t.Errorf("the started pod was asked for %+v", opts)
 	}
@@ -209,16 +222,21 @@ func TestAPodThatIsNotStartedWaits(t *testing.T) {
 	}
 }
 
+// Ends between two re-resolves of a following view wait for the next one,
+// which explains them all with one List.
 func TestEndsInOneWindowShareOneList(t *testing.T) {
 	t.Parallel()
 
 	r := newRig(t, webObjects(webPod("web-h1-a", "h1", 0), webPod("web-h1-b", "h1", 0)), k8s.LogKindDeployment, "web")
 	r.feed(r.end("web-h1-a", io.ErrUnexpectedEOF))
-	r.advance(explainDebounce / 2)
+	r.advance(followInterval / 2)
 	r.feed(r.end("web-h1-b", io.ErrUnexpectedEOF))
-	r.advance(explainDebounce)
+	if got := r.calls(); len(got) != 0 {
+		t.Errorf("an end pulled a List forward: %v", got)
+	}
+	r.advance(followInterval / 2)
 	if got := r.calls(); got["list pods"] != 1 || len(got) != 1 {
-		t.Errorf("two ends a moment apart made %v, want one pod list", got)
+		t.Errorf("two ends between re-resolves made %v, want one pod list", got)
 	}
 	r.advance(time.Second)
 	r.shows("[web-h1-a] ◇ stream dropped · reconnected", "[web-h1-b] ◇ stream dropped · reconnected")

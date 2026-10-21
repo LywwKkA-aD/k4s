@@ -40,10 +40,10 @@ func TestRolloutJoinsNewPodsAndEndsOldOnes(t *testing.T) {
 		t.Errorf("the rollout's re-resolve made %v", got)
 	}
 
-	// The old pods go: their streams end, one list explains both.
+	// The old pods go: their streams end, the next list explains both.
 	r.remove("web-h1-a", "web-h1-b")
 	r.feed(r.end("web-h1-a", nil), r.end("web-h1-b", nil))
-	r.advance(explainDebounce)
+	r.advance(followInterval)
 	r.shows("[web-h1-a] ○ ended: pod deleted", "[web-h1-b] ○ ended: pod deleted")
 	if got := r.calls(); got["list pods"] != 2 || got["get pods"] != 0 {
 		t.Errorf("explaining two ends made %v", got)

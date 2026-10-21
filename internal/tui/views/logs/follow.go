@@ -19,8 +19,13 @@ const (
 	// it is closed. No watch, no informer.
 	followInterval = 10 * time.Second
 	// explainDebounce gathers the ends of streams that end together, a
-	// rollout's or a node's, under one check.
+	// node's for one, under one check.
 	explainDebounce = time.Second
+	// checkSpacing is the least time between two checks of a view that does
+	// not follow its pods: the ends in between wait for the next one, so a
+	// stream that drops every 2s costs six GETs a minute, as many as a
+	// following view's re-resolves cost Lists.
+	checkSpacing = followInterval
 	// maxStreams bounds the pods streamed at once, which is also the
 	// --max-log-requests the footer asks for.
 	maxStreams = 50
@@ -39,13 +44,17 @@ type resolver interface {
 // compile-time assertion: *k8s.Client satisfies the resolver interface.
 var _ resolver = (*k8s.Client)(nil)
 
-// explainer is the check that tells why streams ended: the next
-// re-resolve of a following view, pulled forward, or a GET of each pod
-// otherwise. It runs explainDebounce after an end, so ends that come
-// together share it.
+// explainer tells why streams ended. A following view leaves that to its
+// next re-resolve, every followInterval: pulling one forward would cost
+// more than the six Lists a minute M5.7 allows. A view that does not
+// follow its pods reads them, one GET each, in a check that runs
+// explainDebounce after an end, so ends that come together share it, and
+// no sooner than checkSpacing after the check before it.
 type explainer struct {
+	// armed is set while the debounce, or the spacing after a check, runs;
+	// gen numbers it.
 	armed bool
-	gen   uint64 // numbers the armed debounce
+	gen   uint64
 	// tok is the GET check in flight, zero for none.
 	tok   async.Token
 	busy  bool
@@ -65,7 +74,8 @@ type podCheck struct {
 }
 
 type (
-	// explainDueMsg is the debounce of a stream's end going off.
+	// explainDueMsg is the debounce of a stream's end, or the spacing
+	// after a check, running out.
 	explainDueMsg struct {
 		tok async.Token
 		gen uint64
@@ -144,19 +154,25 @@ func (m Model) onReresolved(msg async.Result[k8s.LogTarget]) (views.View, tea.Cm
 	first := len(m.rawLines)
 	m, cmd := m.applyTarget(msg.Value, m.explain.upTo)
 	m.afterNotices(first)
-	m, more := m.explainLeft()
-	return m, tea.Batch(tick, cmd, more)
+	return m, tea.Batch(tick, cmd)
 }
 
-// armExplain sets the debounce that checks why streams ended.
+// armExplain sets the debounce that checks why streams ended, unless the
+// debounce or the spacing after a check already runs: its end checks
+// them all. A following view has its re-resolve for that.
 func (m Model) armExplain() (Model, tea.Cmd) {
-	if m.explain.armed || !m.sess.live() {
+	if m.explain.armed || !m.sess.live() || m.following() {
 		return m, nil
 	}
+	return m.armCheck(explainDebounce)
+}
+
+// armCheck runs the check due after d.
+func (m Model) armCheck(d time.Duration) (Model, tea.Cmd) {
 	m.explain.armed = true
 	m.explain.gen++
 	tok, gen := m.sess.tok, m.explain.gen
-	return m, m.clock.Tick(explainDebounce, func(time.Time) tea.Msg { return explainDueMsg{tok: tok, gen: gen} })
+	return m, m.clock.Tick(d, func(time.Time) tea.Msg { return explainDueMsg{tok: tok, gen: gen} })
 }
 
 // explainLeft arms the next check when ends came while one was in flight.
@@ -173,23 +189,15 @@ func (m Model) onExplainDue(msg explainDueMsg) (views.View, tea.Cmd) {
 		return m, nil
 	}
 	m.explain.armed = false
-	if !m.sess.live() {
+	if !m.sess.live() || m.following() {
 		return m, nil
-	}
-	if m.following() {
-		poll, ok := m.follow.Begin()
-		if !ok {
-			m.explain.again = true
-			return m, nil
-		}
-		m.follow = poll
-		return m.reresolve()
 	}
 	return m.startCheck()
 }
 
 // startCheck reads, one GET each, the state of every pod whose stream
-// ended: the check of a view that does not follow its pods.
+// ended: the check of a view that does not follow its pods. The next one
+// waits checkSpacing.
 func (m Model) startCheck() (Model, tea.Cmd) {
 	pods := m.streams.endedBy(m.streams.ends)
 	if len(pods) == 0 || m.res == nil {
@@ -201,8 +209,14 @@ func (m Model) startCheck() (Model, tea.Cmd) {
 	}
 	m.mint = m.mint.Next()
 	m.explain.tok, m.explain.busy, m.explain.upTo = m.mint, true, m.streams.ends
+	m, spacing := m.armCheck(checkSpacing)
+	return m, tea.Batch(spacing, m.readStates(pods))
+}
+
+// readStates is the GET of each pod's state.
+func (m Model) readStates(pods []string) tea.Cmd {
 	res, ns := m.res, m.namespace
-	return m, async.Run(m.mint, async.DefaultTimeout, func(ctx context.Context) ([]podCheck, error) {
+	return async.Run(m.explain.tok, async.DefaultTimeout, func(ctx context.Context) ([]podCheck, error) {
 		out := make([]podCheck, 0, len(pods))
 		for _, pod := range pods {
 			st, err := res.PodState(ctx, ns, pod)

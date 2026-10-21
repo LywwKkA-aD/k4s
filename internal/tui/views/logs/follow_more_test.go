@@ -57,15 +57,18 @@ func TestAnEndDuringAReresolveIsExplainedByTheNext(t *testing.T) {
 	r.m.explain.upTo = r.m.streams.ends
 	r.feed(r.end("web-h1-a", io.ErrUnexpectedEOF))
 	r.advance(explainDebounce)
-	if !r.m.explain.again || r.calls()["list pods"] != 0 {
-		t.Fatalf("the debounce did not wait for the round in flight: again %v, calls %v", r.m.explain.again, r.calls())
+	if got := r.calls(); len(got) != 0 {
+		t.Fatalf("the end did not wait for the round in flight: %v", got)
 	}
 	// Its answer predates the end and leaves it; the next round explains it.
 	r.send(async.Result[k8s.LogTarget]{Token: r.m.follow.Token(), Value: target})
 	if r.m.streams.pods["web-h1-a"].phase != phaseEnded {
 		t.Fatalf("an answer from before the end judged it: %+v", r.m.streams.pods["web-h1-a"])
 	}
-	r.advance(explainDebounce)
+	if got := r.calls(); len(got) != 0 {
+		t.Fatalf("the answer pulled the next round forward: %v", got)
+	}
+	r.advance(followInterval)
 	if got := r.calls()["list pods"]; got != 1 {
 		t.Fatalf("pod lists = %d, want the next round", got)
 	}
