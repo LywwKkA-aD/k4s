@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -216,6 +218,95 @@ func TestDeploymentLogTargetGuessesOwnersWhenReplicaSetsAreForbidden(t *testing.
 		[]string{"h2", "h1"},
 		map[string]k8s.SkipReason{"api-cron-1": k8s.SkipOtherOwner, "api-zz-a": k8s.SkipOtherOwner},
 		3, true)
+}
+
+// The ReplicaSet and pod lists come from separate watch caches, so a pod of
+// a ReplicaSet created a moment ago can outrun the ReplicaSet list.
+func TestDeploymentLogTargetRelistsStaleReplicaSets(t *testing.T) {
+	t.Parallel()
+
+	api := deployment("shop", "api", "uid-api", map[string]string{"app": "api"})
+	oldRS := replicaSet(api, "h1", "uid-h1", "3", 1)
+	newRS := replicaSet(api, "h2", "uid-h2", "4", 1)
+	// Controlled by another deployment's ReplicaSet that shares the labels.
+	foreign := rsPod("shop", "other-x1-a", "other", "x1", "uid-foreign", corev1.PodRunning)
+	foreign.Labels["app"] = "api"
+	objs := []runtime.Object{api, oldRS, newRS,
+		rsPod("shop", "api-h1-a", "api", "h1", "uid-h1", corev1.PodRunning),
+		rsPod("shop", "api-h2-a", "api", "h2", "uid-h2", corev1.PodRunning),
+		foreign,
+	}
+
+	tests := []struct {
+		name      string
+		objs      []runtime.Object
+		stale     bool
+		relistErr error
+		want      []string
+		wantHash  []string
+		wantSkip  map[string]k8s.SkipReason
+		wantLists []string
+	}{
+		{
+			name: "a stale list is replaced by a fresh one", objs: objs, stale: true,
+			want: []string{"api-h1-a", "api-h2-a"}, wantHash: []string{"h2", "h1"},
+			wantSkip:  map[string]k8s.SkipReason{"other-x1-a": k8s.SkipOtherOwner},
+			wantLists: []string{"0", ""},
+		},
+		{
+			name: "a current list is not read twice", objs: objs,
+			want: []string{"api-h1-a", "api-h2-a"}, wantHash: []string{"h2", "h1"},
+			wantSkip:  map[string]k8s.SkipReason{"other-x1-a": k8s.SkipOtherOwner},
+			wantLists: []string{"0"},
+		},
+		{
+			name: "owners outside the deployment's name do not trigger a re-list",
+			objs: []runtime.Object{api, oldRS,
+				rsPod("shop", "api-h1-a", "api", "h1", "uid-h1", corev1.PodRunning), foreign},
+			want: []string{"api-h1-a"}, wantHash: []string{"h1"},
+			wantSkip:  map[string]k8s.SkipReason{"other-x1-a": k8s.SkipOtherOwner},
+			wantLists: []string{"0"},
+		},
+		{
+			name: "a failed re-list keeps the first answer", objs: objs, stale: true,
+			relistErr: apierrors.NewServiceUnavailable("down"),
+			want:      []string{"api-h1-a"}, wantHash: []string{"h1"},
+			wantSkip:  map[string]k8s.SkipReason{"api-h2-a": k8s.SkipOtherOwner, "other-x1-a": k8s.SkipOtherOwner},
+			wantLists: []string{"0", ""},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c, cs := k8stest.NewFakeClient(tt.objs...)
+			var calls atomic.Int32
+			cs.PrependReactor("list", "replicasets", func(ktesting.Action) (bool, runtime.Object, error) {
+				if calls.Add(1) > 1 {
+					return tt.relistErr != nil, nil, tt.relistErr
+				}
+				if !tt.stale {
+					return false, nil, nil
+				}
+				return true, &appsv1.ReplicaSetList{Items: []appsv1.ReplicaSet{*oldRS}}, nil
+			})
+
+			target, err := c.DeploymentLogTarget(context.Background(), "shop", "api")
+			if err != nil {
+				t.Fatalf("DeploymentLogTarget: %v", err)
+			}
+			checkTarget(t, target, tt.want, tt.wantHash, tt.wantSkip, len(tt.want), false)
+
+			var lists []string
+			for _, call := range apiCalls(cs.Actions()) {
+				if call.Resource == "replicasets" {
+					lists = append(lists, call.ResourceVersion)
+				}
+			}
+			if !slices.Equal(lists, tt.wantLists) {
+				t.Errorf("ReplicaSet list resourceVersions = %q, want %q", lists, tt.wantLists)
+			}
+		})
+	}
 }
 
 func TestDeploymentLogTargetErrors(t *testing.T) {
