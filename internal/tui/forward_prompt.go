@@ -24,12 +24,12 @@ import (
 // the submission path via dispatchForwardCmd.
 func (m Model) onForwardRequest(msg views.ForwardRequestMsg) (tea.Model, tea.Cmd) {
 	if m.forwardMgr == nil {
-		return m.setCmdError("port-forward: state subsystem unavailable")
+		return m.setError("port-forward: state subsystem unavailable")
 	}
 	// Wipe any stale "port already in use" / "permission denied" line
 	// from a previous attempt — re-opening the prompt should feel
 	// clean, not haunted.
-	m.cmdError = ""
+	m.status = m.status.Clear()
 	m.cmdMode = cmdBarForwardPrompt
 	m.pendingForwardKind = msg.Kind
 	m.pendingForwardNamespace = msg.Namespace

@@ -4,10 +4,12 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
 
@@ -295,30 +297,21 @@ func TestForwardsForContext(t *testing.T) {
 	}
 }
 
-func TestCmdErrorAutoClearsAfterTTL(t *testing.T) {
+// TestStatusExpiryStaysWithTheRoot: the status row's expiry is the root's
+// own message, never the active view's.
+func TestStatusExpiryStaysWithTheRoot(t *testing.T) {
 	t.Parallel()
 
 	m := New(nil, nil)
-	m, cmd := m.setCmdError("exec: boom")
-	if m.cmdError == "" {
-		t.Fatal("setCmdError did not record the error")
-	}
+	m, cmd := m.setError("exec: boom")
 	if cmd == nil {
-		t.Fatal("setCmdError did not arm the auto-clear timer")
+		t.Fatal("setError did not arm the expiry")
 	}
-
-	// A stale timer must not wipe a newer error.
-	m.cmdError = "newer error"
-	upd, _ := m.Update(cmdErrorClearMsg{value: "exec: boom"})
-	m = upd.(Model)
-	if m.cmdError != "newer error" {
-		t.Fatalf("stale timer cleared newer error: cmdError = %q", m.cmdError)
+	upd, cmd := m.Update(status.ExpireMsg{})
+	if cmd != nil {
+		t.Fatal("a stray expiry produced a Cmd")
 	}
-
-	// The matching timer clears it.
-	upd, _ = m.Update(cmdErrorClearMsg{value: "newer error"})
-	m = upd.(Model)
-	if m.cmdError != "" {
-		t.Fatalf("matching timer did not clear: cmdError = %q", m.cmdError)
+	if msg, ok := upd.(Model).status.Current(time.Now()); !ok || msg.Text != "exec: boom" {
+		t.Fatalf("a stray expiry cleared the status: %+v, %v", msg, ok)
 	}
 }

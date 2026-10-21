@@ -1,6 +1,7 @@
  k4s  ·  ctx: fake  ·  ns: ALL  ·  view: dashboard
 ──────────────────────────────────────────────────────────
 
+
 ╭──────────────────────────────────────────────────────────╮
 │                                                          │
 │   container                                              │
@@ -14,6 +15,5 @@
 
 
 ──────────────────────────────────────────────────────────
- q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help
- ·  r refresh  ·  w watch
+ q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? hel…
  ≈ kubectl get all -A --watch

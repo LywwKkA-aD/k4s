@@ -33,7 +33,7 @@ type execDoneMsg struct{ err error }
 func (m Model) onExecRequest(msg views.ExecRequestMsg) (tea.Model, tea.Cmd) {
 	cmd, err := newExecCommand(exec.LookPath, m.client, msg)
 	if err != nil {
-		return m.setCmdError("exec: " + err.Error())
+		return m.setError("exec: " + err.Error())
 	}
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return execDoneMsg{err: err}
@@ -43,7 +43,7 @@ func (m Model) onExecRequest(msg views.ExecRequestMsg) (tea.Model, tea.Cmd) {
 // onExecDone handles the return of the kubectl exec subprocess.
 func (m Model) onExecDone(msg execDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		return m.setCmdError("exec: " + msg.err.Error())
+		return m.setError("exec: " + msg.err.Error())
 	}
 	return m, nil
 }

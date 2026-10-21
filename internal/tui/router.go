@@ -9,6 +9,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
@@ -42,10 +43,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onForwardRequest(msg)
 	case execDoneMsg:
 		return m.onExecDone(msg)
-	case cmdErrorClearMsg:
-		if msg.value == m.cmdError {
-			m.cmdError = ""
-		}
+	case views.StatusMsg:
+		return m.setStatus(msg.Level, msg.Text)
+	case status.ExpireMsg:
+		m.status = m.status.Expire(msg, m.now())
 		return m, nil
 	case tea.KeyPressMsg:
 		return m.onKey(msg)
@@ -113,7 +114,7 @@ func (m Model) onRelayout() (tea.Model, tea.Cmd) {
 func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.Cmd) {
 	client, err := k8s.LoadFromKubeconfigContext("", msg.Name)
 	if err != nil {
-		return m.setCmdError("context: " + err.Error())
+		return m.setError("context: " + err.Error())
 	}
 	if m.current != nil {
 		_ = m.current.Close()
@@ -122,7 +123,7 @@ func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.C
 	m.loadErr = nil
 	m.namespace = ""
 	m.history = nil
-	m.cmdError = ""
+	m.status = m.status.Clear()
 	// Tear down live forwards for the old cluster before swapping managers;
 	// otherwise local ports stay bound and SPDY goroutines leak until exit.
 	if m.forwardMgr != nil {
@@ -133,7 +134,7 @@ func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.C
 		m.forwardMgr = mgr
 	} else {
 		m.forwardMgr = nil
-		m, errCmd = m.setCmdError("forwards: " + err.Error())
+		m, errCmd = m.setError("forwards: " + err.Error())
 	}
 	m.current = dashboard.New(m.client, nil)
 	return m, tea.Batch(m.relayoutCmd(), errCmd)
@@ -162,6 +163,7 @@ func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if keys.IsForceQuit(msg) {
 		return m, tea.Quit
 	}
+	m.status = m.status.KeyPressed()
 	if m.cmdMode != cmdBarOff {
 		return m.handleCmdBar(msg)
 	}
@@ -180,7 +182,7 @@ func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return next, next.relayoutCmd()
 	case key.Matches(msg, m.keys.Command):
 		m.cmdMode = cmdBarCommand
-		m.cmdError = ""
+		m.status = m.status.Clear()
 		m.cmdBar.Prompt = ": "
 		m.cmdBar.Placeholder = "pods, ns, dashboard"
 		m.cmdBar.SetValue("")

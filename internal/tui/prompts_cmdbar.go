@@ -43,7 +43,7 @@ func (m Model) handleCmdBar(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case cmdBarForwardPrompt:
 			updated, err := dispatchForward(next, mgr, fwdKind, fwdNS, fwdName, fwdRemote, value)
 			if err != nil {
-				return updated.setCmdError("port-forward: " + err.Error())
+				return updated.setError("port-forward: " + err.Error())
 			}
 			// Hop to the forwards view so the user sees the entry land.
 			next2 := updated.switchTo(viewForwards)
@@ -94,9 +94,9 @@ func (m Model) closeCmdBar() Model {
 func (m Model) execCmd(input string) (Model, tea.Cmd) {
 	name, ok := command.Resolve(input)
 	if !ok {
-		return m.setCmdError(fmt.Sprintf("unknown command: %s", strings.TrimSpace(input)))
+		return m.setError(fmt.Sprintf("unknown command: %s", strings.TrimSpace(input)))
 	}
-	m.cmdError = ""
+	m.status = m.status.Clear()
 	next := m.switchTo(name)
 	return next, next.relayoutCmd()
 }

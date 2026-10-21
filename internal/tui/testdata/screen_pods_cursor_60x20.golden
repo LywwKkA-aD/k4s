@@ -12,8 +12,8 @@ READY    STATUS              RESTARTS   AGE
 1                                 1/1      Running
    0          1h
  demo                web-2
+1/1      Running             0          1h
+ kube-system         coredns-0
 ──────────────────────────────────────────────────────────
- q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help
- ·  enter describe  ·  l logs  ·  e exec  ·  f port-
- forward  ·  / filter  ·  w watch  ·  r refresh
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? hel…
  ≈ kubectl get pods -A --watch

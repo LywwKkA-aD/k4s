@@ -11,6 +11,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
@@ -49,24 +50,6 @@ const (
 // would otherwise overwrite m.height with the smaller body height each time.
 type relayoutMsg struct{}
 
-// cmdErrorTTL is how long a footer error lingers before auto-clearing —
-// long enough to read, short enough that a stale "exec: exit status 1"
-// does not haunt the footer until the next action.
-const cmdErrorTTL = 5 * time.Second
-
-// cmdErrorClearMsg fires when a footer error outlives cmdErrorTTL. It carries
-// the value the timer was armed with so a newer error is not wiped by an
-// older timer.
-type cmdErrorClearMsg struct{ value string }
-
-// setCmdError records a footer error and arms its auto-clear timer.
-func (m Model) setCmdError(msg string) (Model, tea.Cmd) {
-	m.cmdError = msg
-	return m, tea.Tick(cmdErrorTTL, func(time.Time) tea.Msg {
-		return cmdErrorClearMsg{value: msg}
-	})
-}
-
 // Model is the root Bubble Tea model.
 type Model struct {
 	client *k8s.Client
@@ -82,9 +65,13 @@ type Model struct {
 	current   views.View
 	history   []historyEntry
 
-	cmdBar   textinput.Model
-	cmdMode  cmdBarMode
-	cmdError string
+	cmdBar  textinput.Model
+	cmdMode cmdBarMode
+
+	// status is the footer's status row; now is its clock and the grace
+	// period's, time.Now unless a test sets WithClock.
+	status status.Line
+	now    func() time.Time
 
 	// pendingTail* hold the parameters for a tail prompt currently in flight.
 	// Cleared once the user submits or cancels.
@@ -118,6 +105,15 @@ type Model struct {
 	pendingRestoreCount int
 }
 
+// Option changes how New builds the root model.
+type Option func(*Model)
+
+// WithClock makes the model read the time from now instead of time.Now, so
+// tests can step through the status TTL and the confirm grace period.
+func WithClock(now func() time.Time) Option {
+	return func(m *Model) { m.now = now }
+}
+
 // New constructs the root model with the dashboard as the landing screen.
 // loadErr is the kubeconfig load failure behind a nil client; the dashboard
 // shows it instead of the cluster counters.
@@ -125,7 +121,7 @@ type Model struct {
 // The port-forward Manager is best-effort: if state loading fails (bad
 // JSON, permission error) we keep the manager nil so the rest of k4s
 // stays usable, and the forwards view will show an "unavailable" hint.
-func New(client *k8s.Client, loadErr error) Model {
+func New(client *k8s.Client, loadErr error, opts ...Option) Model {
 	ti := textinput.New()
 	ti.CharLimit = 64
 	ti.SetWidth(40)
@@ -146,6 +142,10 @@ func New(client *k8s.Client, loadErr error) Model {
 		cmdBar:              ti,
 		current:             dashboard.New(client, loadErr),
 		pendingRestoreCount: restore,
+		now:                 time.Now,
+	}
+	for _, opt := range opts {
+		opt(&model)
 	}
 	// Open the restore popup automatically when the state file had
 	// entries. The user can dismiss with n/Esc or revive everything
