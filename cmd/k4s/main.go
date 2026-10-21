@@ -6,37 +6,37 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"time"
+	"os/signal"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/cli"
-	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/logsink"
+	"github.com/LywwKkA-aD/k4s/internal/startup"
 	"github.com/LywwKkA-aD/k4s/internal/tui"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
-// warmUpTimeout bounds the pre-TUI request that lets a credential plugin
-// prompt for a login (SSO device codes, MFA) on the plain terminal.
-const warmUpTimeout = 30 * time.Second
+// exitInterrupted is the shell convention for a run ended by SIGINT.
+const exitInterrupted = 130
 
 func main() {
 	// Flags come first: --version and --help must not touch the terminal
 	// or load a kubeconfig.
-	if proceed, code := cli.Parse(os.Args[1:], os.Stdout, os.Stderr); !proceed {
+	opts, proceed, code := cli.Parse(os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
+	if !proceed {
 		os.Exit(code)
 	}
-	if err := run(); err != nil {
+	if err := run(opts); err != nil {
 		fmt.Fprintf(os.Stderr, "k4s: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 }
 
-func run() error {
+func run(opts cli.Options) error {
 	// Before tea.NewProgram: auto mode queries the terminal background, and
 	// that reply would race Bubble Tea's stdin reader.
-	if err := styles.Init(os.Getenv); err != nil {
+	if err := styles.Init(opts.Getenv(os.Getenv)); err != nil {
 		return fmt.Errorf("init theme: %w", err)
 	}
 
@@ -49,20 +49,18 @@ func run() error {
 	}
 	defer func() { _ = sink.Close() }()
 
-	// A load failure is not fatal: the dashboard shows the reason and the
-	// user can still pick a working context with :ctx.
-	client, loadErr := k8s.LoadFromKubeconfig("")
-	if client.NeedsLogin() {
-		warmUp(client)
+	sess, err := openSession(opts)
+	if err != nil {
+		return err
 	}
 	logsink.HoldPluginStderr()
 
-	var opts []tea.ProgramOption
+	var progOpts []tea.ProgramOption
 	if profile, ok := styles.ColorProfile(); ok {
-		opts = append(opts, tea.WithColorProfile(profile))
+		progOpts = append(progOpts, tea.WithColorProfile(profile))
 	}
-	p := tea.NewProgram(tui.New(client, loadErr), opts...)
-	_, err := p.Run()
+	p := tea.NewProgram(tui.New(sess.Client, sess.LoadErr), progOpts...)
+	_, err = p.Run()
 	err = runError(err)
 
 	// The TUI has released the terminal: show what was held back.
@@ -73,14 +71,25 @@ func run() error {
 	return err
 }
 
-// warmUp runs the credential plugin once while the terminal is still plain,
-// so its prompt is visible and its token cached before the TUI starts. A
-// failure is left to the TUI, which shows request errors in place.
-func warmUp(client *k8s.Client) {
-	fmt.Fprintf(os.Stderr, "k4s: connecting to %s…\n", client.Context)
-	ctx, cancel := context.WithTimeout(context.Background(), warmUpTimeout)
-	defer cancel()
-	_ = client.WarmUp(ctx)
+// openSession loads the kubeconfig and, unless --no-preflight, lets a
+// credential plugin prompt on the plain terminal. Until the TUI puts the
+// terminal in raw mode Ctrl+C is a signal, so it is caught to abort the
+// preflight cleanly.
+func openSession(opts cli.Options) (startup.Session, error) {
+	sess, err := startup.Open(opts, startup.SystemEnv())
+	if err != nil || opts.NoPreflight {
+		return sess, err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return startup.Preflight(ctx, sess, startup.PreflightConfig{Out: os.Stderr})
+}
+
+func exitCode(err error) int {
+	if errors.Is(err, startup.ErrAborted) {
+		return exitInterrupted
+	}
+	return 1
 }
 
 // runError shortens the framework's error when there is no terminal (ssh
