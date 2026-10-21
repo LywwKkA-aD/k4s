@@ -192,7 +192,16 @@ func TestForwardPromptRefusesABusyPort(t *testing.T) {
 	}
 }
 
-func TestBrokenStateDisablesForwards(t *testing.T) {
+// unreadableState puts a directory where the state file belongs: k4s
+// cannot read it, and must not move it.
+func unreadableState(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "k4s", "portforwards.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCorruptStateIsSetAside(t *testing.T) {
 	dir := isolatedState(t)
 	path := filepath.Join(dir, "k4s", "portforwards.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -201,6 +210,22 @@ func TestBrokenStateDisablesForwards(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+
+	m := started(t, tuitest.NewFakeClient(t))
+	refuteScreen(t, m, "restore port-forwards")
+	m, _ = tuitest.Drive(t, m, colon("pf")...)
+	if got := footer(m); !strings.Contains(got, "saved forwards were unreadable") {
+		t.Errorf("footer = %q, want the notice about the corrupt file", got)
+	}
+	if aside, _ := filepath.Glob(path + ".corrupt-*"); len(aside) != 1 {
+		t.Errorf("set aside = %v, want one .corrupt- file", aside)
+	}
+	m, _ = tuitest.Drive(t, m, views.ForwardRequestMsg{Kind: "pod", Namespace: tuitest.NamespaceDemo, Name: tuitest.PodWeb1})
+	requireScreen(t, m, "format local:remote")
+}
+
+func TestBrokenStateDisablesForwards(t *testing.T) {
+	unreadableState(t, isolatedState(t))
 
 	m := started(t, tuitest.NewFakeClient(t))
 	refuteScreen(t, m, "restore port-forwards")
@@ -237,13 +262,7 @@ func TestContextSwitchWithBrokenStateWarns(t *testing.T) {
 	dir := isolatedState(t)
 	m := started(t, tuitest.NewFakeClient(t))
 
-	path := filepath.Join(dir, "k4s", "portforwards.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	unreadableState(t, dir)
 	m, _ = tuitest.Drive(t, m, views.ContextSelectedMsg{Name: "alpha"})
 	if got := footer(m); !strings.Contains(got, "forwards: load state:") {
 		t.Errorf("footer = %q", got)

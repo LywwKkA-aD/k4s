@@ -154,14 +154,6 @@ func TestRowsAndCommand(t *testing.T) {
 	}
 }
 
-func TestCommandSkipsNamesKubectlWouldReject(t *testing.T) {
-	bad := forward("pod", "Not_A_Pod", 18081, 80)
-	m := mounted(t, newManager(t, bad))
-	if got := m.Command(); !got.IsZero() {
-		t.Errorf("Command = %q, want none for a name kubectl rejects", got.String())
-	}
-}
-
 // The cursor, the keys and the footer read the rows on screen, never a
 // fresh list: a forward registered behind the view's back sorts first here,
 // and must not take the place of the row the user is on.

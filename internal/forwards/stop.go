@@ -22,6 +22,9 @@ var (
 	// ErrStopping is returned by Register and Start while the Manager waits
 	// for the previous context's forwards to stop (see After).
 	ErrStopping = errors.New("the previous context's forwards are still stopping")
+	// ErrRunning is returned by Register for the id of a forward that is
+	// starting or running.
+	ErrRunning = errors.New("the forward is running")
 )
 
 func notFound(id string) error {
@@ -136,8 +139,8 @@ func (m *Manager) Stop(id string) error {
 }
 
 // Remove stops the forward and deletes it from State. The forward leaves
-// the list even when its session hangs or the save fails; both are
-// reported.
+// the list even when its session hangs, which is reported; when the save
+// fails it stays, stopped, so the list keeps matching the file.
 func (m *Manager) Remove(id string) error {
 	stopErr := m.Stop(id)
 	if errors.Is(stopErr, ErrNotFound) {
@@ -145,12 +148,17 @@ func (m *Manager) Remove(id string) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.active, id)
-	m.state = m.state.Remove(id)
-	m.notify()
-	if err := m.state.saveTo(m.statePath); err != nil {
+	if _, ok := m.state.FindByID(id); !ok {
+		delete(m.active, id)
+		return stopErr
+	}
+	next := m.state.Remove(id)
+	if err := next.saveTo(m.statePath); err != nil {
 		return errors.Join(stopErr, fmt.Errorf("save state: %w", err))
 	}
+	m.state = next
+	delete(m.active, id)
+	m.notify()
 	return stopErr
 }
 

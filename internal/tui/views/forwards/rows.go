@@ -84,11 +84,8 @@ func target(f forwards.Forward) string {
 
 // portForwardCmd is `kubectl port-forward -n <ns> <kind>/<name> <l>:<r>`.
 // It does what k4s does: a service port maps to its targetPort on one
-// ready pod, as in kubectl. Names kubectl would reject give the zero Cmd.
+// ready pod, as in kubectl. The Manager admits only names kubectl accepts.
 func portForwardCmd(f forwards.Forward) kubectl.Cmd {
-	if kubectl.CheckLabel("namespace", f.Namespace) != nil || kubectl.CheckSubdomain(f.Kind, f.Name) != nil {
-		return kubectl.Cmd{}
-	}
 	return kubectl.New("port-forward", "-n", f.Namespace, target(f),
 		fmt.Sprintf("%d:%d", f.LocalPort, f.RemotePort))
 }

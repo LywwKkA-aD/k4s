@@ -24,7 +24,8 @@ import (
 
 const (
 	testServer = "https://127.0.0.1:6443"
-	testCA     = "sha256:aaaa"
+	testCA     = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	otherCA    = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
 
 // thisCluster is the cluster newTestManager serves.
@@ -125,7 +126,7 @@ func TestRelation(t *testing.T) {
 	}{
 		{name: "saved here", c: thisCluster, f: bound, want: sameCluster},
 		{name: "same name, other host", c: thisCluster, f: with(func(f *Forward) { f.Server = "https://10.0.0.9:6443" }), want: otherCluster},
-		{name: "same name and host, other CA", c: thisCluster, f: with(func(f *Forward) { f.CA = "sha256:bbbb" }), want: otherCluster},
+		{name: "same name and host, other CA", c: thisCluster, f: with(func(f *Forward) { f.CA = otherCA }), want: otherCluster},
 		{name: "other context", c: thisCluster, f: with(func(f *Forward) { f.Context = "prod" }), want: otherCluster},
 		{name: "legacy, same name", c: thisCluster, f: with(func(f *Forward) { f.Server, f.CA = "", "" }), want: unboundCluster},
 		{name: "legacy, no context", c: thisCluster, f: with(func(f *Forward) { f.Context, f.Server, f.CA = "", "", "" }), want: unboundCluster},
@@ -159,14 +160,14 @@ func mixedClusters() []Forward {
 	here := testForward("here", "pod", 1)
 	otherHost := testForward("other-host", "pod", 2)
 	otherHost.Server = "https://10.0.0.9:6443"
-	otherCA := testForward("other-ca", "pod", 3)
-	otherCA.CA = "sha256:bbbb"
+	foreignCA := testForward("other-ca", "pod", 3)
+	foreignCA.CA = otherCA
 	legacy := unbound(testForward("legacy", "pod", 4))
 	contextless := unbound(testForward("contextless", "pod", 5))
 	contextless.Context = ""
 	prod := testForward("prod", "pod", 6)
 	prod.Context = "prod"
-	return []Forward{here, otherHost, otherCA, legacy, contextless, prod}
+	return []Forward{here, otherHost, foreignCA, legacy, contextless, prod}
 }
 
 func ids(list []Active) []string {

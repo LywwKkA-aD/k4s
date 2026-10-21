@@ -13,6 +13,8 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
+	forwardsview "github.com/LywwKkA-aD/k4s/internal/tui/views/forwards"
 )
 
 const (
@@ -46,6 +48,32 @@ func clusterManager(t *testing.T) *forwards.Manager {
 	}
 	t.Cleanup(func() { _ = mgr.StopAll() })
 	return mgr
+}
+
+// A corrupt state file is set aside on load; the first forwards view says
+// where it went, once.
+func TestACorruptStateFileIsReportedOnce(t *testing.T) {
+	seedLegacy(t, `{"forwards": [{"id": "x", "context": "default", "namespace": "demo", "kind": "pod", "name": "../etc", "local_port": 1, "remote_port": 1}]}`)
+	mgr, err := forwards.NewManager(nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	m, out := tuitest.Mount(t, forwardsview.New(mgr), width, height)
+	t.Cleanup(func() { _ = m.Close() })
+	got := statusOf(t, out)
+	if got.Level != status.Warn || !strings.HasPrefix(got.Text, "saved forwards were unreadable (") ||
+		!strings.Contains(got.Text, "portforwards.json.corrupt-") {
+		t.Errorf("status = %v %q, want the corrupt file and where it went", got.Level, got.Text)
+	}
+	if screen := tuitest.Screen(m); !strings.Contains(screen, "no port-forwards yet") {
+		t.Errorf("the view is not usable after a corrupt file:\n%s", screen)
+	}
+
+	again, out := tuitest.Mount(t, forwardsview.New(mgr), width, height)
+	t.Cleanup(func() { _ = again.Close() })
+	if all := tuitest.All[views.StatusMsg](out); len(all) != 0 {
+		t.Errorf("a second view repeated the notice: %+v", all)
+	}
 }
 
 func TestALegacyForwardIsConfirmedByStartingIt(t *testing.T) {

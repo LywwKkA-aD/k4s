@@ -274,15 +274,9 @@ func TestRemoveWhenSaveFails(t *testing.T) {
 	mustRegister(t, m, f)
 	setWritable(t, dir, false)
 
-	changed := m.Changes()
 	assertErrContains(t, m.Remove("f1"), "save state")
-	select {
-	case <-changed:
-	default:
-		t.Error("a Remove whose save failed did not signal a change")
-	}
-	if _, ok := find(m.List(), "f1"); ok {
-		t.Error("a Remove whose save failed still lists the forward")
+	if a, ok := find(m.List(), "f1"); !ok || a.Status != StatusStopped {
+		t.Errorf("after a Remove whose save failed f1 is %+v (listed %v), want it listed and stopped", a, ok)
 	}
 	onDisk, err := loadFrom(path)
 	if err != nil {
@@ -290,17 +284,6 @@ func TestRemoveWhenSaveFails(t *testing.T) {
 	}
 	if len(onDisk.Forwards) != 1 || onDisk.Forwards[0] != f {
 		t.Errorf("on disk = %+v, want the forward to survive a failed save", onDisk.Forwards)
-	}
-}
-
-func TestNewManagerFailsOnCorruptState(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "portforwards.json")
-	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if _, err := newManager(deps{statePath: path}); err == nil {
-		t.Fatal("newManager accepted a corrupt state file")
 	}
 }
 

@@ -76,8 +76,11 @@ type Manager struct {
 	statePath string
 	stopWait  time.Duration
 	// after is read-only once the Manager is built; see After.
-	after  *Stopping
-	state  State
+	after *Stopping
+	state State
+	// notice is said once, by TakeNotice: why the saved forwards were set
+	// aside on load.
+	notice string
 	active map[string]*Active
 	// attempts numbers every Start across the Manager's life, so an ID that
 	// is removed and registered again never reuses an attempt a parked
@@ -114,7 +117,7 @@ func NewManager(client *k8s.Client, opts ...Option) (*Manager, error) {
 }
 
 func newManager(d deps) (*Manager, error) {
-	state, err := loadFrom(d.statePath)
+	state, notice, err := openState(d.statePath, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("load state: %w", err)
 	}
@@ -129,6 +132,7 @@ func newManager(d deps) (*Manager, error) {
 		stopWait:  d.stopWait,
 		after:     d.after,
 		state:     state,
+		notice:    notice,
 		active:    make(map[string]*Active),
 		changeCh:  make(chan struct{}),
 	}
@@ -136,6 +140,17 @@ func newManager(d deps) (*Manager, error) {
 		m.active[f.ID] = &Active{Forward: f, Status: StatusStopped}
 	}
 	return m, nil
+}
+
+// TakeNotice returns, once, what the user should know about loading the
+// saved forwards: that the file was corrupt and where it was moved. It is
+// "" when there is nothing to say or it was said already.
+func (m *Manager) TakeNotice() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := m.notice
+	m.notice = ""
+	return n
 }
 
 // Changes returns a channel that closes the next time the Manager mutates
@@ -230,8 +245,11 @@ func NewID() string {
 // Register adds (or updates) a forward in the State and pushes the
 // stopped entry into the runtime map. It does not start the forward.
 // The caller is expected to chain Start when they want it live. It is
-// refused with ErrStopping while the Manager is Blocked. A forward for
-// this context that names no server is saved for this cluster.
+// refused with ErrStopping while the Manager is Blocked, and with
+// ErrRunning for the id of a forward that is starting or running: its
+// session would no longer match what is saved. A forward for this context
+// that names no server is saved for this cluster. Nothing changes in
+// memory unless the save succeeds.
 func (m *Manager) Register(f Forward) error {
 	if err := f.Validate(); err != nil {
 		return err
@@ -241,17 +259,22 @@ func (m *Manager) Register(f Forward) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	existing, ok := m.active[f.ID]
+	if ok && (existing.Status == StatusStarting || existing.Status == StatusRunning) {
+		return fmt.Errorf("forward %s/%s: %w; stop it first", existing.Forward.Kind, existing.Forward.Name, ErrRunning)
+	}
 	if f.Server == "" && f.Context == m.cluster.contextName {
 		f = m.cluster.bind(f)
 	}
-	m.state = m.state.Upsert(f)
-	if existing, ok := m.active[f.ID]; ok {
+	next := m.state.Upsert(f)
+	if err := next.saveTo(m.statePath); err != nil {
+		return fmt.Errorf("save state: %w", err)
+	}
+	m.state = next
+	if ok {
 		existing.Forward = f
 	} else {
 		m.active[f.ID] = &Active{Forward: f, Status: StatusStopped}
-	}
-	if err := m.state.saveTo(m.statePath); err != nil {
-		return fmt.Errorf("save state: %w", err)
 	}
 	m.notify()
 	return nil

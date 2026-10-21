@@ -15,6 +15,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -41,6 +42,9 @@ type Model struct {
 	// changes was taken in New before the first List, so the wait Init
 	// arms sees every change since.
 	changes <-chan struct{}
+	// notice is what the Manager had to say about loading the saved
+	// forwards, put on the status line by Init.
+	notice string
 	// tok tells this view's watcher from one a replaced view left behind.
 	tok   async.Token
 	bodyH int
@@ -70,16 +74,21 @@ func New(mgr *forwards.Manager) Model {
 		return m
 	}
 	m.changes = mgr.Changes()
+	m.notice = mgr.TakeNotice()
 	m.show(mgr.List())
 	return m
 }
 
-// Init waits for the Manager's next change.
+// Init waits for the Manager's next change, and says what went wrong
+// loading the saved forwards if anything did.
 func (m Model) Init() tea.Cmd {
 	if m.manager == nil {
 		return nil
 	}
-	return m.wait(m.changes)
+	if m.notice == "" {
+		return m.wait(m.changes)
+	}
+	return tea.Batch(m.wait(m.changes), statusCmd(views.StatusMsg{Level: status.Warn, Text: m.notice}))
 }
 
 // wait blocks on the manager's one-shot change channel until it fires or

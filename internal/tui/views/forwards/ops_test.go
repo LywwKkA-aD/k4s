@@ -102,8 +102,9 @@ func TestRemoveReportsAFailedSave(t *testing.T) {
 	if got.Level != status.Error || !strings.HasPrefix(got.Text, "remove pod/alpha: save state: ") {
 		t.Errorf("status = %v %q, want the save error", got.Level, got.Text)
 	}
-	if screen := tuitest.Screen(m); strings.Contains(screen, "alpha") {
-		t.Errorf("the removed row is still shown:\n%s", screen)
+	// The forward is still saved, so it is still listed.
+	if screen := tuitest.Screen(m); !strings.Contains(screen, "alpha") || !strings.Contains(screen, "stopped") {
+		t.Errorf("a forward whose removal was not saved left the list:\n%s", screen)
 	}
 }
 
