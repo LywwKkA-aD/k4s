@@ -49,10 +49,14 @@ func (m Model) plan(force bool) dash.Plan {
 	return dash.MakePlan(in)
 }
 
-// fetchCmd runs p against the current snapshot under the poller's Token.
+// fetchCmd runs p against the current snapshot under the poller's Token,
+// until the poller's timeout or the view closes, whichever comes first.
 func (m Model) fetchCmd(p dash.Plan) tea.Cmd {
-	fetch, prev := m.fetch, m.mem.snap
+	fetch, prev, life := m.fetch, m.mem.snap, m.life
 	return async.Run(m.poll.Token(), m.poll.Timeout(), func(ctx context.Context) (refresh, error) {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		defer context.AfterFunc(life, cancel)()
 		return refresh{snap: fetch(ctx, p, prev)}, nil
 	})
 }

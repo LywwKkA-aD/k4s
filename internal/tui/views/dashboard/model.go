@@ -11,6 +11,7 @@
 package dashboard
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"time"
@@ -47,6 +48,11 @@ type Model struct {
 	poll async.Poller
 	// forced is set while a refresh asked for with r is in flight.
 	forced bool
+	// life ends when the view closes, and a refresh still in flight ends
+	// with it: on a slow cluster it would otherwise hold up to eight
+	// requests open for a view no longer on screen.
+	life context.Context
+	stop context.CancelFunc
 
 	lay     layout
 	blurred bool
@@ -73,7 +79,10 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 	if cfg.fetch != nil && client != nil {
 		fetch = cfg.fetch
 	}
+	life, stop := context.WithCancel(context.Background())
 	m := Model{
+		life:    life,
+		stop:    stop,
 		client:  client,
 		loadErr: loadErr,
 		home:    home,
@@ -172,9 +181,14 @@ func (m Model) watchHint() string {
 // text yet.
 func (m Model) CapturesKeys() bool { return false }
 
-// Close implements views.View. A refresh in flight ends within its own
-// timeouts and its reply is dropped by the next view's Token.
-func (m Model) Close() error { return nil }
+// Close implements views.View: a refresh in flight is cancelled, and its
+// reply is dropped by the next view's Token.
+func (m Model) Close() error {
+	if m.stop != nil {
+		m.stop()
+	}
+	return nil
+}
 
 // Back implements views.BackHandler: Esc steps from a row to its panel and
 // from a panel to the banner. On the banner Esc is the root's.
