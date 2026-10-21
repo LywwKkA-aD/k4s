@@ -28,14 +28,7 @@ func (m *Model) hscroll(direction int) {
 	if m.wrap {
 		return
 	}
-	step := direction * hScrollStep
-	m.xOffset += step
-	if m.xOffset < 0 {
-		m.xOffset = 0
-	}
-	if maxOff := m.maxXOffset(); m.xOffset > maxOff {
-		m.xOffset = maxOff
-	}
+	m.xOffset = min(max(m.xOffset+direction*hScrollStep, 0), m.maxXOffset())
 }
 
 // maxXOffset is the rightmost xOffset that still keeps something on screen.
@@ -47,51 +40,67 @@ func (m Model) maxXOffset() int {
 	}
 	widest := 0
 	for _, line := range m.rendered {
-		if w := ansi.StringWidth(line); w > widest {
-			widest = w
-		}
+		widest = max(widest, ansi.StringWidth(line))
 	}
-	visible := m.viewport.Width()
-	if visible <= 0 {
-		visible = 1
-	}
-	max := widest - visible/2
-	if max < 0 {
-		return 0
-	}
-	return max
+	visible := max(m.viewport.Width(), 1)
+	return max(widest-visible/2, 0)
 }
 
-// syncViewport pushes the cached rendered lines into the viewport,
-// applying display transforms (wrap or hscroll, then optional search
-// highlight). Replaces the old refreshContent and is cheap because it
-// reuses the pre-formatted cache instead of re-running formatRawLine
-// per line per event.
+// syncViewport lays the backlog out as viewport rows: each line from the
+// rendered cache, or painted afresh when it holds search matches, then
+// wrapped or panned. It records where every line starts in rowStart, so
+// n/N and a trim can work in rows.
 func (m *Model) syncViewport() {
-	var content string
-	switch {
-	case m.wrap && m.viewport.Width() > 0:
-		wrapped := make([]string, len(m.rendered))
-		for i, line := range m.rendered {
-			wrapped[i] = wrapLine(line, m.viewport.Width())
+	width := m.viewport.Width()
+	rows := make([]string, 0, len(m.rendered))
+	starts := make([]int, len(m.rendered)+1)
+	next := 0
+	for i, line := range m.rendered {
+		for next < len(m.matches) && m.matches[next].line < i {
+			next++
 		}
-		content = strings.Join(wrapped, "\n")
-	case m.xOffset > 0:
-		shifted := make([]string, len(m.rendered))
-		for i, line := range m.rendered {
-			shifted[i] = applyXOffset(line, m.xOffset)
+		from := next
+		for next < len(m.matches) && m.matches[next].line == i {
+			next++
 		}
-		content = strings.Join(shifted, "\n")
-	default:
-		content = strings.Join(m.rendered, "\n")
+		if next > from {
+			line = m.paintMatches(i, from, next)
+		}
+		starts[i] = len(rows)
+		rows = m.appendRows(rows, line, width)
 	}
-	if m.searchQuery != "" {
-		content = highlightContent(content, m.searchQuery)
-	}
-	m.viewport.SetContent(content)
+	starts[len(m.rendered)] = len(rows)
+	m.rowStart = starts
+	m.viewport.SetContentLines(rows)
 	if m.autoFollow {
 		m.viewport.GotoBottom()
 	}
+}
+
+// paintMatches draws line i with matches[from:to], all on that line.
+func (m Model) paintMatches(i, from, to int) string {
+	spans := make([]span, 0, to-from)
+	for _, mt := range m.matches[from:to] {
+		spans = append(spans, mt.span)
+	}
+	current := noCurrent
+	if m.matchIdx >= from && m.matchIdx < to {
+		current = m.matchIdx - from
+	}
+	ln := m.rawLines[i]
+	return formatLine(ln, len(m.pods) > 1, m.showPodNames, m.podColors[ln.pod], spans, current)
+}
+
+// appendRows adds the rows line takes on screen: several when wrapped,
+// one panned by xOffset otherwise.
+func (m Model) appendRows(rows []string, line string, width int) []string {
+	switch {
+	case m.wrap && width > 0:
+		return append(rows, strings.Split(wrapLine(line, width), "\n")...)
+	case m.xOffset > 0:
+		return append(rows, applyXOffset(line, m.xOffset))
+	}
+	return append(rows, line)
 }
 
 // applyXOffset drops the first n display columns of an ANSI-aware string.
@@ -106,7 +115,7 @@ func applyXOffset(s string, n int) string {
 
 // wrapLine soft-wraps an ANSI-coloured string to width. Reuses the same
 // charmbracelet/x/ansi helper as the describe view — consistent behaviour
-// across the app.
+// across the app. rowWithin wraps the same way.
 func wrapLine(s string, width int) string {
 	if width <= 0 {
 		return s
@@ -114,50 +123,7 @@ func wrapLine(s string, width int) string {
 	return ansi.Wrap(s, width, "")
 }
 
-// formatRawLine turns a raw entry into the string the viewport renders.
-//
-// Modes:
-//   - !multi: no prefix (single-pod view; pod name is in the title).
-//   - multi && !full: a coloured "▌" bar — minimal but tells replicas apart.
-//   - multi && full: the canonical "[pod-name] line" prefix.
-//
-// Stream-error and stream-closed notices keep the pod name inline so they
-// remain readable regardless of the prefix mode.
-func formatRawLine(ln logLine, multi, full bool, colour styles.PodColorID) string {
-	switch ln.kind {
-	case lineStreamErr:
-		return styles.Warn.Render(fmt.Sprintf("[%s] stream error: %s", ln.pod, ln.text))
-	case lineStreamDone:
-		return styles.Hint.Render(fmt.Sprintf("[%s] stream closed", ln.pod))
-	}
-
-	if !multi {
-		return ln.text
-	}
-
-	style := lipgloss.NewStyle().Foreground(styles.PodColor(colour))
-	if full {
-		return style.Bold(true).Render("["+ln.pod+"]") + " " + ln.text
-	}
-	return style.Render(compactPrefix) + " " + ln.text
-}
-
-// podPalette is ordered so neighbouring entries sit as far apart on the
-// colour wheel as possible. Pods are coloured by position in the session's
-// pod list, so the pods you actually compare side by side never share a hue
-// family (the old FNV hash could hand out e.g. yellow and orange together).
-// The entries are IDs; formatRawLine resolves them for the active theme.
-var podPalette = styles.PodPalette()
-
-// assignPodColors deals palette colours to pods round-robin by list position.
-func assignPodColors(pods []string) map[string]styles.PodColorID {
-	out := make(map[string]styles.PodColorID, len(pods))
-	for i, p := range pods {
-		out[p] = podPalette[i%len(podPalette)]
-	}
-	return out
-}
-
+// View implements views.View.
 func (m Model) View() string {
 	if m.client == nil {
 		return styles.Warn.Render("no kubeconfig")
@@ -195,12 +161,12 @@ func (m Model) statusLine() string {
 		bits = append(bits, styles.Hint.Render("[tags on — press t to compact]"))
 	}
 	switch {
-	case m.searchQuery != "" && len(m.matches) > 0:
+	case m.search.text != "" && len(m.matches) > 0:
 		bits = append(bits, styles.Hint.Render(fmt.Sprintf(
-			"/%s · %d/%d (n/N step · c cancel)", m.searchQuery, m.matchIdx+1, len(m.matches))))
-	case m.searchQuery != "":
+			"/%s · %d/%d (n/N step · c cancel)", m.search.text, m.matchIdx+1, len(m.matches))))
+	case m.search.text != "":
 		bits = append(bits, styles.Hint.Render(fmt.Sprintf(
-			"/%s · no match (c cancel)", m.searchQuery)))
+			"/%s · no match (c cancel)", m.search.text)))
 	}
 	return strings.Join(bits, " · ")
 }

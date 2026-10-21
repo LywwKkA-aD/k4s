@@ -1,25 +1,23 @@
-// Package logs is the streaming logs view: per-pod goroutines feed lines into
-// a shared channel; the view appends them to a viewport with an opt-in
-// per-pod tag so multiple replicas are visually distinguishable.
+// Package logs is the streaming logs view: per-pod goroutines feed lines
+// into a shared channel; the view appends them to a viewport with an
+// opt-in per-pod tag so multiple replicas are visually distinguishable.
 //
-// Beyond plain tailing it offers four quality-of-life features:
+// Every line is made inert on the way in (see internal/sanitize): what a
+// workload writes to its log never reaches the terminal as an escape.
+// Beyond plain tailing the view offers:
 //
 //   - Smart auto-follow: stays glued to the bottom while new lines arrive,
-//     pauses automatically when the user scrolls up so they can read.
+//     pauses when the user scrolls up, and a paused view keeps its first
+//     visible line while old lines scroll out of the buffer.
 //   - 'f' manual toggle for the same auto-follow.
-//   - '/'-search with 'n' / 'N' to jump between matches and a yellow
-//     highlight on every match.
-//   - 't' toggles per-pod tags. Default is a tiny coloured bar (▌) so log
-//     lines stay readable; pressing 't' switches to "[pod-name]" prefixes
-//     when the user actually needs to know which pod a line came from.
-//     For single-pod views the prefix is omitted entirely (the name is in
-//     the header) and 't' is a no-op.
+//   - '/'-search, smart-case, with 'n' / 'N' stepping through every
+//     occurrence, wrapped lines included.
+//   - 't' toggles per-pod tags: a coloured bar (▌) by default, "[pod-name]"
+//     when on. Single-pod views have no prefix and 't' is a no-op.
 package logs
 
 import (
-	"context"
 	"fmt"
-	"sync"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
@@ -34,7 +32,6 @@ import (
 
 const (
 	minViewportHeight = 5
-	maxBufferedLines  = 5000
 	defaultTailLines  = int64(100)
 	eventBufferSize   = 256
 	searchInputPrompt = "/"
@@ -62,18 +59,19 @@ const (
 	lineStreamDone
 )
 
-// logLine is one entry in the in-memory backlog. We keep raw text so that
-// toggling the prefix mode or running search re-formats the same source
-// rather than the previously-decorated string.
+// logLine is one entry in the in-memory backlog. We keep the sanitized
+// text so that toggling the prefix mode or running search re-formats the
+// same source rather than the previously-decorated string.
 type logLine struct {
 	pod  string
-	text string // for lineLog: the bare log line; for lineStreamErr: the error message; ignored for lineStreamDone
+	text string // lineLog: the line; lineStreamErr: the error; lineStreamDone: ""
 	kind lineKind
 }
 
 // Model is the streaming logs view.
 type Model struct {
 	client    *k8s.Client
+	src       streamer
 	namespace string
 	pods      []string
 	tail      int64
@@ -82,18 +80,21 @@ type Model struct {
 	// zero for a single pod; Command shows its selector.
 	target k8s.LogTarget
 
+	sess session
+
 	viewport viewport.Model
 	rawLines []logLine
 	// rendered mirrors rawLines 1-to-1 with the formatted display string
-	// (prefix + body) so refresh paths can join cached values instead of
-	// re-running formatRawLine N times per event. Rebuilt only when the
-	// display mode changes (showPodNames toggle, buffer trim).
+	// (prefix + body), so a refresh joins cached values instead of
+	// formatting every line again. Lines with a search match are painted
+	// afresh at sync time.
 	rendered []string
+	// rowStart[i] is the viewport row line i starts on, and its last entry
+	// the row count: wrapped lines take several rows.
+	rowStart []int
 	width    int
 	bodyH    int
 
-	events chan logEvent
-	cancel context.CancelFunc
 	// podColors maps each streamed pod to its palette colour. Assigned by
 	// position in pods (not hashed) so neighbouring replicas always land on
 	// maximally distinct hues.
@@ -111,20 +112,11 @@ type Model struct {
 
 	searchInput textinput.Model
 	searchOpen  bool
-	searchQuery string
-	matches     []int // indices into rawLines
+	search      query
+	matches     []match // every occurrence, in backlog order
 	matchIdx    int
 
-	followKey       key.Binding
-	tagsKey         key.Binding
-	wrapKey         key.Binding
-	hscrollLeftKey  key.Binding
-	hscrollRightKey key.Binding
-	searchOpenKey   key.Binding
-	nextMatchKey    key.Binding
-	prevMatchKey    key.Binding
-	clearKey        key.Binding
-	scrollKey       key.Binding
+	keys keyMap
 }
 
 type logEvent struct {
@@ -136,13 +128,16 @@ type logEvent struct {
 
 // logEventsBatch is the result of one drain tick: every event the channel
 // had ready (up to drainBatchCap) plus a flag set when the channel closed
-// during the drain, so the loop knows to stop scheduling more reads.
+// during the drain, so the loop knows to stop scheduling more reads. gen
+// names the session it was read from.
 type logEventsBatch struct {
+	gen    int
 	events []logEvent
 	done   bool
 }
 
-type streamsClosedMsg struct{}
+// streamsClosedMsg says the session gen has no streams left.
+type streamsClosedMsg struct{ gen int }
 
 // Option changes how New builds the view.
 type Option func(*Model)
@@ -157,34 +152,12 @@ func WithTarget(t k8s.LogTarget) Option {
 // goroutines. They are torn down on Close(). The shared events channel is
 // closed once every pod's goroutine returns, which signals streamsClosedMsg
 // to the bubbletea loop and prevents leaked Cmd reads.
+//
+// The tail is per pod, and clamped so that all pods together start with no
+// more than the buffer holds (views.ClampTail).
 func New(client *k8s.Client, namespace string, pods []string, tail int64, container string, opts ...Option) Model {
 	if tail <= 0 {
 		tail = defaultTailLines
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	events := make(chan logEvent, eventBufferSize)
-
-	switch {
-	case client == nil || len(pods) == 0:
-		close(events)
-	case len(pods) == 1:
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			streamOnePod(ctx, client, namespace, pods[0], k8s.LogOptions{Container: container, Tail: tail}, events)
-		}()
-		go func() {
-			wg.Wait()
-			close(events)
-		}()
-	default:
-		// Multi-pod: merge the historical tail by timestamp before following live
-		// lines, so the user sees chronologically interleaved replicas.
-		go func() {
-			runMergedStreams(ctx, client, namespace, pods, tail, container, events)
-		}()
 	}
 
 	si := textinput.New()
@@ -197,58 +170,21 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 		client:      client,
 		namespace:   namespace,
 		pods:        pods,
-		tail:        tail,
+		tail:        views.ClampTail(tail, len(pods)),
 		container:   container,
 		viewport:    newViewport(),
-		events:      events,
-		cancel:      cancel,
 		podColors:   assignPodColors(pods),
 		autoFollow:  true,
 		searchInput: si,
-		followKey: key.NewBinding(
-			key.WithKeys("f"),
-			key.WithHelp("f", "follow"),
-		),
-		tagsKey: key.NewBinding(
-			key.WithKeys("t"),
-			key.WithHelp("t", "tag pods"),
-		),
-		wrapKey: key.NewBinding(
-			key.WithKeys("w"),
-			key.WithHelp("w", "wrap"),
-		),
-		hscrollLeftKey: key.NewBinding(
-			key.WithKeys("left"),
-			key.WithHelp("←", "scroll left"),
-		),
-		hscrollRightKey: key.NewBinding(
-			key.WithKeys("right"),
-			key.WithHelp("→", "scroll right"),
-		),
-		searchOpenKey: key.NewBinding(
-			key.WithKeys("/"),
-			key.WithHelp("/", "search"),
-		),
-		nextMatchKey: key.NewBinding(
-			key.WithKeys("n"),
-			key.WithHelp("n", "next match"),
-		),
-		prevMatchKey: key.NewBinding(
-			key.WithKeys("N"),
-			key.WithHelp("N", "prev match"),
-		),
-		clearKey: key.NewBinding(
-			key.WithKeys("c"),
-			key.WithHelp("c", "clear"),
-		),
-		scrollKey: key.NewBinding(
-			key.WithKeys("up", "down", "pgup", "pgdown"),
-			key.WithHelp("↑↓/pgup/pgdn", "scroll"),
-		),
+		keys:        newKeyMap(),
+	}
+	if client != nil {
+		m.src = client
 	}
 	for _, opt := range opts {
 		opt(&m)
 	}
+	m.sess = startSession(m.sess.gen+1, m.spec())
 	return m
 }
 
@@ -260,10 +196,12 @@ func newViewport() viewport.Model {
 	return vp
 }
 
+// Init starts reading the first session's events.
 func (m Model) Init() tea.Cmd {
-	return waitOrDrainCmd(m.events)
+	return waitOrDrainCmd(m.sess)
 }
 
+// Update implements views.View.
 func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -311,11 +249,11 @@ func (m Model) Title() string {
 	if m.container != "" {
 		base += " / " + m.container
 	}
-	if m.searchQuery != "" {
+	if m.search.text != "" {
 		if len(m.matches) > 0 {
-			base += fmt.Sprintf(" · /%s · %d/%d", m.searchQuery, m.matchIdx+1, len(m.matches))
+			base += fmt.Sprintf(" · /%s · %d/%d", m.search.text, m.matchIdx+1, len(m.matches))
 		} else {
-			base += " · /" + m.searchQuery + " · no match"
+			base += " · /" + m.search.text + " · no match"
 		}
 	}
 	if !m.autoFollow {
@@ -329,21 +267,20 @@ func (m Model) Command() kubectl.Cmd {
 	return views.LogsCommand(m.namespace, m.pods, m.container, m.tail, m.target)
 }
 
-// Help implements views.View. The 't' binding is only advertised when there
-// is more than one pod — otherwise it is a no-op and only clutters the
-// footer. The horizontal-scroll keys only appear when wrap is off, since
-// they are a no-op in wrap mode.
+// Help implements views.View. 't' is only advertised when there is more
+// than one pod, where it does something. The
+// horizontal-scroll keys only appear when wrap is off, since they are a
+// no-op in wrap mode.
 func (m Model) Help() []key.Binding {
-	bindings := []key.Binding{m.scrollKey, m.followKey, m.wrapKey}
+	k := m.keys
+	bindings := []key.Binding{k.scroll, k.follow, k.wrap}
 	if !m.wrap {
-		bindings = append(bindings, m.hscrollLeftKey, m.hscrollRightKey)
+		bindings = append(bindings, k.left, k.right)
 	}
 	if len(m.pods) > 1 {
-		bindings = append(bindings, m.tagsKey)
+		bindings = append(bindings, k.tags)
 	}
-	bindings = append(bindings,
-		m.searchOpenKey, m.nextMatchKey, m.prevMatchKey, m.clearKey)
-	return bindings
+	return append(bindings, k.searchOpen, k.next, k.prev, k.clear)
 }
 
 // CapturesKeys implements views.View. Returns true while the search prompt
@@ -351,11 +288,9 @@ func (m Model) Help() []key.Binding {
 // global navigation.
 func (m Model) CapturesKeys() bool { return m.searchOpen }
 
-// Close cancels the streaming context, draining the goroutines, which
-// eventually closes the events channel. Idempotent.
+// Close cancels the streams, draining the goroutines, which eventually
+// closes the events channel. Idempotent.
 func (m Model) Close() error {
-	if m.cancel != nil {
-		m.cancel()
-	}
+	m.sess.stop()
 	return nil
 }

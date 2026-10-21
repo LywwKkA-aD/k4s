@@ -5,7 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 func TestFormatRawLineSinglePodHasNoPrefix(t *testing.T) {
@@ -105,14 +109,14 @@ func TestAssignPodColorsStaysInPalette(t *testing.T) {
 	}
 }
 
-func TestAppendOneEnforcesBufferCap(t *testing.T) {
+func TestBatchEnforcesBufferCap(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", nil, 0, "")
-	for i := 0; i < maxBufferedLines+50; i++ {
-		m.appendOne("foo", "line", lineLog)
+	m := fed(t, New(nil, "ns", nil, 0, ""), numbered(0, views.MaxLogLines+50, "line %d")...)
+	if got := len(m.rawLines); got != views.MaxLogLines {
+		t.Errorf("buffer cap not enforced: got %d, want %d", got, views.MaxLogLines)
 	}
-	if got := len(m.rawLines); got != maxBufferedLines {
-		t.Errorf("buffer cap not enforced: got %d, want %d", got, maxBufferedLines)
+	if got := m.rawLines[0].text; got != "line 50" {
+		t.Errorf("oldest line kept = %q, want line 50", got)
 	}
 }
 
@@ -130,7 +134,7 @@ func TestCloseIsIdempotent(t *testing.T) {
 func TestNewWithNoClientClosesChannelImmediately(t *testing.T) {
 	t.Parallel()
 	m := New(nil, "ns", []string{"foo"}, 100, "")
-	if _, ok := <-m.events; ok {
+	if _, ok := <-m.sess.events; ok {
 		t.Errorf("expected closed events channel when client is nil")
 	}
 }
@@ -182,14 +186,14 @@ func TestComputeMatchesOnRawTextNotPrefix(t *testing.T) {
 
 	// Searching for "alpha" should NOT match the bare log line text — the
 	// pod name lives in the prefix, which the search must ignore.
-	m.searchQuery = "alpha"
+	m.search = newQuery("alpha")
 	m.computeMatches()
 	if len(m.matches) != 0 {
 		t.Errorf("search on pod name (in prefix) leaked into matches: %v", m.matches)
 	}
 
 	// Searching for body text should still work.
-	m.searchQuery = "tick"
+	m.search = newQuery("tick")
 	m.computeMatches()
 	if len(m.matches) != 2 {
 		t.Errorf("expected 2 matches for 'tick', got %d (%v)", len(m.matches), m.matches)
@@ -200,8 +204,8 @@ func TestComputeMatchesEmptyQueryClears(t *testing.T) {
 	t.Parallel()
 	m := New(nil, "ns", []string{"foo"}, 100, "")
 	m.appendOne("foo", "alpha", lineLog)
-	m.matches = []int{0}
-	m.searchQuery = ""
+	m.matches = []match{{line: 0}}
+	m.search = query{}
 	m.computeMatches()
 	if m.matches != nil {
 		t.Errorf("empty query should clear matches, got %v", m.matches)
@@ -210,8 +214,8 @@ func TestComputeMatchesEmptyQueryClears(t *testing.T) {
 
 func TestGotoMatchWrapsForwardsAndBackwards(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100, "")
-	m.matches = []int{0, 2, 5}
+	m := fed(t, New(nil, "ns", []string{"foo"}, 100, ""), numbered(0, 6, "line %d")...)
+	m.matches = []match{{line: 0}, {line: 2}, {line: 5}}
 	m.matchIdx = 0
 
 	m.gotoMatch(+1)
@@ -231,8 +235,8 @@ func TestGotoMatchWrapsForwardsAndBackwards(t *testing.T) {
 
 func TestGotoMatchPausesAutoFollow(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100, "")
-	m.matches = []int{0}
+	m := fed(t, New(nil, "ns", []string{"foo"}, 100, ""), "line")
+	m.matches = []match{{line: 0}}
 	m.autoFollow = true
 	m.gotoMatch(+1)
 	if m.autoFollow {
@@ -255,14 +259,20 @@ func TestGotoMatchOnEmptyMatchesIsNoOp(t *testing.T) {
 	}
 }
 
-func TestHighlightContentReplacesMatches(t *testing.T) {
+func TestPaintHighlightsEverySpan(t *testing.T) {
 	t.Parallel()
-	out := highlightContent("hello alpha world alpha", "alpha")
-	if count := strings.Count(out, "alpha"); count != 2 {
-		t.Errorf("expected 'alpha' to appear twice in output, got %d:\n%s", count, out)
+	text := "hello alpha world alpha"
+	spans := newQuery("alpha").find(text)
+	out := paint(text, nil, spans, 1)
+	if got := ansi.Strip(out); got != text {
+		t.Errorf("painting changed the text: %q", got)
 	}
-	if got := highlightContent("hello", ""); got != "hello" {
-		t.Errorf("empty query should pass content through, got %q", got)
+	want := styles.Highlight.Render("alpha") + " world " + styles.Highlight.Underline(true).Render("alpha")
+	if !strings.HasSuffix(out, want) {
+		t.Errorf("paint = %q, want the plain match then the current one", out)
+	}
+	if got := paint("hello", nil, nil, noCurrent); got != "hello" {
+		t.Errorf("no spans should pass the text through, got %q", got)
 	}
 }
 
@@ -274,7 +284,7 @@ func TestCancelSearchClearsQueryButPreservesLogs(t *testing.T) {
 	m.appendOne("foo", "beta tick", lineLog)
 	m.appendOne("foo", "gamma", lineLog)
 
-	m.searchQuery = "tick"
+	m.search = newQuery("tick")
 	m.computeMatches()
 	if len(m.matches) != 2 {
 		t.Fatalf("setup: expected 2 matches, got %d", len(m.matches))
@@ -282,8 +292,8 @@ func TestCancelSearchClearsQueryButPreservesLogs(t *testing.T) {
 
 	m.cancelSearch()
 
-	if m.searchQuery != "" {
-		t.Errorf("query not cleared: %q", m.searchQuery)
+	if m.search.text != "" {
+		t.Errorf("query not cleared: %q", m.search.text)
 	}
 	if len(m.matches) != 0 {
 		t.Errorf("matches not cleared: %v", m.matches)
@@ -297,7 +307,7 @@ func TestCancelSearchPreservesAutoFollow(t *testing.T) {
 	t.Parallel()
 	for _, follow := range []bool{true, false} {
 		m := New(nil, "ns", []string{"foo"}, 100, "")
-		m.searchQuery = "x"
+		m.search = newQuery("x")
 		m.autoFollow = follow
 		m.cancelSearch()
 		if m.autoFollow != follow {
@@ -324,10 +334,10 @@ func TestClearLogsPreservesAutoFollow(t *testing.T) {
 func TestClearLogsLeavesSearchAlone(t *testing.T) {
 	t.Parallel()
 	m := New(nil, "ns", []string{"foo"}, 100, "")
-	m.searchQuery = "tick"
+	m.search = newQuery("tick")
 	m.clearLogs()
-	if m.searchQuery != "tick" {
-		t.Errorf("clearLogs touched search query: %q", m.searchQuery)
+	if m.search.text != "tick" {
+		t.Errorf("clearLogs touched search query: %q", m.search.text)
 	}
 }
 
@@ -336,7 +346,7 @@ func TestStatusLineCombinesPauseAndSearch(t *testing.T) {
 
 	m := New(nil, "ns", []string{"foo"}, 100, "")
 	m.appendOne("foo", "hello tick", lineLog)
-	m.searchQuery = "tick"
+	m.search = newQuery("tick")
 	m.computeMatches()
 	m.autoFollow = false
 
@@ -474,17 +484,17 @@ func TestAppendOneAppendsBothRawAndRendered(t *testing.T) {
 	}
 }
 
-func TestAppendOneKeepsRawAndRenderedInLockstep(t *testing.T) {
+func TestTrimKeepsRawAndRenderedInLockstep(t *testing.T) {
 	t.Parallel()
-	m := New(nil, "ns", []string{"foo"}, 100, "")
-	for i := 0; i < maxBufferedLines+50; i++ {
-		m.appendOne("foo", "line", lineLog)
+	m := fed(t, New(nil, "ns", []string{"foo"}, 100, ""), numbered(0, views.MaxLogLines+50, "line %d")...)
+	if len(m.rawLines) != views.MaxLogLines {
+		t.Errorf("rawLines cap: got %d, want %d", len(m.rawLines), views.MaxLogLines)
 	}
-	if len(m.rawLines) != maxBufferedLines {
-		t.Errorf("rawLines cap: got %d, want %d", len(m.rawLines), maxBufferedLines)
+	if len(m.rendered) != views.MaxLogLines {
+		t.Errorf("rendered cap: got %d, want %d (must mirror rawLines)", len(m.rendered), views.MaxLogLines)
 	}
-	if len(m.rendered) != maxBufferedLines {
-		t.Errorf("rendered cap: got %d, want %d (must mirror rawLines)", len(m.rendered), maxBufferedLines)
+	if m.rendered[0] != m.rawLines[0].text {
+		t.Errorf("rendered[0] = %q, rawLines[0] = %q", m.rendered[0], m.rawLines[0].text)
 	}
 }
 

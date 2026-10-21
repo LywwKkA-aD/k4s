@@ -33,6 +33,7 @@ func TestTagsToggleLeavesEarlierModelUntouched(t *testing.T) {
 	t.Cleanup(func() { _ = m.Close() })
 
 	before := send(m, size, logEventsBatch{
+		gen:    m.sess.gen,
 		events: []logEvent{{Pod: "alpha", Line: "hello"}},
 		done:   true,
 	})
