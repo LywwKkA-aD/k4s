@@ -2,6 +2,9 @@ package k8s
 
 import (
 	"fmt"
+	"regexp"
+	"slices"
+	"strings"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -19,6 +22,21 @@ const (
 	clientBurst = 100
 )
 
+// rules turns s into client-go loading rules. ExplicitPath makes a missing
+// file an error, which is what a named file needs; a precedence list skips
+// missing files the way kubectl does with $KUBECONFIG.
+func (s Source) rules() *clientcmd.ClientConfigLoadingRules {
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	switch {
+	case len(s.Paths) == 0:
+	case s.Origin == OriginKubectl:
+		rules.Precedence = slices.Clone(s.Paths)
+	default:
+		rules.ExplicitPath = s.Paths[0]
+	}
+	return rules
+}
+
 // buildConfig resolves contextName from an already-loaded kubeconfig into a
 // rest.Config carrying k4s's client defaults.
 func buildConfig(raw clientcmdapi.Config, contextName string, rules clientcmd.ClientConfigLoader) (*rest.Config, error) {
@@ -35,6 +53,42 @@ func withClientDefaults(cfg *rest.Config) *rest.Config {
 	out.Burst = clientBurst
 	out.UserAgent = "k4s/" + version.String()
 	return out
+}
+
+// withStdinUnavailable returns a copy of cfg whose exec credential plugin
+// is told that stdin is (or is not) unavailable; msg is what client-go
+// reports when a plugin insists on a terminal anyway. rest.CopyConfig
+// shares the ExecProvider pointer, so it is copied too.
+func withStdinUnavailable(cfg *rest.Config, unavailable bool, msg string) *rest.Config {
+	out := rest.CopyConfig(cfg)
+	if out.ExecProvider == nil {
+		return out
+	}
+	ep := *out.ExecProvider
+	ep.StdinUnavailable = unavailable
+	ep.StdinUnavailableMessage = msg
+	out.ExecProvider = &ep
+	return out
+}
+
+// loginHint tells the user how to refresh credentials that need a terminal
+// while the TUI owns it; r then retries the list.
+func loginHint(contextName string, src Source) string {
+	cmd := "kubectl --context " + shellQuote(contextName)
+	if arg := src.KubeconfigArg(); arg != "" {
+		cmd += " --kubeconfig " + shellQuote(arg)
+	}
+	return "log in first: run `" + cmd + " get ns` in a terminal, then press r"
+}
+
+var shellSafe = regexp.MustCompile(`^[A-Za-z0-9@%+=:,./_-]+$`)
+
+// shellQuote makes s one POSIX shell word, so a copied hint pastes as-is.
+func shellQuote(s string) string {
+	if shellSafe.MatchString(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // newClientset builds the clientset with exec credential plugin stderr
