@@ -66,7 +66,9 @@ func (m *Manager) Blocked() error {
 
 // BeginStopAll marks every forward stopped, closes every live session and
 // returns without waiting for them: the returned Stopping ends when they
-// have all wound down, or after one deadline shared by all of them.
+// have all wound down, or after one deadline shared by all of them, and the
+// stop this Manager was built After has ended too: a second context switch
+// must not open the gate while the first switch's stop still runs.
 func (m *Manager) BeginStopAll() *Stopping {
 	m.mu.Lock()
 	var sessions []*k8s.PortForwardSession
@@ -85,12 +87,17 @@ func (m *Manager) BeginStopAll() *Stopping {
 		sess.Close()
 	}
 	s := &Stopping{count: len(sessions), done: make(chan struct{})}
-	if len(sessions) == 0 {
+	if len(sessions) == 0 && m.Blocked() == nil {
 		close(s.done)
 		return s
 	}
 	go func() {
-		s.err = awaitClosed(sessions, m.stopWait)
+		if len(sessions) > 0 {
+			s.err = awaitClosed(sessions, m.stopWait)
+		}
+		if m.after != nil {
+			<-m.after.done
+		}
 		close(s.done)
 	}()
 	return s
