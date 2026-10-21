@@ -9,6 +9,10 @@ import (
 // it, or a longer Retry-After, still wins.
 const MaxBackoff = 60 * time.Second
 
+// MaxRetryAfter caps a server-supplied Retry-After, so a stray
+// "Retry-After: 86400" cannot stop a view refreshing for a day.
+const MaxRetryAfter = 5 * time.Minute
+
 // maxSteps bounds the step counters; the doubling stops at MaxBackoff long
 // before.
 const maxSteps = 16
@@ -22,7 +26,7 @@ type backoff struct {
 
 // observe folds one outcome in. retryAfter only ever floors the next tick.
 func (b backoff) observe(o Outcome, retryAfter time.Duration) backoff {
-	next := backoff{slow: b.slow, throttle: b.throttle, retryAfter: retryAfter}
+	next := backoff{slow: b.slow, throttle: b.throttle, retryAfter: min(retryAfter, MaxRetryAfter)}
 	switch o {
 	case OK:
 		next.slow = 0
