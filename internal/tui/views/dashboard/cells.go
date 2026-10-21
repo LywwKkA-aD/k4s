@@ -24,8 +24,23 @@ type frame struct {
 	// session decorates the commands the body prints for pasting.
 	session kubectl.Session
 	hint    string // "watch 5s", "paused", "refreshing…"
-	th      viz.Theme
-	ds      styles.DashboardStyles
+	// staleSince is when the cluster stopped answering, zero while it
+	// answers; retry is when the poller asks again.
+	staleSince time.Time
+	retry      time.Duration
+	th         viz.Theme
+	ds         styles.DashboardStyles
+}
+
+// dimmed is f for a panel whose data is stale: every state colour gives
+// way to the label colour. The glyphs and words stay, so mono, which has
+// no colour to lose, reads the same.
+func (f frame) dimmed() frame {
+	ds := f.ds
+	ds.OK, ds.Info, ds.Minor, ds.Warn, ds.Err = ds.Label, ds.Label, ds.Label, ds.Label, ds.Label
+	ds.Off, ds.Fact, ds.Unknown, ds.Approx = ds.Label, ds.Label, ds.Label, ds.Label
+	f.ds, f.th = ds, themeOf(ds)
+	return f
 }
 
 // command is c as the body prints it for pasting: cleaned, and with the
@@ -126,6 +141,8 @@ func (f frame) unreadable(what string, a dash.Avail) string {
 		return f.paint(markWarn) + " " + what + " throttled"
 	case dash.StateUnsupported:
 		return f.paint(markUnknown) + " " + what + " not supported by this server"
+	case dash.StateStale:
+		return f.paint(markOff) + " " + what + ": no answer yet · stale " + ago(a.Stale)
 	}
 	return f.paint(markUnknown) + " " + what + " failed"
 }

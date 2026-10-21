@@ -1,0 +1,34 @@
+›◆ ns shop (cluster-wide list forbidden)  ● 41 pods ok  ● 9/9 deploy ready  ○ no metrics                       watch 5s 
+ ▸ next 1/2  kubectl auth can-i --list -n shop   what am I allowed to see here?                                         
+╭─┤ 1 cluster ├──────────────────────────────────── ◆ eks ─╮╭─┤ 2 nodes ├────────────────────────────────────────── — ─╮
+│ ● api        ready                                       ││ — nodes: list forbidden for shop-dev                     │
+│ ◆ version    v1.35.4-eks-3025e55 · eks                   ││   kubectl auth can-i list nodes                          │
+│ ● you        shop-dev                                    ││   pods per node (ns shop) still shown in 3 pods          │
+│ — ns         forbidden · :ns <name> to switch            ││                                                          │
+│ ● storage    4/4 pvc Bound (ns shop)                     ││ ○ no metrics-server: metrics.k8s.io is not in discovery  │
+│ ● network    12 svc in ns shop · no LoadBalancer         ││   install: kubernetes-sigs/metrics-server                │
+│   server     https://C0FFEE.gr7.eu-west-1.eks.amazonaws.…││   re-checked every 60s and on r                          │
+│                                                          ││                                                          │
+╰─────────────────────────────────────────────── ctx fake ─╯╰──────────────────────────────────────────────────────────╯
+╭─┤ 3 pods ├──────────────────────────────────────────────────────────────────────────────────────────── 41 · ns shop ─╮
+│ ████████████████████████████████████████████████████████████████████████████████████████████████████████████████  41 │
+│ █ Running 41                                                                                                         │
+│ ≈30m not ok                              ▁  0 now   per node  ip-10-0-1-17 22 · ip-10-0-2-41 19                      │
+│                                                                                                                      │
+│ ● nothing needs attention                                                                                            │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─┤ 4 workloads ├────────────────────────────── 9/9 ready ─╮╭─┤ 5 events ├───────────────────────── type=Warning · 1h ─╮
+│ deploy  ███████████████████████████████████████████  9/9 ││ ● no warnings in the last hour                           │
+│ sts     ○ none                                           ││   events live about an hour                              │
+│ ds      ○ none                                           ││                                                          │
+│ jobs    ● none failed in 1h · 0 active                   ││                                                          │
+│ cron    ○ no cronjobs                                    ││                                                          │
+│                                                          ││                                                          │
+│ ● all 9 ready                                            ││                                                          │
+│                                                          ││                                                          │
+╰──────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯

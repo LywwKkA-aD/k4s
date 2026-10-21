@@ -36,7 +36,7 @@ func (l layout) drawsChart(s dash.Snapshot) bool {
 	if !ok || pl.line || !hasMetrics(s) {
 		return false
 	}
-	return chartSize(s, len(s.Nodes.Rows), pl.h-2) > 0
+	return chartSize(len(s.Nodes.Rows), pl.h-2) > 0
 }
 
 // hasMetrics reports node metrics to draw: the API answers and there are

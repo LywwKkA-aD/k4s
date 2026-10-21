@@ -42,7 +42,8 @@ func verdictLine(f frame, w int) string {
 
 // verdict is the cluster in a few words: loading, all clear since when,
 // or the chips most severe first with a +N tail for those that do not
-// fit in w columns.
+// fit in w columns. A partial picture leads with why (stale, scoped);
+// without chips it then lists what k4s did see.
 func verdict(f frame, w int) string {
 	v := f.snap.Verdict
 	switch {
@@ -51,15 +52,12 @@ func verdict(f frame, w int) string {
 	case v.AllClear:
 		return f.paint(markOK) + " all clear since " + f.since.Format("15:04")
 	}
-	var lead []string
-	if f.snap.Scope.Fallback {
-		lead = append(lead, f.paint(markFact)+" ns "+clean(f.snap.Scope.Namespace)+" (cluster-wide list forbidden)")
-	}
+	lead := bannerNotes(f)
 	if len(v.Chips) == 0 {
 		if len(lead) == 0 {
-			lead = append(lead, f.paint(markFact)+" nothing failing in what k4s can see")
+			return f.paint(markFact) + " nothing failing in what k4s can see"
 		}
-		return strings.Join(lead, "  ")
+		return fitChips(strings.Join(lead, "  "), scopeFacts(f), w)
 	}
 	head := markWarn
 	if v.Chips[0].Sev == dash.SevFailing {

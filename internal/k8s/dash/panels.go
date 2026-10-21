@@ -8,6 +8,9 @@ type Avail struct {
 	State State
 	CanI  Cmd           // set for StateForbidden
 	Stale time.Duration // how long a Stale source has been stale, coarsened
+	// Unanswered marks a Stale source that timed out before it ever
+	// answered: it has no data to keep, and its panel's zeros mean nothing.
+	Unanswered bool
 }
 
 // ObjectKey names one cluster object; the view keys its row cursor by it so

@@ -18,13 +18,9 @@ const chartIndent = "  "
 // chartLines draws the cluster CPU and memory history under the node table
 // in size lines: a blank, the label line, the braille rows and the
 // footnote, losing the footnote and then a braille row as size shrinks.
-// Without metrics it is a blank and the reason.
 func chartLines(f frame, w, size int) []string {
 	if size <= 0 {
 		return nil
-	}
-	if !hasMetrics(f.snap) {
-		return []string{"", " " + chartIndent + metricsNote(f)}[:min(size, 2)]
 	}
 	usable := w - 1 - len(chartIndent) - 1
 	half := (usable - 3) / 2
@@ -113,24 +109,4 @@ func gib(b int64) string {
 		return fmt.Sprintf("%.0f", g)
 	}
 	return fmt.Sprintf("%.1f", g)
-}
-
-// metricsNote says why there are no meters or charts.
-func metricsNote(f frame) string {
-	m := f.snap.Nodes.Metrics
-	switch m.State {
-	case dash.StateAbsent:
-		hint := "install kubernetes-sigs/metrics-server"
-		if f.snap.Cluster.Version.Distro == "k3s" {
-			hint = "bundled with k3s; started with --disable=metrics-server?"
-		}
-		return f.paint(markOff) + " no metrics-server: " + hint
-	case dash.StateNotReady:
-		return f.paint(markOff) + " metrics not ready"
-	case dash.StateForbidden:
-		return f.paint(markUnknown) + " metrics forbidden · " + f.command(m.CanI)
-	case dash.StateUnknown:
-		return f.paint(markFact) + " waiting for metrics"
-	}
-	return f.paint(markOff) + " metrics " + m.State.String()
 }

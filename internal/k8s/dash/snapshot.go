@@ -119,6 +119,7 @@ func availOf(e Endpoint, led Ledger) Avail {
 		a.CanI = canIOf(e, u.Namespace)
 	case StateStale:
 		a.Stale = Coarsen(u.At - u.StaleSince)
+		a.Unanswered = !u.Answered
 	}
 	return a
 }

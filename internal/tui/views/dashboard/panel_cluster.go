@@ -21,7 +21,7 @@ type clusterItem struct {
 // denied says so and carries the auth can-i probe, never a 0; readyz and
 // whoami lines are left out on a denial, as the spec asks.
 func clusterItems(s dash.Snapshot) []clusterItem {
-	c := s.Cluster
+	c, ns := s.Cluster, clean(s.Scope.Namespace)
 	out := make([]clusterItem, 0, 8)
 	for _, f := range []func() (clusterItem, bool){
 		func() (clusterItem, bool) { return apiItem(c.API) },
@@ -29,8 +29,8 @@ func clusterItems(s dash.Snapshot) []clusterItem {
 		func() (clusterItem, bool) { return textItem("you", markOK, c.You) },
 		func() (clusterItem, bool) { return ageItem(c.Age) },
 		func() (clusterItem, bool) { return nsItem(c.Namespaces) },
-		func() (clusterItem, bool) { return storageItem(c.Storage) },
-		func() (clusterItem, bool) { return networkItem(c.Network) },
+		func() (clusterItem, bool) { return storageItem(c.Storage, ns) },
+		func() (clusterItem, bool) { return networkItem(c.Network, ns) },
 		func() (clusterItem, bool) { return textItem("server", markNone, c.Server) },
 	} {
 		if it, ok := f(); ok {
@@ -41,9 +41,10 @@ func clusterItems(s dash.Snapshot) []clusterItem {
 }
 
 // readable reports a source with data to show: answered, or stale with
-// its last answer kept.
+// its last answer kept. A source that went stale before it ever answered
+// has nothing to show.
 func readable(a dash.Avail) bool {
-	return a.State == dash.StateOK || a.State == dash.StateStale
+	return a.State == dash.StateOK || (a.State == dash.StateStale && !a.Unanswered)
 }
 
 // staleNote is " · stale 2m" for a source that stopped answering.
@@ -132,7 +133,9 @@ func nsItem(r dash.NamespacesRow) (clusterItem, bool) {
 	return clusterItem{key: "ns", label: "ns", value: value, cmd: r.Cmd}, true
 }
 
-func storageItem(r dash.StorageRow) (clusterItem, bool) {
+// storageItem counts the claims of the namespace listed (ns, "" for all),
+// which a namespace-scoped user must see named.
+func storageItem(r dash.StorageRow, ns string) (clusterItem, bool) {
 	if r.Avail.State == dash.StateForbidden {
 		return denied("storage", "pvc", r.Avail), true
 	}
@@ -147,6 +150,9 @@ func storageItem(r dash.StorageRow) (clusterItem, bool) {
 	case r.Sev == dash.SevWaiting:
 		it.mark = markWarn
 	}
+	if ns != "" {
+		parts[0] += " (ns " + ns + ")"
+	}
 	if r.Pending > 0 {
 		parts = append(parts, fmt.Sprintf("%d Pending", r.Pending))
 	}
@@ -157,7 +163,9 @@ func storageItem(r dash.StorageRow) (clusterItem, bool) {
 	return it, true
 }
 
-func networkItem(r dash.NetworkRow) (clusterItem, bool) {
+// networkItem counts the services of the namespace listed (ns, "" for
+// all) and its LoadBalancers.
+func networkItem(r dash.NetworkRow, ns string) (clusterItem, bool) {
 	if r.Avail.State == dash.StateForbidden {
 		return denied("network", "services", r.Avail), true
 	}
@@ -166,7 +174,10 @@ func networkItem(r dash.NetworkRow) (clusterItem, bool) {
 	}
 	it := clusterItem{key: "network", mark: markOK, label: "network", cmd: r.Cmd}
 	var parts []string
-	if r.ServicesKnown {
+	switch {
+	case r.ServicesKnown && ns != "":
+		parts = append(parts, fmt.Sprintf("%d svc in ns %s", r.Services, ns))
+	case r.ServicesKnown:
 		parts = append(parts, fmt.Sprintf("%d svc", r.Services))
 	}
 	switch {

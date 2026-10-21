@@ -44,12 +44,8 @@ func nodesBody(f frame, w, h int) panelBody {
 	body := panelBody{info: fmt.Sprintf("%d/%d Ready", n.Ready, n.Total), footer: kubeletNote(n.Rows)}
 	switch {
 	case n.Avail.State == dash.StateForbidden:
-		body.info = markGlyphs[markUnknown]
-		body.lines = []string{
-			" " + f.paint(markUnknown) + " nodes forbidden",
-			"   " + f.command(n.Avail.CanI),
-			"   pods per node are still shown in 3 pods",
-		}
+		body.info, body.footer = markGlyphs[markUnknown], ""
+		body.lines = nodesDenied(f, h)
 		return body
 	case !readable(n.Avail):
 		body.info = ""
@@ -59,7 +55,12 @@ func nodesBody(f frame, w, h int) panelBody {
 		body.lines = []string{" " + f.paint(markOff) + " no nodes registered"}
 		return body
 	}
-	tail := chartLines(f, w, chartSize(f.snap, len(n.Rows), h))
+	var tail []string
+	if hasMetrics(f.snap) {
+		tail = chartLines(f, w, chartSize(len(n.Rows), h))
+	} else {
+		tail = noteLines(f, len(n.Rows), h)
+	}
 	room := h - 1 - len(tail)
 	table, hidden := nodeTable(f, w, room)
 	body.lines = append(table, tail...)
@@ -69,16 +70,27 @@ func nodesBody(f frame, w, h int) panelBody {
 	return body
 }
 
+// noteLines say under the node table why there are no meters: the whole
+// note while the table keeps its rows (at least three), then its first
+// line, then nothing.
+func noteLines(f frame, nodes, h int) []string {
+	note := metricsLines(f)
+	for _, n := range []int{len(note), 1} {
+		if h-1-(n+1) >= min(nodes, 3) {
+			out := []string{""}
+			for _, l := range note[:n] {
+				out = append(out, " "+chartIndent+l)
+			}
+			return out
+		}
+	}
+	return nil
+}
+
 // chartSize is how many lines the history takes under the table: the full
 // chart while the table keeps its rows (at least three), then a one-row
-// chart, then none. Without metrics it is the one-line note.
-func chartSize(s dash.Snapshot, nodes, h int) int {
-	if !hasMetrics(s) {
-		if h-1-2 >= min(nodes, 3) {
-			return 2
-		}
-		return 0
-	}
+// chart, then none.
+func chartSize(nodes, h int) int {
 	for _, size := range []int{3 + chartRows, 3 + 1, 2 + 1} {
 		if h-1-size >= min(nodes, 3) {
 			return size

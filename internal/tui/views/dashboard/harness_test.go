@@ -42,7 +42,9 @@ func (f *feed) fetch(_ context.Context, p dash.Plan, prev dash.Snapshot) dash.Sn
 	s.Now, s.At = p.Now, f.clock.Now()
 	ledger := prev.Ledger
 	for _, r := range p.Due {
-		ledger[r.Endpoint] = dash.Usage{Fetched: true, At: p.Now, State: s.Ledger[r.Endpoint].State}
+		u := s.Ledger[r.Endpoint]
+		u.Fetched, u.At = true, p.Now
+		ledger[r.Endpoint] = u
 	}
 	s.Ledger = ledger
 	if f.vary {
