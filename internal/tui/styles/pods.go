@@ -41,15 +41,15 @@ func PodPalette() []PodColorID {
 }
 
 // PodColor returns the colour for a PodPalette ID under the active theme:
-// its light or dark variant, or no colour at all in mono. Any other ID is
-// read as a colour and returned unchanged outside mono.
+// its light, dark or high-contrast variant, or no colour at all in mono.
+// Any other ID is read as a colour and returned unchanged outside mono.
 func PodColor(id PodColorID) color.Color {
 	if active.mono {
 		return lipgloss.NoColor{}
 	}
-	for _, c := range podColors {
-		if PodColorID(c.Dark) == id {
-			return c.on(active.dark)
+	for i, c := range podColors {
+		if PodColorID(c.Dark) == id && i < len(active.pods) {
+			return active.pods[i]
 		}
 	}
 	return lipgloss.Color(string(id))

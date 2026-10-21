@@ -52,7 +52,7 @@ func TestParseExits(t *testing.T) {
 			name:       "unknown theme",
 			args:       []string{"--theme", "purple"},
 			wantCode:   ExitUsage,
-			wantStderr: []string{`invalid value "purple" for flag -theme: want auto, dark, light or mono`, "Usage:"},
+			wantStderr: []string{`invalid value "purple" for flag -theme: want auto, dark, light, mono or high-contrast`, "Usage:"},
 		},
 		{
 			name:       "namespace that is not a DNS-1123 label",
@@ -110,6 +110,7 @@ func TestParseOptions(t *testing.T) {
 			want: Options{Namespace: "web", AllNamespaces: true},
 		},
 		{name: "theme is normalised", args: []string{"--theme", " Light "}, want: Options{Theme: "light"}},
+		{name: "high-contrast theme", args: []string{"--theme=High-Contrast"}, want: Options{Theme: "high-contrast"}},
 		{name: "no-preflight flag", args: []string{"--no-preflight"}, want: Options{NoPreflight: true}},
 		{name: "no-preflight from env", env: map[string]string{"K4S_NO_PREFLIGHT": "1"}, want: Options{NoPreflight: true}},
 		{name: "env any other value", env: map[string]string{"K4S_NO_PREFLIGHT": "yes"}, want: Options{NoPreflight: true}},

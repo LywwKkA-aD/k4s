@@ -29,8 +29,8 @@ Flags:
   -n, --namespace <name>    namespace to start in (default: the context's namespace,
                             or all namespaces when it sets none)
   -A, --all-namespaces      start in all namespaces
-      --theme <mode>        colour theme: auto, dark, light or mono; wins over
-                            K4S_THEME and NO_COLOR
+      --theme <mode>        colour theme: auto, dark, light, mono or high-contrast
+                            (text at 7:1); wins over K4S_THEME and NO_COLOR
       --no-preflight        do not run the credential plugin (SSO, MFA) on the plain
                             terminal before the TUI starts
       --no-recap            do not print the session's kubectl commands on exit
@@ -39,7 +39,8 @@ Flags:
 
 Environment:
   KUBECONFIG         kubeconfig file list to load (default ~/.kube/config)
-  K4S_THEME          colour theme: auto, dark, light or mono (default auto)
+  K4S_THEME          colour theme: auto, dark, light, mono or high-contrast
+                     (default auto)
   K4S_NO_PREFLIGHT   when set to anything but 0 or false, same as --no-preflight
   K4S_NO_RECAP       when set to anything but 0 or false, same as --no-recap
   NO_COLOR           when set, disable colour (same as K4S_THEME=mono)

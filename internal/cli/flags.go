@@ -18,7 +18,7 @@ const (
 
 // themes are the --theme values; styles.ParseMode accepts the same set
 // from K4S_THEME (a test in cmd/k4s keeps the two in step).
-var themes = []string{"auto", "dark", "light", "mono"}
+var themes = []string{"auto", "dark", "light", "mono", "high-contrast"}
 
 // Themes lists the accepted --theme values.
 func Themes() []string { return slices.Clone(themes) }

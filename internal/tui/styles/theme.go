@@ -27,6 +27,9 @@ const (
 	// ModeMono drops colour and marks state with bold, underline and
 	// reverse video.
 	ModeMono Mode = "mono"
+	// ModeHighContrast is auto with the high-contrast preset: text at 7:1
+	// or better, borders at 3:1 or better.
+	ModeHighContrast Mode = "high-contrast"
 )
 
 // ErrInvalidTheme reports a K4S_THEME value k4s does not know.
@@ -44,10 +47,10 @@ func ParseMode(getenv func(string) string) (Mode, error) {
 		mode = ModeAuto
 	}
 	switch mode {
-	case ModeAuto, ModeDark, ModeLight, ModeMono:
+	case ModeAuto, ModeDark, ModeLight, ModeMono, ModeHighContrast:
 	default:
-		return "", fmt.Errorf("%w %q: want one of %s, %s, %s, %s",
-			ErrInvalidTheme, raw, ModeAuto, ModeDark, ModeLight, ModeMono)
+		return "", fmt.Errorf("%w %q: want one of %s, %s, %s, %s, %s",
+			ErrInvalidTheme, raw, ModeAuto, ModeDark, ModeLight, ModeMono, ModeHighContrast)
 	}
 	if getenv("NO_COLOR") != "" {
 		return ModeMono, nil
@@ -86,6 +89,8 @@ func apply(mode Mode, getenv func(string) string) {
 		use(monoPalette)
 		p := monoProfile(stdoutIsTerminal(), getenv("TERM"))
 		forcedProfile = &p
+	case ModeHighContrast:
+		use(highContrastPalette(detectDark(getenv)))
 	default:
 		use(colourPalette(detectDark(getenv)))
 	}

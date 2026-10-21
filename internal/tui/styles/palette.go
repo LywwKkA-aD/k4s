@@ -42,6 +42,32 @@ var (
 	tokenMatchBg     = token{Light: "#FFD166", Dark: "#FFD166"}
 )
 
+// tokenSet is one preset's tokens: the default theme or high contrast.
+// pods are in podColors' order, so a PodColorID names the same slot in
+// every set.
+type tokenSet struct {
+	muted, accent, accent2   token
+	ok, warn, err            token
+	selectionFg, selectionBg token
+	matchFg, matchBg         token
+	pods                     []token
+}
+
+// defaultTokens are the tokens above: WCAG AA (4.5:1) for text.
+var defaultTokens = tokenSet{
+	muted:       tokenMuted,
+	accent:      tokenAccent,
+	accent2:     tokenAccent2,
+	ok:          tokenOK,
+	warn:        tokenWarn,
+	err:         tokenErr,
+	selectionFg: tokenSelectionFg,
+	selectionBg: tokenSelectionBg,
+	matchFg:     tokenMatchFg,
+	matchBg:     tokenMatchBg,
+	pods:        podColors,
+}
+
 // palette is what every style is built from: the tokens resolved for one
 // background. In mono every colour is NoColor and the styles carry state
 // through bold, underline and reverse.
@@ -50,25 +76,36 @@ type palette struct {
 	ok, warn, err            color.Color
 	selectionFg, selectionBg color.Color
 	matchFg, matchBg         color.Color
+	pods                     []color.Color
 	dark                     bool
 	mono                     bool
 }
 
-// colourPalette resolves every token for a dark or a light background.
-func colourPalette(dark bool) palette {
+// resolve picks every token's variant for a dark or a light background.
+func (s tokenSet) resolve(dark bool) palette {
+	pods := make([]color.Color, len(s.pods))
+	for i, t := range s.pods {
+		pods[i] = t.on(dark)
+	}
 	return palette{
-		muted:       tokenMuted.on(dark),
-		accent:      tokenAccent.on(dark),
-		accent2:     tokenAccent2.on(dark),
-		ok:          tokenOK.on(dark),
-		warn:        tokenWarn.on(dark),
-		err:         tokenErr.on(dark),
-		selectionFg: tokenSelectionFg.on(dark),
-		selectionBg: tokenSelectionBg.on(dark),
-		matchFg:     tokenMatchFg.on(dark),
-		matchBg:     tokenMatchBg.on(dark),
+		muted:       s.muted.on(dark),
+		accent:      s.accent.on(dark),
+		accent2:     s.accent2.on(dark),
+		ok:          s.ok.on(dark),
+		warn:        s.warn.on(dark),
+		err:         s.err.on(dark),
+		selectionFg: s.selectionFg.on(dark),
+		selectionBg: s.selectionBg.on(dark),
+		matchFg:     s.matchFg.on(dark),
+		matchBg:     s.matchBg.on(dark),
+		pods:        pods,
 		dark:        dark,
 	}
+}
+
+// colourPalette is the default theme for a dark or a light background.
+func colourPalette(dark bool) palette {
+	return defaultTokens.resolve(dark)
 }
 
 // monoPalette has no colour at all. It counts as dark only so that

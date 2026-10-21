@@ -25,6 +25,9 @@ func TestParseMode(t *testing.T) {
 		{name: "dark", env: map[string]string{"K4S_THEME": "dark"}, want: ModeDark},
 		{name: "light", env: map[string]string{"K4S_THEME": "light"}, want: ModeLight},
 		{name: "mono", env: map[string]string{"K4S_THEME": "mono"}, want: ModeMono},
+		{name: "high contrast", env: map[string]string{"K4S_THEME": "high-contrast"}, want: ModeHighContrast},
+		{name: "high contrast in another case", env: map[string]string{"K4S_THEME": " High-Contrast "}, want: ModeHighContrast},
+		{name: "no color beats high contrast", env: map[string]string{"NO_COLOR": "1", "K4S_THEME": "high-contrast"}, want: ModeMono},
 		{name: "case and spaces ignored", env: map[string]string{"K4S_THEME": " Light "}, want: ModeLight},
 		{name: "no color forces mono", env: map[string]string{"NO_COLOR": "1"}, want: ModeMono},
 		{name: "no color beats a colour theme", env: map[string]string{"NO_COLOR": "1", "K4S_THEME": "dark"}, want: ModeMono},
@@ -58,7 +61,7 @@ func TestParseModeErrorNamesValueAndChoices(t *testing.T) {
 	if err == nil {
 		t.Fatal("want error")
 	}
-	for _, want := range []string{"K4S_THEME", `"solarized"`, "auto", "dark", "light", "mono"} {
+	for _, want := range []string{"K4S_THEME", `"solarized"`, "auto", "dark", "light", "mono", "high-contrast"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q should mention %s", err, want)
 		}
@@ -85,6 +88,8 @@ func TestInitAppliesTheme(t *testing.T) {
 	}{
 		{name: "dark", env: map[string]string{"K4S_THEME": "dark"}, wantDark: true, wantHint: tokenMuted.Dark},
 		{name: "light", env: map[string]string{"K4S_THEME": "light"}, wantDark: false, wantHint: tokenMuted.Light},
+		// Off a terminal nothing can be asked, so high contrast starts dark.
+		{name: "high contrast", env: map[string]string{"K4S_THEME": "high-contrast"}, wantDark: true, wantHint: highContrastTokens.muted.Dark},
 		{name: "mono via no color", env: map[string]string{"NO_COLOR": "1"}, wantDark: true, wantMono: true},
 	}
 	for _, c := range cases {
