@@ -4,223 +4,99 @@ import (
 	"context"
 	"errors"
 	"io"
-	"sort"
 	"sync"
 	"time"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 )
 
-// Multi-pod log streaming is a two-phase merge:
-//
-//   1. History phase: each pod's tail burst is buffered and then emitted sorted
-//      by timestamp. Without this the user sees all of pod A's history followed
-//      by all of pod B's history because the per-pod goroutines race to the
-//      shared channel.
-//   2. Live phase: once every pod has crossed the historical cutoff, new lines
-//      are forwarded as they arrive.
-//
-// The cutoff is per-stream: a line is historical when its timestamp is earlier
-// than the moment the stream was opened. Streams that produce no history
-// advance to the live phase implicitly after historyIdleTimeout.
+// mergeIncomingBufferCap is how many events per pod the merge loop's
+// inbox holds before a reader waits.
+const mergeIncomingBufferCap = 16
 
-const (
-	historyIdleTimeout     = 1500 * time.Millisecond
-	historyTimeTolerance   = 100 * time.Millisecond
-	mergePerPodBuffer      = 64
-	mergeIncomingBufferCap = 16
-)
-
-// streamer is the subset of *k8s.Client needed by the merge coordinator. It
-// keeps tests free of a real Kubernetes clientset.
+// streamer is the subset of *k8s.Client the streams need. It keeps tests
+// free of a real Kubernetes clientset.
 type streamer interface {
 	StreamLogs(ctx context.Context, namespace, pod string, opts k8s.LogOptions) (io.ReadCloser, error)
 	ContainersForPod(ctx context.Context, namespace, name string) ([]string, error)
 }
 
-// parsedEvent is one item produced by a per-pod reader. It mirrors logEvent but
-// carries the parsed timestamp used for ordering.
-type parsedEvent struct {
-	pod  string
-	text string
-	ts   time.Time
-	kind lineKind
-	live bool // true when the event belongs to the live phase
-}
-
-// runMergedStreams coordinates one reader per pod, merges the historical tail,
-// then forwards live events. It closes events when all readers have finished or
-// the context is cancelled.
-func runMergedStreams(ctx context.Context, client streamer, namespace string, pods []string, tail int64, container string, events chan<- logEvent) {
+// runMergedStreams reads every pod's log with timestamps, one goroutine a
+// pod, and merges them into events (see merger). It closes events when
+// every reader has finished or ctx is cancelled.
+func runMergedStreams(ctx context.Context, src streamer, namespace string, pods []string, tail int64, container string, events chan<- logEvent) {
+	defer close(events)
 	if len(pods) == 0 {
-		close(events)
 		return
 	}
-
-	perPod := make([]chan parsedEvent, len(pods))
 	incoming := make(chan parsedEvent, len(pods)*mergeIncomingBufferCap)
-
-	var streamWg, forwarderWg sync.WaitGroup
-	for i, pod := range pods {
-		perPod[i] = make(chan parsedEvent, mergePerPodBuffer)
-		streamWg.Add(1)
-		go func(p string, out chan<- parsedEvent) {
-			defer streamWg.Done()
-			streamOnePodMerged(ctx, client, namespace, p, tail, container, out)
-			close(out)
-		}(pod, perPod[i])
-
-		forwarderWg.Add(1)
-		go func(p string, in <-chan parsedEvent) {
-			defer forwarderWg.Done()
-			for ev := range in {
-				ev.pod = p
-				select {
-				case incoming <- ev:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}(pod, perPod[i])
+	var readers sync.WaitGroup
+	for _, pod := range pods {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			streamOnePodMerged(ctx, src, namespace, pod, tail, container, incoming)
+		}()
 	}
-
 	go func() {
-		streamWg.Wait()
-		forwarderWg.Wait()
+		readers.Wait()
 		close(incoming)
 	}()
-
-	mergeEvents(ctx, pods, incoming, events)
+	mergeLoop(ctx, incoming, events, newMerger(pods, tail, time.Now()), time.Now)
 }
 
-// mergeEvents reads parsed events from all pods, emits the sorted history, then
-// forwards live events. It also closes the outgoing events channel when done.
-func mergeEvents(ctx context.Context, pods []string, incoming <-chan parsedEvent, events chan<- logEvent) {
-	defer close(events)
-
-	history, postHistory := collectHistory(ctx, pods, incoming)
-	if ctx.Err() != nil {
-		return
-	}
-
-	emitSortedEvents(ctx, events, history, postHistory)
-	if ctx.Err() != nil {
-		return
-	}
-
-	forwardLive(ctx, incoming, events)
-}
-
-// collectHistory buffers the per-pod tail burst until every pod has crossed
-// the historical cutoff. It returns the historical lines and any live/error
-// markers that arrived during the collection window.
-func collectHistory(ctx context.Context, pods []string, incoming <-chan parsedEvent) ([]parsedEvent, []parsedEvent) {
-	historyPending := len(pods)
-	historyDone := make(map[string]bool, len(pods))
-	history := make([]parsedEvent, 0, len(pods)*128)
-	postHistory := make([]parsedEvent, 0, len(pods))
-
-	historyDeadline := time.NewTimer(historyIdleTimeout)
-	defer historyDeadline.Stop()
-
-	for historyPending > 0 {
+// mergeLoop feeds the merger the events as they arrive and the times it
+// asks for, and sends on what it lets go. now is the laptop's clock.
+func mergeLoop(ctx context.Context, incoming <-chan parsedEvent, events chan<- logEvent, g *merger, now func() time.Time) {
+	timer := time.NewTimer(historyCap)
+	defer timer.Stop()
+	for {
+		var due <-chan time.Time
+		if at, ok := g.deadline(); ok {
+			timer.Reset(max(at.Sub(now()), 0))
+			due = timer.C
+		}
+		var out []parsedEvent
 		select {
 		case <-ctx.Done():
-			return history, postHistory
-		case <-historyDeadline.C:
-			historyPending = 0
+			return
 		case ev, ok := <-incoming:
 			if !ok {
-				historyPending = 0
-				break
+				emitParsed(ctx, events, g.drain())
+				return
 			}
-			if !historyDone[ev.pod] && (ev.live || ev.kind != lineLog) {
-				historyDone[ev.pod] = true
-				historyPending--
-			}
-			if ev.kind == lineLog && !ev.live {
-				history = append(history, ev)
-			} else {
-				postHistory = append(postHistory, ev)
-			}
+			out = g.add(ev, now())
+		case <-due:
+			out = g.tick(now())
+		}
+		if !emitParsed(ctx, events, out) {
+			return
 		}
 	}
-	return history, postHistory
 }
 
-// emitSortedEvents flushes the merged history (and any post-history markers)
-// ordered by timestamp. Stable sort keeps per-pod arrival order when multiple
-// lines share the same timestamp, so replica bursts stay readable.
-func emitSortedEvents(ctx context.Context, events chan<- logEvent, history, postHistory []parsedEvent) {
-	sort.SliceStable(history, func(i, j int) bool {
-		if history[i].ts.IsZero() {
-			return true
+// emitParsed sends evs on as the view's events; false once ctx is done.
+func emitParsed(ctx context.Context, events chan<- logEvent, evs []parsedEvent) bool {
+	for _, ev := range evs {
+		var out logEvent
+		switch ev.kind {
+		case lineLog:
+			out = logEvent{Pod: ev.pod, Line: ev.text}
+		case lineStreamErr:
+			out = logEvent{Pod: ev.pod, Err: errors.New(ev.text)}
+		case lineStreamDone:
+			out = logEvent{Pod: ev.pod, Done: true}
 		}
-		if history[j].ts.IsZero() {
+		if !send(ctx, events, out) {
 			return false
 		}
-		return history[i].ts.Before(history[j].ts)
-	})
-	for _, ev := range history {
-		if !sendLogEvent(ctx, events, logEvent{Pod: ev.pod, Line: ev.text}) {
-			return
-		}
 	}
-
-	sort.SliceStable(postHistory, func(i, j int) bool {
-		if postHistory[i].ts.IsZero() {
-			return !postHistory[j].ts.IsZero()
-		}
-		if postHistory[j].ts.IsZero() {
-			return false
-		}
-		return postHistory[i].ts.Before(postHistory[j].ts)
-	})
-	for _, ev := range postHistory {
-		if !sendParsedAsLogEvent(ctx, events, ev) {
-			return
-		}
-	}
+	return true
 }
 
-// forwardLive passes through every subsequent event as it arrives.
-func forwardLive(ctx context.Context, incoming <-chan parsedEvent, events chan<- logEvent) {
-	for ev := range incoming {
-		if ctx.Err() != nil {
-			return
-		}
-		if !sendParsedAsLogEvent(ctx, events, ev) {
-			return
-		}
-	}
-}
-
-func sendParsedAsLogEvent(ctx context.Context, events chan<- logEvent, ev parsedEvent) bool {
-	var out logEvent
-	switch ev.kind {
-	case lineLog:
-		out = logEvent{Pod: ev.pod, Line: ev.text}
-	case lineStreamErr:
-		out = logEvent{Pod: ev.pod, Err: errors.New(ev.text)}
-	case lineStreamDone:
-		out = logEvent{Pod: ev.pod, Done: true}
-	}
-	return sendLogEvent(ctx, events, out)
-}
-
-func sendLogEvent(ctx context.Context, events chan<- logEvent, ev logEvent) bool {
-	select {
-	case <-ctx.Done():
-		return false
-	case events <- ev:
-		return true
-	}
-}
-
-func streamOnePodMerged(ctx context.Context, client streamer, ns, pod string, tail int64, container string, out chan<- parsedEvent) {
-	container = resolveStreamContainer(ctx, client, ns, pod, container)
-	openTime := time.Now()
-	stream, err := client.StreamLogs(ctx, ns, pod, k8s.LogOptions{Container: container, Tail: tail, Timestamps: true})
+func streamOnePodMerged(ctx context.Context, src streamer, ns, pod string, tail int64, container string, out chan<- parsedEvent) {
+	container = resolveStreamContainer(ctx, src, ns, pod, container)
+	stream, err := src.StreamLogs(ctx, ns, pod, k8s.LogOptions{Container: container, Tail: tail, Timestamps: true})
 	if err != nil {
 		sendParsed(ctx, out, parsedEvent{pod: pod, kind: lineStreamErr, text: err.Error()})
 		return
@@ -232,10 +108,7 @@ func streamOnePodMerged(ctx context.Context, client streamer, ns, pod string, ta
 		line, err := lines.next()
 		if line.ok {
 			ts, body := line.withoutTimestamp()
-			// A line without a stamp (rare with Timestamps) is live, so
-			// nothing is held back or lost.
-			live := ts.IsZero() || !ts.Before(openTime.Add(-historyTimeTolerance))
-			if !sendParsed(ctx, out, parsedEvent{pod: pod, text: body.text(), ts: ts, kind: lineLog, live: live}) {
+			if !sendParsed(ctx, out, parsedEvent{pod: pod, text: body.text(), ts: ts, kind: lineLog}) {
 				return
 			}
 		}
@@ -258,11 +131,11 @@ func streamOnePodMerged(ctx context.Context, client streamer, ns, pod string, ta
 // of dying with the API's "container X is not valid for pod Y", fall back to
 // the pod's own first container. On any lookup problem the preferred name is
 // kept and the stream surfaces the real error as before.
-func resolveStreamContainer(ctx context.Context, client streamer, ns, pod, container string) string {
+func resolveStreamContainer(ctx context.Context, src streamer, ns, pod, container string) string {
 	if container == "" {
 		return ""
 	}
-	names, err := client.ContainersForPod(ctx, ns, pod)
+	names, err := src.ContainersForPod(ctx, ns, pod)
 	if err != nil || len(names) == 0 {
 		return container
 	}
