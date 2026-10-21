@@ -1,5 +1,3 @@
-// Package views defines the contract every k4s screen implements and the
-// cross-view messages screens use to talk to the root model.
 package views
 
 import (

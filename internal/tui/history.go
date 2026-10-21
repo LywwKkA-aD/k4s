@@ -3,6 +3,8 @@ package tui
 import (
 	"slices"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/contexts"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
@@ -14,15 +16,17 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/top"
 )
 
-// historyEntry captures the navigation snapshot we restore on Esc.
-//
-// Note: only "rebuildable" views (dashboard / pods / namespaces) end up here.
-// Leaf views like describe push their parent on entry but never end up in
-// history themselves, so popHistory always lands on something we can rebuild
-// from {view, namespace}.
+// maxHistory caps the Esc trail; the oldest entry goes first.
+const maxHistory = 50
+
+// historyEntry is a view Esc can return to: which one, in which namespace
+// and, for a views.Stateful view, how it looked. Only rebuildable views
+// (the lists, the dashboard, contexts, forwards) end up here: describe and
+// logs push their parent on entry but are never entries themselves.
 type historyEntry struct {
 	view      string
 	namespace string
+	state     views.State
 }
 
 // switchTo records the current view in history then constructs the named view.
@@ -33,23 +37,43 @@ func (m Model) switchTo(name string) Model {
 	return m.replaceView(name)
 }
 
-// pushHistory saves the current rebuildable view so Esc can return to it.
-// Leaf views (describe, logs) have dynamic titles and cannot be rebuilt from
-// a title alone, so they are skipped.
+// pushHistory saves the current rebuildable view, with its State, so Esc
+// can return to it. Leaf views (describe, logs) have dynamic titles and
+// cannot be rebuilt from a title alone, so they are skipped.
 func (m Model) pushHistory() Model {
-	if m.current == nil {
+	if m.current == nil || !isRebuildableView(m.current.Title()) {
 		return m
 	}
-	title := m.current.Title()
-	if isRebuildableView(title) {
-		// Clip first: an earlier copy of the model may share this backing
-		// array, and a push must not write into its spare capacity.
-		m.history = append(slices.Clip(m.history), historyEntry{
-			view:      title,
-			namespace: m.namespace,
-		})
-	}
+	m.history = pushEntry(m.history, historyEntry{
+		view:      m.current.Title(),
+		namespace: m.namespace,
+		state:     stateOf(m.current),
+	})
 	return m
+}
+
+// pushEntry returns h with e on top in a new backing array, so no other
+// copy of the model sees the change. The same view and namespace as the
+// top entry replaces it, with the newer state; past maxHistory the oldest
+// entries go.
+func pushEntry(h []historyEntry, e historyEntry) []historyEntry {
+	if n := len(h); n > 0 && h[n-1].view == e.view && h[n-1].namespace == e.namespace {
+		out := slices.Clone(h)
+		out[n-1] = e
+		return out
+	}
+	keep := h[max(len(h)+1-maxHistory, 0):]
+	out := make([]historyEntry, 0, len(keep)+1)
+	out = append(out, keep...)
+	return append(out, e)
+}
+
+// stateOf is v's State, the zero State for a view that keeps none.
+func stateOf(v views.View) views.State {
+	if s, ok := v.(views.Stateful); ok {
+		return s.State()
+	}
+	return views.State{}
 }
 
 func isRebuildableView(title string) bool {
@@ -62,25 +86,49 @@ func isRebuildableView(title string) bool {
 
 // replaceView builds the named view without touching history.
 func (m Model) replaceView(name string) Model {
-	switch name {
-	case viewPods:
-		return m.swap(pods.New(m.client, m.namespace))
-	case viewNamespaces:
-		return m.swap(namespaces.New(m.client))
-	case viewDeployments:
-		return m.swap(deployments.New(m.client, m.namespace))
-	case viewServices:
-		return m.swap(services.New(m.client, m.namespace))
-	case viewDashboard:
-		return m.swap(dashboard.New(m.client, m.loadErr))
-	case viewContexts:
-		return m.swap(contexts.New(currentContextName(m.client), m.kubeconfigSource()))
-	case viewTop:
-		return m.swap(top.New(m.client, m.namespace))
-	case viewForwards:
-		return m.swap(forwardsview.New(m.forwardMgr))
+	if m.build != nil {
+		return m.swap(m.build(m, name))
+	}
+	if v := m.newView(name); v != nil {
+		return m.swap(v)
 	}
 	return m
+}
+
+// newView builds the named view in the current namespace; nil for a name
+// that is not a rebuildable view.
+func (m Model) newView(name string) views.View {
+	switch name {
+	case viewPods:
+		return pods.New(m.client, m.namespace)
+	case viewNamespaces:
+		return namespaces.New(m.client)
+	case viewDeployments:
+		return deployments.New(m.client, m.namespace)
+	case viewServices:
+		return services.New(m.client, m.namespace)
+	case viewDashboard:
+		return dashboard.New(m.client, m.loadErr)
+	case viewContexts:
+		return contexts.New(currentContextName(m.client), m.kubeconfigSource())
+	case viewTop:
+		return top.New(m.client, m.namespace)
+	case viewForwards:
+		return forwardsview.New(m.forwardMgr)
+	}
+	return nil
+}
+
+// restore hands st back to a freshly built view (see views.Restorer). The
+// zero State is a fresh view and is not handed over.
+func (m Model) restore(st views.State) (Model, tea.Cmd) {
+	r, ok := m.current.(views.Restorer)
+	if !ok || st == (views.State{}) {
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.current, cmd = r.Restore(st)
+	return m, cmd
 }
 
 // swap closes the outgoing view (so its goroutines / streams are stopped)
@@ -99,15 +147,34 @@ func (m Model) goHome() Model {
 	return m.replaceView(viewDashboard)
 }
 
-// popHistory restores the previous view + namespace; returns false if empty.
-// The shortened stack is clipped so the next push allocates instead of
-// overwriting the popped slot, which an earlier copy of the model still holds.
-func (m Model) popHistory() (Model, bool) {
+// back is Esc outside overlays and prompts: the view uses it first (a
+// views.BackHandler clears its committed filter), else the previous view
+// comes back as it was left.
+func (m Model) back() (Model, tea.Cmd) {
+	if b, ok := m.current.(views.BackHandler); ok {
+		if next, cmd, used := b.Back(); used {
+			m.current = next
+			return m, cmd
+		}
+	}
+	next, cmd, ok := m.popHistory()
+	if !ok {
+		return m, nil
+	}
+	return next, tea.Batch(cmd, next.relayoutCmd())
+}
+
+// popHistory restores the previous view, namespace and state; ok is false
+// when there is none. The shortened stack is clipped so that nothing can
+// append into the popped slot, which an earlier copy of the model holds.
+func (m Model) popHistory() (Model, tea.Cmd, bool) {
 	if len(m.history) == 0 {
-		return m, false
+		return m, nil, false
 	}
 	last := m.history[len(m.history)-1]
 	m.history = slices.Clip(m.history[:len(m.history)-1])
 	m.namespace = last.namespace
-	return m.replaceView(last.view), true
+	m = m.replaceView(last.view)
+	m, cmd := m.restore(last.state)
+	return m, cmd, true
 }

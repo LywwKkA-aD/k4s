@@ -99,7 +99,7 @@ func TestNavigationHistoryAndGoHome(t *testing.T) {
 	}
 
 	// First Esc: namespaces with ns="" (the pre-selection state).
-	popped, ok := m.popHistory()
+	popped, _, ok := m.popHistory()
 	if !ok {
 		t.Fatal("popHistory returned false on non-empty stack")
 	}
@@ -109,7 +109,7 @@ func TestNavigationHistoryAndGoHome(t *testing.T) {
 	}
 
 	// Second Esc: dashboard.
-	popped, ok = popped.popHistory()
+	popped, _, ok = popped.popHistory()
 	if !ok {
 		t.Fatal("popHistory returned false on non-empty stack")
 	}
@@ -118,7 +118,7 @@ func TestNavigationHistoryAndGoHome(t *testing.T) {
 	}
 
 	// Third Esc on empty history: no-op.
-	if _, ok := popped.popHistory(); ok {
+	if _, _, ok := popped.popHistory(); ok {
 		t.Fatal("popHistory returned true on empty stack")
 	}
 }
