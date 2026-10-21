@@ -46,9 +46,9 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 // list fetches the nodes under the poller's Token. A poll passes
 // k8s.FromCache; a refresh the user asked for reads through.
 func (m Model) list(opts ...k8s.ListOption) tea.Cmd {
-	c := m.client
+	c, now := m.client, m.now
 	return async.Run(m.poll.Token(), m.poll.Timeout(), func(ctx context.Context) ([]k8s.Node, error) {
-		return c.ListNodes(ctx, opts...)
+		return c.ListNodes(ctx, now(), opts...)
 	})
 }
 

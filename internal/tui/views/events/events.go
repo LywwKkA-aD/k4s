@@ -73,6 +73,8 @@ type Model struct {
 	// context's namespace.
 	fellBack bool
 	clock    async.Clock
+	// now is the time LAST SEEN counts back from.
+	now func() time.Time
 
 	table table.Model
 	width int
@@ -115,6 +117,15 @@ func WithClock(c async.Clock) Option {
 	}
 }
 
+// WithNow measures LAST SEEN from now instead of the wall clock, so tests
+// pin the ages they show.
+func WithNow(now func() time.Time) Option {
+	return func(m Model) Model {
+		m.now = now
+		return m
+	}
+}
+
 // New constructs an events view. With a client the first load is under
 // way, and Init sends it.
 func New(client *k8s.Client, namespace string, opts ...Option) Model {
@@ -122,6 +133,7 @@ func New(client *k8s.Client, namespace string, opts ...Option) Model {
 		client:    client,
 		namespace: namespace,
 		clock:     async.RealClock{},
+		now:       time.Now,
 		filter:    filter.New(),
 		tok:       async.New(),
 	}

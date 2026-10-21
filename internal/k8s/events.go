@@ -63,13 +63,14 @@ type EventList struct {
 }
 
 // ListEvents lists the events in namespace, or in all namespaces when
-// namespace is "", newest first: `kubectl events` prints the same events
-// oldest first. It reads in pages of eventsPage, up to maxEventsRead, and
-// keeps the newest MaxEvents, as it keeps them of a whole answer from the
-// watch cache: a poll and a refresh show the same events. opts apply to
-// the first page; a continued page takes its resource version from the
-// continue token, as the API requires.
-func (c *Client) ListEvents(ctx context.Context, namespace string, opts ...ListOption) (EventList, error) {
+// namespace is "", newest first, with LAST SEEN counted back from now:
+// `kubectl events` prints the same events oldest first. It reads in pages
+// of eventsPage, up to maxEventsRead, and keeps the newest MaxEvents, as
+// it keeps them of a whole answer from the watch cache: a poll and a
+// refresh show the same events. opts apply to the first page; a continued
+// page takes its resource version from the continue token, as the API
+// requires.
+func (c *Client) ListEvents(ctx context.Context, namespace string, now time.Time, opts ...ListOption) (EventList, error) {
 	o := listOptions(opts)
 	o.Limit = eventsPage
 	var raw []corev1.Event
@@ -80,7 +81,7 @@ func (c *Client) ListEvents(ctx context.Context, namespace string, opts ...ListO
 		}
 		raw = append(raw, list.Items...)
 		if list.Continue == "" || len(raw) >= maxEventsRead {
-			return newestEvents(raw, list.Continue != "", time.Now()), nil
+			return newestEvents(raw, list.Continue != "", now), nil
 		}
 		o = metav1.ListOptions{Limit: eventsPage, Continue: list.Continue}
 	}

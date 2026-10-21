@@ -49,6 +49,8 @@ type item struct {
 type Model struct {
 	client *k8s.Client
 	clock  async.Clock
+	// now is the time AGE counts back from.
+	now func() time.Time
 
 	table table.Model
 	items []item
@@ -79,12 +81,22 @@ func WithClock(c async.Clock) Option {
 	}
 }
 
+// WithNow measures AGE from now instead of the wall clock, so tests pin
+// the ages they show.
+func WithNow(now func() time.Time) Option {
+	return func(m Model) Model {
+		m.now = now
+		return m
+	}
+}
+
 // New constructs a nodes view. With a client the first load is under
 // way, and Init sends it.
 func New(client *k8s.Client, opts ...Option) Model {
 	m := Model{
 		client: client,
 		clock:  async.RealClock{},
+		now:    time.Now,
 		table:  newTable(),
 		filter: filter.New(),
 	}

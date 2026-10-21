@@ -13,11 +13,15 @@ import (
 	ktesting "k8s.io/client-go/testing"
 )
 
+// nodesNow is the clock of these tests, the one a node's age counts back
+// from.
+var nodesNow = podNow
+
 // fakeNode is a node with the given labels, Ready condition (nil for
-// none), kubelet version and taints, created two days ago.
+// none), kubelet version and taints, created 49 hours before nodesNow.
 func fakeNode(name string, labels map[string]string, ready *corev1.ConditionStatus, version string, taints int) *corev1.Node {
 	n := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, CreationTimestamp: metav1.NewTime(time.Now().Add(-49 * time.Hour))},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, CreationTimestamp: metav1.NewTime(nodesNow.Add(-49 * time.Hour))},
 		Status: corev1.NodeStatus{
 			NodeInfo: corev1.NodeSystemInfo{KubeletVersion: version, OperatingSystem: "linux", Architecture: "arm64"},
 			Addresses: []corev1.NodeAddress{
@@ -94,7 +98,7 @@ func TestListNodesAsKubectlGetNodesWide(t *testing.T) {
 		objs = append(objs, tc.node)
 	}
 	c := &Client{Clientset: fake.NewSimpleClientset(objs...), Context: "test"}
-	got, err := c.ListNodes(context.Background())
+	got, err := c.ListNodes(context.Background(), nodesNow)
 	if err != nil {
 		t.Fatalf("ListNodes: %v", err)
 	}
@@ -102,13 +106,10 @@ func TestListNodesAsKubectlGetNodesWide(t *testing.T) {
 		t.Fatalf("got %d nodes, want %d", len(got), len(cases))
 	}
 	for i, tc := range cases {
-		g := got[i]
-		if g.Age < 48*time.Hour || g.Age > 50*time.Hour {
-			t.Errorf("%s: Age = %v", tc.want.Name, g.Age)
-		}
-		g.Age = 0
-		if g != tc.want {
-			t.Errorf("node %d =\n%+v\nwant\n%+v", i, g, tc.want)
+		want := tc.want
+		want.Age = 49 * time.Hour
+		if got[i] != want {
+			t.Errorf("node %d =\n%+v\nwant\n%+v", i, got[i], want)
 		}
 	}
 }
@@ -125,7 +126,7 @@ func TestListNodesPassesTheListOptionsAndWrapsErrors(t *testing.T) {
 		return true, nil, errors.New("boom")
 	})
 	c := &Client{Clientset: cs, Context: "test"}
-	_, err := c.ListNodes(context.Background(), FromCache())
+	_, err := c.ListNodes(context.Background(), nodesNow, FromCache())
 	if err == nil || err.Error() != "list nodes: boom" {
 		t.Errorf("err = %v, want list nodes: boom", err)
 	}

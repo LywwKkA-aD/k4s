@@ -96,7 +96,7 @@ func TestListEventsNewestFirst(t *testing.T) {
 		ptrTo(event("a-tie", "Normal", "Started", 1, ago(time.Minute), ago(time.Minute))),
 	}
 	c := &Client{Clientset: fake.NewSimpleClientset(objs...), Context: "test"}
-	got, err := c.ListEvents(context.Background(), "demo")
+	got, err := c.ListEvents(context.Background(), "demo", eventsNow)
 	if err != nil {
 		t.Fatalf("ListEvents: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestListEventsReadsInPagesAndStops(t *testing.T) {
 			cs := fake.NewSimpleClientset()
 			cs.PrependReactor("list", "events", pages.react)
 			c := &Client{Clientset: cs, Context: "test"}
-			got, err := c.ListEvents(context.Background(), "demo", tc.opts...)
+			got, err := c.ListEvents(context.Background(), "demo", eventsNow, tc.opts...)
 			if err != nil {
 				t.Fatalf("ListEvents: %v", err)
 			}
@@ -241,7 +241,7 @@ func TestListEventsPollAndRefreshAgree(t *testing.T) {
 		cs := fake.NewSimpleClientset()
 		cs.PrependReactor("list", "events", (&pagedEvents{total: total, item: newestLast, whole: true}).react)
 		c := &Client{Clientset: cs, Context: "test"}
-		got, err := c.ListEvents(context.Background(), "", opts...)
+		got, err := c.ListEvents(context.Background(), "", eventsNow, opts...)
 		if err != nil {
 			t.Fatalf("ListEvents: %v", err)
 		}
@@ -278,7 +278,7 @@ func TestListEventsKeepsTheNewestWhenTheServerIgnoresTheLimit(t *testing.T) {
 		return true, list, nil
 	})
 	c := &Client{Clientset: cs, Context: "test"}
-	got, err := c.ListEvents(context.Background(), "", FromCache())
+	got, err := c.ListEvents(context.Background(), "", eventsNow, FromCache())
 	if err != nil {
 		t.Fatalf("ListEvents: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestListEventsWrapsTheError(t *testing.T) {
 		return true, nil, fmt.Errorf("boom")
 	})
 	c := &Client{Clientset: cs, Context: "test"}
-	if _, err := c.ListEvents(context.Background(), "demo"); err == nil || err.Error() != "list events: boom" {
+	if _, err := c.ListEvents(context.Background(), "demo", eventsNow); err == nil || err.Error() != "list events: boom" {
 		t.Errorf("err = %v, want list events: boom", err)
 	}
 }

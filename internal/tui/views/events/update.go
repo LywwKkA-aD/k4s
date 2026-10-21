@@ -50,9 +50,9 @@ func (m Model) resized(msg tea.WindowSizeMsg) Model {
 // list fetches the events under the poller's current Token. A poll
 // passes k8s.FromCache; a refresh the user asked for reads through.
 func (m Model) list(opts ...k8s.ListOption) tea.Cmd {
-	c, ns := m.client, m.namespace
+	c, ns, now := m.client, m.namespace, m.now
 	return async.Run(m.poll.Token(), m.poll.Timeout(), func(ctx context.Context) (k8s.EventList, error) {
-		return c.ListEvents(ctx, ns, opts...)
+		return c.ListEvents(ctx, ns, now(), opts...)
 	})
 }
 

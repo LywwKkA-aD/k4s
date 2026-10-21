@@ -34,14 +34,13 @@ type Node struct {
 	Taints     int
 }
 
-// ListNodes lists the cluster's nodes, a consistent read unless opts say
-// otherwise.
-func (c *Client) ListNodes(ctx context.Context, opts ...ListOption) ([]Node, error) {
+// ListNodes lists the cluster's nodes with their age at now, a consistent
+// read unless opts say otherwise.
+func (c *Client) ListNodes(ctx context.Context, now time.Time, opts ...ListOption) ([]Node, error) {
 	list, err := c.Clientset.CoreV1().Nodes().List(ctx, listOptions(opts))
 	if err != nil {
 		return nil, &CallError{Verb: "list", Resource: "nodes", ClusterScoped: true, Err: err}
 	}
-	now := time.Now()
 	out := make([]Node, 0, len(list.Items))
 	for i := range list.Items {
 		n := &list.Items[i]

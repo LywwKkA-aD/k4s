@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -91,10 +92,10 @@ func TestEventAndNodeListsNameTheirScope(t *testing.T) {
 
 	c, cs := k8stest.NewFakeClient()
 	k8stest.RestrictToNamespace(cs, "demo")
-	ctx := context.Background()
-	_, evErr := c.ListEvents(ctx, "")
-	_, otherErr := c.ListEvents(ctx, "other")
-	_, nodeErr := c.ListNodes(ctx)
+	ctx, now := context.Background(), time.Now()
+	_, evErr := c.ListEvents(ctx, "", now)
+	_, otherErr := c.ListEvents(ctx, "other", now)
+	_, nodeErr := c.ListNodes(ctx, now)
 
 	cases := []struct {
 		name string

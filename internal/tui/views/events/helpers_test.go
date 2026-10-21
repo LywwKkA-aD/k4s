@@ -43,16 +43,15 @@ func pod(ns, name string) corev1.ObjectReference {
 	return corev1.ObjectReference{APIVersion: "v1", Kind: "Pod", Namespace: ns, Name: name}
 }
 
-// ev is an event in ns about obj, first seen first ago and last seen last
-// ago. Ages from 10m up keep LAST SEEN steady for the length of a test.
+// ev is an event in ns about obj, first seen first and last seen last
+// before the epoch, the time the views of these tests measure from.
 func ev(ns, name, typ, reason, msg string, obj corev1.ObjectReference, count int32, first, last time.Duration) *corev1.Event {
-	now := time.Now()
 	return &corev1.Event{
 		ObjectMeta:     metav1.ObjectMeta{Namespace: ns, Name: name},
 		InvolvedObject: obj,
 		Type:           typ, Reason: reason, Message: msg, Count: count,
-		FirstTimestamp: metav1.NewTime(now.Add(-first)),
-		LastTimestamp:  metav1.NewTime(now.Add(-last)),
+		FirstTimestamp: metav1.NewTime(epoch.Add(-first)),
+		LastTimestamp:  metav1.NewTime(epoch.Add(-last)),
 	}
 }
 
@@ -76,10 +75,11 @@ func client(t *testing.T, opts ...tuitest.FakeOption) *k8s.Client {
 	return tuitest.NewFakeClient(t, append([]tuitest.FakeOption{tuitest.WithObjects(fixture()...)}, opts...)...)
 }
 
-// clocked builds a view on a manual clock, so no test waits on a tick.
+// clocked builds a view on a manual clock, so no test waits on a tick and
+// LAST SEEN counts back from the clock's time.
 func clocked(c *k8s.Client, namespace string) (events.Model, *asynctest.Clock) {
 	clk := asynctest.NewClock(epoch)
-	return events.New(c, namespace, events.WithClock(clk)), clk
+	return events.New(c, namespace, events.WithClock(clk), events.WithNow(clk.Now)), clk
 }
 
 // mounted is a sized, loaded view on a manual clock, and what loading it

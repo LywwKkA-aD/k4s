@@ -37,10 +37,11 @@ const (
 	nodeOld    = "pi-agent-2"
 )
 
-// node is a ready linux node created two days ago.
+// node is a ready linux node created 49 hours before the epoch, the time
+// the views of these tests measure from.
 func node(name, ip, version, arch string, labels map[string]string, taints int) *corev1.Node {
 	n := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, CreationTimestamp: metav1.NewTime(time.Now().Add(-49 * time.Hour))},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, CreationTimestamp: metav1.NewTime(epoch.Add(-49 * time.Hour))},
 		Status: corev1.NodeStatus{
 			Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}},
 			NodeInfo:   corev1.NodeSystemInfo{KubeletVersion: version, OperatingSystem: "linux", Architecture: arch},
@@ -72,10 +73,11 @@ func client(t *testing.T, opts ...tuitest.FakeOption) *k8s.Client {
 	return tuitest.NewFakeClient(t, append([]tuitest.FakeOption{tuitest.WithObjects(fixture()...)}, opts...)...)
 }
 
-// clocked builds a view on a manual clock, so no test waits on a tick.
+// clocked builds a view on a manual clock, so no test waits on a tick and
+// AGE counts back from the clock's time.
 func clocked(c *k8s.Client) (nodes.Model, *asynctest.Clock) {
 	clk := asynctest.NewClock(epoch)
-	return nodes.New(c, nodes.WithClock(clk)), clk
+	return nodes.New(c, nodes.WithClock(clk), nodes.WithNow(clk.Now)), clk
 }
 
 // mounted is a sized, loaded view on a manual clock, and what loading it
