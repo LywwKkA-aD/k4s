@@ -1,0 +1,18 @@
+›◆ ns shop (cluster-wide list forbidden)  ● 41 pods ok  +2         ◆ 14:02:00 ⣽ 
+ ▸ next  kubectl auth can-i --list -n shop                                      
+   1 cluster    ● api ready · — ns forbidden · 4/4 pvc Bound (ns shop)          
+   2 nodes      — nodes forbidden                                               
+╭─┤ 3 pods ├──────────────────────────────────────────────────── 41 · ns shop ─╮
+│ ██████████████████████████████████████████████████████████████████████  █41  │
+│ ● nothing needs attention                                                    │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   4 workloads  ● 9/9 ready                                                     
+   5 events     ● no warnings in the last hour                                  

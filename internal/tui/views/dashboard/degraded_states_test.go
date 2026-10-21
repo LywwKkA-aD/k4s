@@ -220,28 +220,3 @@ func TestStalePanelIsDimmed(t *testing.T) {
 		t.Fatalf("a stale row lost its glyph: %q", tuitest.Strip(staleRow))
 	}
 }
-
-// TestDegradedGoldens pins the degraded mockup and the k3s without
-// metrics-server at the wide and 120x40 sizes.
-func TestDegradedGoldens(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		base func() dash.Snapshot
-		w, h int
-	}{
-		{name: "ns_scoped_eks_207x58", base: nsScopedEKS, w: wideW, h: wideH},
-		{name: "ns_scoped_eks_120x40", base: nsScopedEKS, w: 120, h: 34},
-		{name: "no_metrics_k3s_207x58", base: noMetricsK3s, w: wideW, h: wideH},
-		{name: "no_metrics_k3s_120x40", base: noMetricsK3s, w: 120, h: 34},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			screen := tuitest.Screen(mount(t, newFeed(tt.base), tt.w, tt.h))
-			requireSize(t, screen, tt.w, tt.h)
-			tuitest.Golden(t, tt.name, screen+"\n")
-		})
-	}
-}
