@@ -79,6 +79,9 @@ type Model struct {
 	pods      []string
 	tail      int64
 	container string // "" = kubectl picks default; named container otherwise
+	// target is the deployment or service the pods were resolved from,
+	// zero for a single pod; Command shows its selector.
+	target k8s.LogTarget
 
 	viewport viewport.Model
 	rawLines []logLine
@@ -142,11 +145,20 @@ type logEventsBatch struct {
 
 type streamsClosedMsg struct{}
 
+// Option changes how New builds the view.
+type Option func(*Model)
+
+// WithTarget names the deployment or service the pods were resolved from,
+// so the footer shows the selector command the stream stands for.
+func WithTarget(t k8s.LogTarget) Option {
+	return func(m *Model) { m.target = t }
+}
+
 // New constructs a logs view and *immediately* starts the streaming
 // goroutines. They are torn down on Close(). The shared events channel is
 // closed once every pod's goroutine returns, which signals streamsClosedMsg
 // to the bubbletea loop and prevents leaked Cmd reads.
-func New(client *k8s.Client, namespace string, pods []string, tail int64, container string) Model {
+func New(client *k8s.Client, namespace string, pods []string, tail int64, container string, opts ...Option) Model {
 	if tail <= 0 {
 		tail = defaultTailLines
 	}
@@ -182,7 +194,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 	si.SetWidth(40)
 	si.SetStyles(styles.TextInput())
 
-	return Model{
+	m := Model{
 		client:      client,
 		namespace:   namespace,
 		pods:        pods,
@@ -235,6 +247,10 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 			key.WithHelp("↑↓/pgup/pgdn", "scroll"),
 		),
 	}
+	for _, opt := range opts {
+		opt(&m)
+	}
+	return m
 }
 
 // newViewport returns the log viewport. Panning belongs to the view's own
@@ -311,7 +327,7 @@ func (m Model) Title() string {
 
 // Command implements views.View.
 func (m Model) Command() kubectl.Cmd {
-	return views.LogsCommand(m.namespace, m.pods, m.container, m.tail, k8s.LogTarget{})
+	return views.LogsCommand(m.namespace, m.pods, m.container, m.tail, m.target)
 }
 
 // Help implements views.View. The 't' binding is only advertised when there

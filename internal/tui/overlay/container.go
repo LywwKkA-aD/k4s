@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -73,4 +74,32 @@ func (c container) View(width int) string {
 	}
 	lines = append(lines, "", styles.Hint.Render("↑↓/jk navigate · 1-9 quick · Enter pick · Esc cancel"))
 	return rows(width, lines...)
+}
+
+// execShell is the command exec runs in the container; the root runs the
+// same argv.
+const execShell = "sh"
+
+// Command is what picking the highlighted container leads to: the logs at
+// the tail prompt's default count, or the shell in the first pod.
+func (c container) Command() kubectl.Cmd {
+	r := c.req
+	if len(r.Containers) == 0 {
+		return kubectl.Cmd{}
+	}
+	name := r.Containers[c.cursor]
+	switch r.NextKind {
+	case "logs":
+		return views.LogsCommand(r.Namespace, r.Pods, name, defaultTail, r.Logs)
+	case "exec":
+		if len(r.Pods) == 0 {
+			return kubectl.Cmd{}
+		}
+		cmd, err := kubectl.Exec(r.Namespace, r.Pods[0], name, execShell)
+		if err != nil {
+			return kubectl.Cmd{}
+		}
+		return cmd
+	}
+	return kubectl.Cmd{}
 }

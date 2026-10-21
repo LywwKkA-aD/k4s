@@ -67,7 +67,7 @@ func TestTailPromptNamesTheRequestTarget(t *testing.T) {
 	requireScreen(t, m, "tail lines · deployment/web · ns demo", "❯ 100")
 
 	_, out := tuitest.Drive(t, m, tuitest.Enter())
-	want := views.LogsRequestMsg{Namespace: tuitest.NamespaceDemo, Pods: []string{tuitest.PodWeb1, tuitest.PodWeb2}, Tail: 100}
+	want := views.LogsRequestMsg{Namespace: tuitest.NamespaceDemo, Pods: []string{tuitest.PodWeb1, tuitest.PodWeb2}, Tail: 100, Target: target}
 	if !tuitest.Contains(out, want) {
 		t.Fatalf("want %+v, got:\n%s", want, tuitest.Describe(out))
 	}

@@ -24,7 +24,10 @@ func dispatchContainerCmd(req views.ContainerPromptRequestMsg, container string)
 	switch req.NextKind {
 	case "logs":
 		return func() tea.Msg {
-			return views.TailPromptRequestMsg{Namespace: req.Namespace, Pods: req.Pods, Container: container, Target: req.Target}
+			return views.TailPromptRequestMsg{
+				Namespace: req.Namespace, Pods: req.Pods, Container: container,
+				Target: req.Target, Logs: req.Logs,
+			}
 		}
 	case "exec":
 		if len(req.Pods) == 0 {

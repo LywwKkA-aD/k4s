@@ -16,4 +16,4 @@
 
 ──────────────────────────────────────────────────────────
  q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? hel…
- kubectl get all -A
+ kubectl exec -it -n demo -c sidecar multi-0 -- sh

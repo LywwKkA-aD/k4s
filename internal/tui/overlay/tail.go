@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -44,18 +45,33 @@ func (t tail) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	return t, cmd
 }
 
-// View names the target in the title, then the input and its keys.
+// View names the target in the title, then the input and its keys. A
+// request made for a row the cursor has since left says so under the
+// title, so the user can still back out with Esc.
 func (t tail) View(width int) string {
 	title := styles.PopupTitle.Render("tail lines") +
 		styles.Hint.Render(" · "+targetLabel(t.req.Target, t.req.Namespace, t.req.Pods))
-	return rows(width,
-		title,
+	lines := []string{title}
+	if t.req.Detached {
+		lines = append(lines, styles.Warn.Render("(not the selected row)"))
+	}
+	lines = append(lines,
 		"",
 		inputView(t.input, width),
 		"",
 		styles.Hint.Render("Enter run · Esc cancel · default 100"),
 	)
+	return rows(width, lines...)
 }
+
+// Command is the logs command Enter would open at the count typed so far.
+func (t tail) Command() kubectl.Cmd {
+	r := t.req
+	return views.LogsCommand(r.Namespace, r.Pods, r.Container, parseTail(t.input.Value()), r.Logs)
+}
+
+// TakesText reports the count input: y is text there.
+func (tail) TakesText() bool { return true }
 
 // parseTail reads a positive line count; a casual prompt never surfaces a
 // hard error, so anything else is the default.

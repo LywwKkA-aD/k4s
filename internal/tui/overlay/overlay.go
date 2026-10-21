@@ -8,6 +8,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 )
 
 // Overlay is a popup or prompt over the active view.
@@ -64,4 +66,36 @@ const Grace = 400 * time.Millisecond
 // send is a Cmd that delivers msg.
 func send(msg tea.Msg) tea.Cmd {
 	return func() tea.Msg { return msg }
+}
+
+// Commander is implemented by overlays that preview a kubectl command: the
+// tail prompt shows the logs it would open, the container picker the logs
+// or exec its pick leads to. The root shows it in the footer in place of
+// the view's command, and y copies it. Like a view's, it carries neither
+// --context nor --kubeconfig; the root adds them.
+type Commander interface {
+	Command() kubectl.Cmd
+}
+
+// CommandOf returns o's command; ok is false when o has none, and the
+// root then shows the view's.
+func CommandOf(o Overlay) (cmd kubectl.Cmd, ok bool) {
+	c, ok := o.(Commander)
+	if !ok {
+		return kubectl.Cmd{}, false
+	}
+	return c.Command(), true
+}
+
+// Typer is implemented by overlays with a text input. While one is open
+// every printable key is text, y included; any other overlay leaves y to
+// the root, which copies the command instead.
+type Typer interface {
+	TakesText() bool
+}
+
+// TakesText reports whether o has a text input.
+func TakesText(o Overlay) bool {
+	t, ok := o.(Typer)
+	return ok && t.TakesText()
 }
