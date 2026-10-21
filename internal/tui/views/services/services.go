@@ -147,7 +147,7 @@ func (m Model) Init() tea.Cmd {
 	if !m.poll.Busy() {
 		return nil
 	}
-	return m.list(pollRead)
+	return m.list(k8s.FromCache())
 }
 
 // Title implements views.View. Stable routing name.

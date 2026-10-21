@@ -21,14 +21,6 @@ const (
 	allNamespacesTimeout = 15 * time.Second
 )
 
-// ResourceVersions a list asks for (M4.4): the first load and each tick
-// may be answered from the apiserver's watch cache; r is the user asking
-// for what is there now, so it reads consistently.
-const (
-	rvCache      = "0"
-	rvConsistent = ""
-)
-
 func listTimeout(namespace string) time.Duration {
 	if namespace == "" {
 		return allNamespacesTimeout
@@ -36,11 +28,13 @@ func listTimeout(namespace string) time.Duration {
 	return namespaceTimeout
 }
 
-// list fetches the pods under the poller's Token.
-func (m Model) list(rv string) tea.Cmd {
+// list fetches the pods under the poller's Token. The first load and each
+// tick pass k8s.FromCache; r is the user asking for what is there now, so
+// it reads consistently.
+func (m Model) list(opts ...k8s.ListOption) tea.Cmd {
 	c, ns := m.client, m.namespace
 	return async.Run(m.poll.Token(), m.poll.Timeout(), func(ctx context.Context) ([]k8s.Pod, error) {
-		return c.ListPods(ctx, ns, k8s.PodsResourceVersion(rv))
+		return c.ListPods(ctx, ns, opts...)
 	})
 }
 
@@ -50,7 +44,7 @@ func (m Model) onTick(msg async.TickMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.poll = poll
-	return m, m.list(rvCache)
+	return m, m.list(k8s.FromCache())
 }
 
 // refresh is r: a consistent read now, unless a list is already in flight.
@@ -63,7 +57,7 @@ func (m Model) refresh() (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.poll = poll
-	return m, m.list(rvConsistent)
+	return m, m.list()
 }
 
 // onList folds a list reply in. Done arms the next tick, and the Cmd it

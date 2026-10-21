@@ -153,7 +153,7 @@ func (m Model) Init() tea.Cmd {
 	if !m.poll.Busy() {
 		return nil
 	}
-	return m.list(watchCacheRV)
+	return m.list(k8s.FromCache())
 }
 
 // Update routes size, refresh, replies and keys, and forwards navigation

@@ -46,7 +46,7 @@ func (m Model) refresh() (Model, tea.Cmd) {
 	if m.poll, ok = m.poll.Begin(); !ok {
 		return m, nil
 	}
-	return m, m.list(consistentRV)
+	return m, m.list()
 }
 
 func (m Model) describe() tea.Cmd {

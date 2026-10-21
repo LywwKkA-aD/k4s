@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Deployment is the presentation-friendly snapshot of an apps/v1 Deployment.
@@ -20,17 +18,10 @@ type Deployment struct {
 }
 
 // ListDeployments returns deployments in the given namespace, or in all
-// namespaces when namespace == "". It is a consistent read.
-func (c *Client) ListDeployments(ctx context.Context, namespace string) ([]Deployment, error) {
-	return c.ListDeploymentsAt(ctx, namespace, "")
-}
-
-// ListDeploymentsAt is ListDeployments at resourceVersion: "0" lets the
-// apiserver answer from its watch cache, which is what a poll wants (on
-// k3s it spares kine a query); "" is a consistent read, for an explicit
-// refresh.
-func (c *Client) ListDeploymentsAt(ctx context.Context, namespace, resourceVersion string) ([]Deployment, error) {
-	list, err := c.Clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{ResourceVersion: resourceVersion})
+// namespaces when namespace == "", a consistent read unless opts say
+// otherwise.
+func (c *Client) ListDeployments(ctx context.Context, namespace string, opts ...ListOption) ([]Deployment, error) {
+	list, err := c.Clientset.AppsV1().Deployments(namespace).List(ctx, listOptions(opts))
 	if err != nil {
 		return nil, fmt.Errorf("list deployments: %w", err)
 	}
@@ -53,36 +44,4 @@ func (c *Client) ListDeploymentsAt(ctx context.Context, namespace, resourceVersi
 		})
 	}
 	return out, nil
-}
-
-// PodsForDeployment returns the names of pods that match the deployment's
-// label selector.
-//
-// Superseded by DeploymentLogTarget: the selector alone also matches
-// finished pods and pods of other owners that share the labels, such as a
-// CronJob's. No view calls it; it stays while the tuitest seed test checks
-// the fake cluster's relations through it.
-func (c *Client) PodsForDeployment(ctx context.Context, namespace, name string) ([]string, error) {
-	dep, err := c.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("get deployment: %w", err)
-	}
-	if dep.Spec.Selector == nil {
-		return nil, nil
-	}
-	selector, err := metav1.LabelSelectorAsSelector(dep.Spec.Selector)
-	if err != nil {
-		return nil, fmt.Errorf("convert selector: %w", err)
-	}
-	pods, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: selector.String(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list pods: %w", err)
-	}
-	names := make([]string, 0, len(pods.Items))
-	for _, p := range pods.Items {
-		names = append(names, p.Name)
-	}
-	return names, nil
 }

@@ -24,27 +24,10 @@ type Pod struct {
 	Node         string
 }
 
-// PodListOption tunes the request behind ListPods.
-type PodListOption func(metav1.ListOptions) metav1.ListOptions
-
-// PodsResourceVersion sets the list's ResourceVersion: "0" lets the
-// apiserver answer from its watch cache, which spares the storage behind a
-// k3s kine/SQLite on every poll; "" (the default) is a consistent read.
-func PodsResourceVersion(rv string) PodListOption {
-	return func(o metav1.ListOptions) metav1.ListOptions {
-		o.ResourceVersion = rv
-		return o
-	}
-}
-
 // ListPods returns pods in the given namespace, or in all namespaces when
-// namespace == "".
-func (c *Client) ListPods(ctx context.Context, namespace string, opts ...PodListOption) ([]Pod, error) {
-	var lo metav1.ListOptions
-	for _, opt := range opts {
-		lo = opt(lo)
-	}
-	list, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, lo)
+// namespace == "", a consistent read unless opts say otherwise.
+func (c *Client) ListPods(ctx context.Context, namespace string, opts ...ListOption) ([]Pod, error) {
+	list, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, listOptions(opts))
 	if err != nil {
 		return nil, fmt.Errorf("list pods: %w", err)
 	}

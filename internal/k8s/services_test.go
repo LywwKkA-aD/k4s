@@ -10,7 +10,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
-	k8stesting "k8s.io/client-go/testing"
 )
 
 func TestListServicesRendersClusterIPType(t *testing.T) {
@@ -29,7 +28,7 @@ func TestListServicesRendersClusterIPType(t *testing.T) {
 	}
 	c := &Client{Clientset: fake.NewSimpleClientset(runtime.Object(svc)), Context: "test"}
 
-	got, err := c.ListServices(context.Background(), "demo", "")
+	got, err := c.ListServices(context.Background(), "demo")
 	if err != nil {
 		t.Fatalf("ListServices: %v", err)
 	}
@@ -58,7 +57,7 @@ func TestListServicesRendersHeadlessServiceClusterIP(t *testing.T) {
 	}
 	c := &Client{Clientset: fake.NewSimpleClientset(runtime.Object(svc)), Context: "test"}
 
-	got, _ := c.ListServices(context.Background(), "demo", "")
+	got, _ := c.ListServices(context.Background(), "demo")
 	if got[0].ClusterIP != "<none>" {
 		t.Errorf("headless cluster IP = %q, want <none>", got[0].ClusterIP)
 	}
@@ -115,7 +114,7 @@ func TestListServicesRendersNodePortAndLoadBalancer(t *testing.T) {
 		Context: "test",
 	}
 
-	got, _ := c.ListServices(context.Background(), "demo", "")
+	got, _ := c.ListServices(context.Background(), "demo")
 
 	by := map[string]Service{}
 	for _, s := range got {
@@ -147,128 +146,9 @@ func TestListServicesEmptyPortsRendersAsNone(t *testing.T) {
 	}
 	c := &Client{Clientset: fake.NewSimpleClientset(runtime.Object(svc)), Context: "test"}
 
-	got, _ := c.ListServices(context.Background(), "demo", "")
+	got, _ := c.ListServices(context.Background(), "demo")
 	if got[0].Ports != "<none>" {
 		t.Errorf("ports = %q, want <none>", got[0].Ports)
 	}
 }
 
-func TestPodsAndContainersForServiceHappyPath(t *testing.T) {
-	t.Parallel()
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "nginx", Namespace: "demo"},
-		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "nginx"}},
-	}
-	pods := []runtime.Object{
-		svc,
-		&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "nginx-a", Namespace: "demo", Labels: map[string]string{"app": "nginx"}},
-			Spec: corev1.PodSpec{Containers: []corev1.Container{
-				{Name: "web"},
-				{Name: "sidecar"},
-			}},
-		},
-		&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "nginx-b", Namespace: "demo", Labels: map[string]string{"app": "nginx"}},
-			Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "web"}, {Name: "sidecar"}}},
-		},
-		// Should not match — different label.
-		&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "demo", Labels: map[string]string{"app": "other"}},
-			Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "x"}}},
-		},
-	}
-	c := &Client{Clientset: fake.NewSimpleClientset(pods...)}
-
-	gotPods, gotContainers, err := c.PodsAndContainersForService(context.Background(), "demo", "nginx")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(gotPods) != 2 {
-		t.Errorf("expected 2 pods, got %d: %v", len(gotPods), gotPods)
-	}
-	if len(gotContainers) != 2 {
-		t.Errorf("expected 2 containers, got %d: %v", len(gotContainers), gotContainers)
-	}
-}
-
-func TestPodsAndContainersForServiceSelectorlessReturnsNil(t *testing.T) {
-	t.Parallel()
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "headless", Namespace: "demo"},
-		Spec:       corev1.ServiceSpec{}, // no selector
-	}
-	c := &Client{Clientset: fake.NewSimpleClientset(svc)}
-	pods, containers, err := c.PodsAndContainersForService(context.Background(), "demo", "headless")
-	if err != nil {
-		t.Fatalf("selector-less service should not error, got %v", err)
-	}
-	if pods != nil || containers != nil {
-		t.Errorf("expected (nil, nil), got pods=%v containers=%v", pods, containers)
-	}
-}
-
-func TestPodsAndContainersForServiceNoMatchingPods(t *testing.T) {
-	t.Parallel()
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "lonely", Namespace: "demo"},
-		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "ghost"}},
-	}
-	c := &Client{Clientset: fake.NewSimpleClientset(svc)}
-	pods, containers, err := c.PodsAndContainersForService(context.Background(), "demo", "lonely")
-	if err != nil {
-		t.Fatalf("no-match case should not error, got %v", err)
-	}
-	if pods != nil || containers != nil {
-		t.Errorf("expected (nil, nil), got pods=%v containers=%v", pods, containers)
-	}
-}
-
-func TestPodsAndContainersForServiceMissingServiceErrors(t *testing.T) {
-	t.Parallel()
-	c := &Client{Clientset: fake.NewSimpleClientset()}
-	_, _, err := c.PodsAndContainersForService(context.Background(), "demo", "absent")
-	if err == nil {
-		t.Errorf("expected error for missing service")
-	}
-}
-
-// TestListServicesPassesTheResourceVersion: a poll reads the apiserver's
-// watch cache ("0"), a manual refresh is a consistent read ("").
-func TestListServicesPassesTheResourceVersion(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name string
-		rv   string
-	}{
-		{name: "poll from the watch cache", rv: "0"},
-		{name: "consistent read", rv: ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "demo"}}
-			cs := fake.NewSimpleClientset(svc)
-			seen := make(chan string, 1)
-			cs.PrependReactor("list", "services", func(a k8stesting.Action) (bool, runtime.Object, error) {
-				l, ok := a.(interface{ GetListOptions() metav1.ListOptions })
-				if !ok {
-					t.Errorf("list action %T carries no ListOptions", a)
-					return false, nil, nil
-				}
-				seen <- l.GetListOptions().ResourceVersion
-				return false, nil, nil
-			})
-			c := &Client{Clientset: cs}
-
-			got, err := c.ListServices(context.Background(), "demo", tc.rv)
-			if err != nil || len(got) != 1 {
-				t.Fatalf("ListServices = %v, %v; want the one service", got, err)
-			}
-			if rv := <-seen; rv != tc.rv {
-				t.Errorf("ResourceVersion = %q, want %q", rv, tc.rv)
-			}
-		})
-	}
-}

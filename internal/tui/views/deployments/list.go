@@ -14,18 +14,13 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
-// The ResourceVersion a list asks for. A poll (the first load, a tick, a
-// restore) takes the apiserver's watch cache, which on k3s spares kine a
-// query; r is the user asking for the truth now, a consistent read.
-const (
-	watchCacheRV = "0"
-	consistentRV = ""
-)
-
-func (m Model) list(resourceVersion string) tea.Cmd {
+// list fetches the deployments under the poller's Token. A poll (the first
+// load, a tick, a restore) passes k8s.FromCache; r is the user asking for
+// the truth now, a consistent read.
+func (m Model) list(opts ...k8s.ListOption) tea.Cmd {
 	c, ns := m.client, m.namespace
 	return async.Run(m.poll.Token(), m.poll.Timeout(), func(ctx context.Context) ([]k8s.Deployment, error) {
-		return c.ListDeploymentsAt(ctx, ns, resourceVersion)
+		return c.ListDeployments(ctx, ns, opts...)
 	})
 }
 
@@ -34,7 +29,7 @@ func (m Model) onTick(msg async.TickMsg) (Model, tea.Cmd) {
 	if m.poll, due = m.poll.Due(msg); !due {
 		return m, nil
 	}
-	return m, m.list(watchCacheRV)
+	return m, m.list(k8s.FromCache())
 }
 
 // onList folds a list reply in. The poller arms the next tick; an error

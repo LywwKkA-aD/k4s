@@ -32,7 +32,7 @@ func listers() []lister {
 			return len(items), err
 		}},
 		{name: "services", prefix: "list services: ", list: func(ctx context.Context, c *k8s.Client, ns string) (int, error) {
-			items, err := c.ListServices(ctx, ns, "")
+			items, err := c.ListServices(ctx, ns)
 			return len(items), err
 		}},
 		{name: "namespaces", prefix: "list namespaces: ", list: func(ctx context.Context, c *k8s.Client, _ string) (int, error) {
