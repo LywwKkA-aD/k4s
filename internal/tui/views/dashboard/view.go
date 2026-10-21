@@ -44,15 +44,16 @@ func (m Model) frame() frame {
 		hint = "refreshing…"
 	}
 	return frame{
-		snap:   m.mem.snap,
-		loaded: m.mem.loaded,
-		hist:   m.mem.hist,
-		focus:  m.mem.focus,
-		since:  m.mem.since,
-		ctx:    clean(m.client.Context),
-		hint:   hint,
-		th:     themeOf(ds),
-		ds:     ds,
+		snap:    m.mem.snap,
+		loaded:  m.mem.loaded,
+		hist:    m.mem.hist,
+		focus:   m.mem.focus,
+		since:   m.mem.since,
+		ctx:     clean(m.client.Context),
+		session: m.session,
+		hint:    hint,
+		th:      themeOf(ds),
+		ds:      ds,
 	}
 }
 

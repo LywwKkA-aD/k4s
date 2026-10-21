@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/viz"
 )
@@ -20,9 +21,18 @@ type frame struct {
 	focus  focus
 	since  time.Time
 	ctx    string // kubeconfig context name, cleaned
-	hint   string // "watch 5s", "paused", "refreshing…"
-	th     viz.Theme
-	ds     styles.DashboardStyles
+	// session decorates the commands the body prints for pasting.
+	session kubectl.Session
+	hint    string // "watch 5s", "paused", "refreshing…"
+	th      viz.Theme
+	ds      styles.DashboardStyles
+}
+
+// command is c as the body prints it for pasting: cleaned, and with the
+// flags this session needs to reach the cluster k4s shows. The root
+// decorates the footer's; text in the body has no one else to do it.
+func (f frame) command(c dash.Cmd) string {
+	return kubectl.Decorate(toKubectl(c), f.session).String()
 }
 
 // themeOf maps the dashboard styles onto the widgets' theme. The mono

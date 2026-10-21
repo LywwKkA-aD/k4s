@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 )
 
@@ -23,6 +24,18 @@ type config struct {
 	now     func() time.Time
 	clock   async.Clock
 	fetch   FetchFunc
+	session kubectl.Session
+}
+
+// WithSession is how a pasted command reaches the cluster k4s shows (see
+// kubectl.Decorate). The root passes its own, so the commands the body
+// prints for copying (the next suggestion, a denied source's probe) and
+// the help map carry the same --context and --kubeconfig as the footer.
+func WithSession(s kubectl.Session) Option {
+	return func(c config) config {
+		c.session = s
+		return c
+	}
 }
 
 // WithNamespace is the namespace the dashboard lists, "" for all; the

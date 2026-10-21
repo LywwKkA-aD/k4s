@@ -128,7 +128,7 @@ func metricsNote(f frame) string {
 	case dash.StateNotReady:
 		return f.paint(markOff) + " metrics not ready"
 	case dash.StateForbidden:
-		return f.paint(markUnknown) + " metrics forbidden · " + toKubectl(m.CanI).String()
+		return f.paint(markUnknown) + " metrics forbidden · " + f.command(m.CanI)
 	case dash.StateUnknown:
 		return f.paint(markFact) + " waiting for metrics"
 	}

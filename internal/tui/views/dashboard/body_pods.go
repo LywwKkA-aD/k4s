@@ -39,7 +39,7 @@ func podsBody(f frame, w, h int) panelBody {
 	case p.Avail.State == dash.StateForbidden:
 		body.lines = []string{
 			" " + f.paint(markUnknown) + " pods forbidden",
-			"   " + toKubectl(p.Avail.CanI).String(),
+			"   " + f.command(p.Avail.CanI),
 		}
 		return body
 	case !readable(p.Avail):

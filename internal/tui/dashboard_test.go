@@ -43,6 +43,25 @@ func TestDashboardMemoryIsDroppedOnContextSwitch(t *testing.T) {
 	}
 }
 
+// TestDashboardBodyCommandsCarryTheSession: after :ctx the banner's next
+// line, pasted into a shell, reaches the context k4s switched to, not the
+// kubeconfig's current-context.
+func TestDashboardBodyCommandsCarryTheSession(t *testing.T) {
+	t.Parallel()
+
+	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), views.ContextSelectedMsg{Name: "beta"})
+	requireView(t, m, "dashboard")
+	next := ""
+	for _, l := range lines(m) {
+		if strings.HasPrefix(strings.TrimSpace(l), "▸") {
+			next = l
+		}
+	}
+	if !strings.Contains(next, "kubectl --context beta ") {
+		t.Fatalf("banner next line = %q, want it decorated with --context beta\n%s", next, tuitest.Screen(m))
+	}
+}
+
 func TestDashboardFollowsTerminalFocus(t *testing.T) {
 	t.Parallel()
 

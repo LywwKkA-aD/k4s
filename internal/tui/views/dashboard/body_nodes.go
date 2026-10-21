@@ -47,7 +47,7 @@ func nodesBody(f frame, w, h int) panelBody {
 		body.info = markGlyphs[markUnknown]
 		body.lines = []string{
 			" " + f.paint(markUnknown) + " nodes forbidden",
-			"   " + toKubectl(n.Avail.CanI).String(),
+			"   " + f.command(n.Avail.CanI),
 			"   pods per node are still shown in 3 pods",
 		}
 		return body
