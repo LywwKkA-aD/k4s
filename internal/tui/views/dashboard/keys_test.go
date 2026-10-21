@@ -123,16 +123,19 @@ func TestEnterWithoutAViewSaysSo(t *testing.T) {
 	}
 }
 
-func TestJumpToAHiddenPanel(t *testing.T) {
+// TestJumpToAMissingPanel: a panel this cluster does not have says why
+// and leaves the focus where it was. (One this size leaves out opens
+// zoomed: TestHiddenPanelOpensZoomed.)
+func TestJumpToAMissingPanel(t *testing.T) {
 	t.Parallel()
 
-	m, out := press(t, mount(t, newFeed(busyK3s), 120, 34), "7")
+	m, out := press(t, mount(t, newFeed(nsScopedEKS), 120, 34), "6")
 	msg, ok := tuitest.Find[views.StatusMsg](out)
-	if !ok || !strings.Contains(msg.Text, "7 top pods is hidden at this size") {
-		t.Fatalf("7 in the medium layout:\n%s", tuitest.Describe(out))
+	if !ok || !strings.Contains(msg.Text, "6 k3s: not a k3s cluster") {
+		t.Fatalf("6 on EKS:\n%s", tuitest.Describe(out))
 	}
-	if got := command(m); got != verdictCmd {
-		t.Fatalf("focus moved to a hidden panel: %q", got)
+	if got := command(m); got != "≈ kubectl get nodes,pods,deploy,sts,ds -n shop" {
+		t.Fatalf("focus moved to a missing panel: %q", got)
 	}
 }
 
@@ -144,7 +147,7 @@ func TestHintsFollowTheFocus(t *testing.T) {
 		t.Fatalf("hints on the banner = %v", got)
 	}
 	m, _ = press(t, m, "1")
-	if got := tuitest.HelpKeys(m); strings.Join(got, " ") != "tab/0-7 ←→ ↑↓ r w" {
+	if got := tuitest.HelpKeys(m); strings.Join(got, " ") != "tab/0-7 ←→ ↑↓ z r w" {
 		t.Fatalf("hints on panel 1 = %v, want no enter", got)
 	}
 	m, _ = press(t, m, "3", "down")

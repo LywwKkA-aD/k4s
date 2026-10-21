@@ -35,6 +35,8 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		return m.onFrame(msg)
 	case spinDueMsg:
 		return m.onSpinDue(msg)
+	case toastDoneMsg:
+		return m.onToastDone(msg)
 	case tea.ColorProfileMsg:
 		m.profile = msg.Profile
 		if m.still() {
@@ -91,11 +93,16 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 	}
 	m.forced = false
 	m.mo.spinning = false
-	var note, motion tea.Cmd
+	var note, motion, raised tea.Cmd
 	if msg.Err == nil {
 		var gone string
 		first, prev := !m.mem.loaded, m.mem.snap
 		m.mem = m.mem.with(msg.Value.snap)
+		if !first {
+			changes := changesBetween(prev, m.mem.snap)
+			m.mem.ring = withRing(m.mem.ring, changes)
+			m, raised = m.raise(changes)
+		}
 		m, gone = m.reflow()
 		// A suggestion that left was fixed or outranked: the cursor
 		// moving on says enough.
@@ -105,7 +112,7 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 		m, motion = m.moved(first, prev, m.mem.snap)
 	}
 	next, cmd := m.settle(m.plan(false), msg.Token, msg.Err)
-	return next, tea.Batch(cmd, note, motion)
+	return next, tea.Batch(cmd, note, motion, raised)
 }
 
 // settle ends the poll under tok: the next tick is armed at the plan's
@@ -162,6 +169,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (views.View, tea.Cmd) {
 		return m.onEnter()
 	case key.Matches(msg, m.keys.logs):
 		return m.onLogs()
+	case key.Matches(msg, m.keys.zoom) && m.client != nil:
+		return m.onZoom()
 	case key.Matches(msg, m.keys.sort) && m.mem.focus.panel == dash.PanelTopPods:
 		m.mem.topByMemory = !m.mem.topByMemory
 		return m.relayout(), nil
@@ -245,11 +254,22 @@ func (m Model) order() []dash.Panel {
 	return append([]dash.Panel{dash.PanelOverview}, m.lay.visible()...)
 }
 
+// jump focuses panel p; one this size leaves out opens zoomed.
 func (m Model) jump(p dash.Panel) (views.View, tea.Cmd) {
-	if _, ok := m.lay.placeOf(p); !ok && p != dash.PanelOverview {
+	_, placed := m.lay.placeOf(p)
+	switch {
+	case placed || p == dash.PanelOverview:
+		return m.focusOn(m.mem.focus.at(p))
+	case !m.present(p) || m.lay.w == 0:
 		return m, statusCmd(status.Info, hiddenText(p, m.shown()))
 	}
-	return m.focusOn(m.mem.focus.at(p))
+	f := m.mem.focus.at(p)
+	f.zoom = p
+	next, cmd := m.focusOn(f)
+	if d, ok := next.(Model); ok && d.lay.zoom != p {
+		return d, statusCmd(status.Info, hiddenText(p, m.shown()))
+	}
+	return next, cmd
 }
 
 // hiddenText says why panel p is not on screen.

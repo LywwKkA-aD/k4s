@@ -70,6 +70,7 @@ type Model struct {
 	// on; profile is the terminal's colour profile, and perf times the
 	// renders, both for the switches that turn motion off.
 	mo      motion
+	toast   toast
 	frames  async.Clock
 	profile colorprofile.Profile
 	perf    *renderClock
@@ -170,6 +171,9 @@ func (m Model) Help() []key.Binding {
 	if m.logsHint() {
 		out = append(out, m.keys.logs)
 	}
+	if desc := m.zoomHint(); desc != "" {
+		out = append(out, key.NewBinding(key.WithKeys("z"), key.WithHelp("z", desc)))
+	}
 	if _, ok := m.lay.placeOf(dash.PanelTopPods); ok && m.mem.focus.panel == dash.PanelTopPods {
 		by := "memory"
 		if m.mem.topByMemory {
@@ -254,8 +258,8 @@ func (m Model) relayout() Model {
 // that row. Before the first size there is no layout to judge by, and
 // remembered focus stays.
 func (m Model) reflow() (Model, string) {
-	if sh, open := m.shown(), m.mem.focus.expanded; sh != m.lay.sh || open != m.lay.open {
-		m.lay = buildLayout(m.lay.w, m.lay.h, sh, open)
+	if sh, open, zoom := m.shown(), m.mem.focus.expanded, m.mem.focus.zoom; sh != m.lay.sh || open != m.lay.open || zoom != m.lay.zoom {
+		m.lay = m.layoutFor(m.lay.w, m.lay.h)
 	}
 	if m.lay.w == 0 || m.lay.h == 0 {
 		return m, ""
@@ -271,12 +275,18 @@ func (m Model) reflow() (Model, string) {
 // rows lists the rows the cursor can stand on in panel p, as this layout
 // draws them.
 func (m Model) rows(p dash.Panel) []row {
-	return rowsOf(p, m.mem.snap, m.lay, m.mem.topByMemory)
+	return rowsOf(p, m.mem, m.lay)
 }
 
 func (m Model) resized(w, h int) Model {
-	m.lay = buildLayout(w, h, m.shown(), m.mem.focus.expanded)
+	m.lay = m.layoutFor(w, h)
 	return m.relayout()
+}
+
+// layoutFor is the layout of a w x h body for the panels this cluster has,
+// the accordion's open panel and the zoom.
+func (m Model) layoutFor(w, h int) layout {
+	return buildLayout(w, h, m.shown(), m.mem.focus.expanded).zoomed(m.mem.focus.zoom)
 }
 
 // seconds renders a cadence as the hints show it: "5s", "60s".

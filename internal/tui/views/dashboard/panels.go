@@ -58,49 +58,44 @@ func panelCmd(p dash.Panel, s dash.Snapshot) dash.Cmd {
 
 // rowsOf lists the rows the cursor can stand on in panel p as layout l
 // draws it, in drawing order; none where p is a summary line.
-func rowsOf(p dash.Panel, s dash.Snapshot, l layout, byMemory bool) []row {
-	if pl, ok := l.placeOf(p); ok && pl.line {
+func rowsOf(p dash.Panel, mem Memory, l layout) []row {
+	pl, ok := l.placeOf(p)
+	if ok && pl.line {
 		return nil
 	}
+	s := mem.snap
 	switch p {
 	case dash.PanelOverview:
 		return nextRows(s, l)
 	case dash.PanelCluster:
-		items := clusterItems(s)
-		out := make([]row, 0, len(items))
-		for _, it := range items {
-			out = append(out, row{key: it.key, cmd: it.cmd})
-		}
-		return out
+		return rowsFrom(clusterItems(s), func(it clusterItem) row { return row{key: it.key, cmd: it.cmd} })
 	case dash.PanelNodes:
 		return nodeRows(s, l.drawsChart(s))
 	case dash.PanelPods:
-		items := podItems(s)
-		out := make([]row, 0, len(items))
-		for _, it := range items {
-			out = append(out, it.row)
-		}
-		return out
+		return rowsFrom(podItems(s), func(it podItem) row { return it.row })
 	case dash.PanelWorkloads:
 		return workloadRows(s, l.drawsKindLines(s))
 	case dash.PanelEvents:
-		items := eventItems(s)
-		out := make([]row, 0, len(items))
-		for _, it := range items {
-			out = append(out, it.row)
+		out := rowsFrom(eventItems(s), func(it eventItem) row { return it.row })
+		if !ok {
+			return out
 		}
-		return out
+		return append(out, ringRows(mem.ring[:ringShown(len(mem.ring), l.kind, l.zoom, pl.h-2)])...)
 	case dash.PanelK3s:
-		items := k3sItems(s)
-		out := make([]row, 0, len(items))
-		for _, it := range items {
-			out = append(out, it.row)
-		}
-		return out
+		return rowsFrom(k3sItems(s), func(it k3sItem) row { return it.row })
 	case dash.PanelTopPods:
-		return topRows(topItems(s, byMemory))
+		return topRows(topItems(s, mem.topByMemory))
 	}
 	return nil
+}
+
+// rowsFrom is the row of each item, in order.
+func rowsFrom[T any](items []T, rowOf func(T) row) []row {
+	out := make([]row, 0, len(items))
+	for _, it := range items {
+		out = append(out, rowOf(it))
+	}
+	return out
 }
 
 // describeKinds are the kinds k4s has a describe view for.

@@ -62,6 +62,8 @@ func (m Model) frame() frame {
 		prog:     min(max(m.mo.spring.Pos, 0), 1),
 		beat:     m.beat(),
 		fresh:    m.mem.fresh,
+		ring:     m.mem.ring,
+		toast:    m.toast,
 		glow: glow{
 			panel: m.mo.sweepPanel, border: m.mo.sweepLeft,
 			verdict: m.mo.verdict, wordmark: m.mo.wordmark,
@@ -90,7 +92,7 @@ func render(f frame, l layout) string {
 	if l.w <= 0 || l.h <= 0 {
 		return ""
 	}
-	f.kind = l.kind
+	f.kind, f.zoom = l.kind, l.zoom
 	rows := make([][]segment, l.h)
 	for y, line := range bannerLines(f, l) {
 		rows[y] = []segment{{x: 0, text: line}}

@@ -29,9 +29,21 @@ var eventSteps = []eventCols{
 	{},
 }
 
-// eventsBody draws panel 5: the last hour as a strip, then the newest
-// warnings.
+// eventsBody draws panel 5: the last hour as a strip, the newest
+// warnings, and under them the changes k4s saw where there is room.
 func eventsBody(f frame, w, h int) panelBody {
+	n := ringShown(len(f.ring), f.kind, f.zoom, h)
+	if n == 0 {
+		return eventsList(f, w, h, 0)
+	}
+	body := eventsList(f, w, h-n-ringHead, n)
+	body.lines = slices.Concat(body.lines, ringLines(f, f.ring[:n]))
+	return body
+}
+
+// eventsList is panel 5 without the ring, in h lines; ringN rows follow
+// it, which the cursor's place counts.
+func eventsList(f frame, w, h, ringN int) panelBody {
 	e := f.snap.Events
 	body := panelBody{info: eventsInfo}
 	switch {
@@ -70,7 +82,7 @@ func eventsBody(f frame, w, h int) panelBody {
 	if e.Truncated {
 		listed = fmt.Sprintf("newest first · %d of ≥%d", len(items), e.Total)
 	}
-	body.footer = f.listFooter(dash.PanelEvents, len(items), hidden, listed)
+	body.footer = f.listFooter(dash.PanelEvents, len(items)+ringN, hidden, listed)
 	return body
 }
 

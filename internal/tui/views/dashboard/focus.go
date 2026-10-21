@@ -22,6 +22,8 @@ type focus struct {
 	// expanded is the panel the compact accordion keeps open; the latest
 	// panel focused, and before that the first snapshot's pick.
 	expanded dash.Panel
+	// zoom is the panel drawn over the whole body (z), 0 for none.
+	zoom dash.Panel
 }
 
 // row is one line the cursor can stand on and the command it stands for.
@@ -44,9 +46,13 @@ func (r row) pod() bool {
 }
 
 // at focuses panel p at panel level. Focusing a panel opens it in the
-// accordion; the banner leaves the open panel as it is.
+// accordion; the banner leaves the open panel as it is. Focusing another
+// panel leaves the zoom.
 func (f focus) at(p dash.Panel) focus {
 	f.panel, f.row, f.index = p, "", 0
+	if p != f.zoom {
+		f.zoom = dash.PanelOverview
+	}
 	if p != dash.PanelOverview {
 		f.expanded = p
 	}
@@ -91,10 +97,13 @@ func (f focus) up(rows []row) focus {
 	return f.onRow(rows, i-1)
 }
 
-// back is one step of the Esc chain: row to panel, panel to the banner.
-// used is false on the banner, where Esc belongs to the root.
+// back is one step of the Esc chain: zoom off, row to panel, panel to
+// the banner. used is false on the banner, where Esc belongs to the root.
 func (f focus) back() (focus, bool) {
 	switch {
+	case f.zoom != dash.PanelOverview:
+		f.zoom = dash.PanelOverview
+		return f, true
 	case f.row != "":
 		f.row, f.index = "", 0
 		return f, true
