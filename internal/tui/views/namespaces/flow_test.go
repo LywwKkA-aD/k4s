@@ -15,6 +15,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/namespaces"
@@ -188,8 +189,8 @@ func TestRefreshRespectsBusy(t *testing.T) {
 		t.Fatalf("r should issue one fetch:\n%s", tuitest.Describe(first))
 	}
 	m, second := tuitest.Step(t, m, tuitest.Press("r"))
-	if len(second) != 0 {
-		t.Fatalf("r while busy must not fetch again:\n%s", tuitest.Describe(second))
+	if want := (views.StatusMsg{Level: status.Info, Text: "refresh already running"}); len(second) != 1 || second[0] != want {
+		t.Fatalf("r while busy must only say so, not fetch again:\n%s", tuitest.Describe(second))
 	}
 	if err := c.Clientset.CoreV1().Namespaces().Delete(context.Background(), tuitest.NamespaceSystem, metav1.DeleteOptions{}); err != nil {
 		t.Fatalf("delete namespace: %v", err)
@@ -221,8 +222,9 @@ func TestAnotherInstancesReplyIsDropped(t *testing.T) {
 	if !strings.Contains(tuitest.Screen(newer), "loading namespaces") {
 		t.Errorf("a reply addressed to an older view was applied:\n%s", tuitest.Screen(newer))
 	}
-	if _, again := tuitest.Step(t, newer, tuitest.Press("r")); len(again) != 0 {
-		t.Errorf("the stale reply ended the first load:\n%s", tuitest.Describe(again))
+	again := views.StatusMsg{Level: status.Info, Text: "refresh already running"}
+	if _, out := tuitest.Step(t, newer, tuitest.Press("r")); len(out) != 1 || out[0] != again {
+		t.Errorf("the stale reply ended the first load:\n%s", tuitest.Describe(out))
 	}
 	newer, _ = tuitest.Drive(t, newer, inFlight...)
 	if !strings.Contains(tuitest.Screen(newer), tuitest.NamespaceDemo) {
