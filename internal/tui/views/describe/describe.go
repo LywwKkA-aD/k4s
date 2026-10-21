@@ -65,6 +65,9 @@ type Model struct {
 	// source names who wrote it, for the title.
 	builtin bool
 	source  string
+	// builtInTimeout bounds the built-in describer: fetchTimeout, which
+	// tests shorten.
+	builtInTimeout time.Duration
 
 	refreshKey key.Binding
 }
@@ -90,14 +93,15 @@ func New(client *k8s.Client, kind Kind, namespace, name string, opts ...Option) 
 		inFlight, _ = inFlight.Begin(actDescribe, tok)
 	}
 	m := Model{
-		client:     client,
-		kind:       kind,
-		namespace:  namespace,
-		name:       name,
-		tok:        tok,
-		inFlight:   inFlight,
-		pager:      pager.New(),
-		refreshKey: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+		client:         client,
+		kind:           kind,
+		namespace:      namespace,
+		name:           name,
+		tok:            tok,
+		inFlight:       inFlight,
+		pager:          pager.New(),
+		builtInTimeout: fetchTimeout,
+		refreshKey:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 	}
 	for _, opt := range opts {
 		m = opt(m)
@@ -127,7 +131,8 @@ type output struct {
 // built-in describer when kubectl cannot.
 func (m Model) fetch() tea.Cmd {
 	k, c, kind, ns, name, cmd := m.kubectl, m.client, m.kind, m.namespace, m.name, m.command()
-	return async.Run(m.tok, kubectlTimeout+fetchTimeout, func(ctx context.Context) (output, error) {
+	limit := m.builtInTimeout
+	return async.Run(m.tok, kubectlTimeout+limit, func(ctx context.Context) (output, error) {
 		var kubectlErr error
 		if k.enabled() {
 			text, version, err := k.describe(ctx, string(kind), name, cmd)
@@ -136,12 +141,17 @@ func (m Model) fetch() tea.Cmd {
 			}
 			kubectlErr = err
 		}
-		text, err := builtIn(ctx, c, kind, ns, name)
+		text, err := builtIn(ctx, limit, c, kind, ns, name)
 		return output{text: text, builtin: true, kubectlErr: kubectlErr}, err
 	})
 }
 
-func builtIn(ctx context.Context, c *k8s.Client, kind Kind, ns, name string) (string, error) {
+// builtIn describes the object in-process within limit of its own: a
+// kubectl that failed fast leaves the rest of its budget unused, and the
+// placeholder must not wait for it on a hung API server.
+func builtIn(ctx context.Context, limit time.Duration, c *k8s.Client, kind Kind, ns, name string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
 	switch kind {
 	case KindPod:
 		return c.DescribePod(ctx, ns, name)
