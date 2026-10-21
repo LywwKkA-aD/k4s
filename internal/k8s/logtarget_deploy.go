@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -22,9 +23,10 @@ const (
 // DeploymentLogTarget resolves the pods behind a deployment's logs by
 // owner, not by label alone: the pods its ReplicaSets control, minus
 // finished ones. Pods that only share the labels, such as a CronJob's,
-// are skipped. It makes exactly three calls: get the deployment, then
-// list its ReplicaSets and its pods by the deployment's own selector from
-// the watch cache.
+// are skipped. It makes three calls: get the deployment, then list its
+// ReplicaSets and its pods by the deployment's own selector from the watch
+// cache. A pod owned by a ReplicaSet the cached list lacks costs a fourth,
+// a fresh ReplicaSet list.
 //
 // When listing ReplicaSets is forbidden, ownership falls back to the
 // ReplicaSet name the deployment controller gives (<deployment>-<hash>)
@@ -38,7 +40,7 @@ func (c *Client) DeploymentLogTarget(ctx context.Context, namespace, name string
 	if err != nil {
 		return LogTarget{}, err
 	}
-	owners, err := c.replicaSetsOf(ctx, dep, selector)
+	owners, err := c.replicaSetsOf(ctx, dep, fullList(selector))
 	if err != nil {
 		return LogTarget{}, err
 	}
@@ -47,6 +49,15 @@ func (c *Client) DeploymentLogTarget(ctx context.Context, namespace, name string
 	pods, err := c.Clientset.CoreV1().Pods(namespace).List(ctx, fullList(selector))
 	if err != nil {
 		return LogTarget{}, fmt.Errorf("list pods: %w", err)
+	}
+	if owners.missesOwnerOf(pods.Items) {
+		// The two lists come from separate watch caches: a ReplicaSet created
+		// since the cached one was built has pods already. One quorum re-list
+		// settles it; if it fails, the first answer stands.
+		fresh := metav1.ListOptions{LabelSelector: selector}
+		if again, err := c.replicaSetsOf(ctx, dep, fresh); err == nil {
+			owners = again
+		}
 	}
 	t := LogTarget{
 		Kind:          LogKindDeployment,
@@ -81,8 +92,8 @@ type replicaSets struct {
 	guessed    bool
 }
 
-func (c *Client) replicaSetsOf(ctx context.Context, dep *appsv1.Deployment, selector string) (replicaSets, error) {
-	list, err := c.Clientset.AppsV1().ReplicaSets(dep.Namespace).List(ctx, fullList(selector))
+func (c *Client) replicaSetsOf(ctx context.Context, dep *appsv1.Deployment, opts metav1.ListOptions) (replicaSets, error) {
+	list, err := c.Clientset.AppsV1().ReplicaSets(dep.Namespace).List(ctx, opts)
 	if apierrors.IsForbidden(err) {
 		return replicaSets{deployment: dep.Name, guessed: true}, nil
 	}
@@ -97,6 +108,25 @@ func (c *Client) replicaSetsOf(ctx context.Context, dep *appsv1.Deployment, sele
 		}
 	}
 	return replicaSets{deployment: dep.Name, revision: revision}, nil
+}
+
+// missesOwnerOf reports whether a pod is controlled by a ReplicaSet that is
+// unknown here yet named like one of the deployment's (<deployment>-<hash>):
+// a sign the ReplicaSet list is older than the pod list.
+func (s replicaSets) missesOwnerOf(pods []corev1.Pod) bool {
+	if s.guessed {
+		return false
+	}
+	for i := range pods {
+		ref := metav1.GetControllerOfNoCopy(&pods[i])
+		if ref == nil || ref.Kind != "ReplicaSet" || !strings.HasPrefix(ref.Name, s.deployment+"-") {
+			continue
+		}
+		if _, known := s.revision[ref.UID]; !known {
+			return true
+		}
+	}
+	return false
 }
 
 // revisionOf reads the controller's revision stamp; a missing or broken
