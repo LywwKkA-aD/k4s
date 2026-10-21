@@ -22,27 +22,55 @@ Usage:
   k4s [flags]
 
 Flags:
-  -h, --help      show this help and exit
-      --version   print the version and exit
+      --kubeconfig <file>   kubeconfig to use instead of $KUBECONFIG, ~/.kube/config
+                            and, on a k3s server, /etc/rancher/k3s/k3s.yaml
+      --context <name>      kubeconfig context to use instead of its current-context
+  -n, --namespace <name>    namespace to start in (default: the context's namespace,
+                            or all namespaces when it sets none)
+  -A, --all-namespaces      start in all namespaces
+      --theme <mode>        colour theme: auto, dark, light or mono; wins over
+                            K4S_THEME and NO_COLOR
+      --no-preflight        do not run the credential plugin (SSO, MFA) on the plain
+                            terminal before the TUI starts
+  -h, --help                show this help and exit
+      --version             print the version and exit
 
 Environment:
-  KUBECONFIG   kubeconfig file list to load (default ~/.kube/config)
-  K4S_THEME    colour theme: auto, dark, light or mono (default auto)
-  NO_COLOR     when set, disable colour (same as K4S_THEME=mono)
+  KUBECONFIG         kubeconfig file list to load (default ~/.kube/config)
+  K4S_THEME          colour theme: auto, dark, light or mono (default auto)
+  K4S_NO_PREFLIGHT   when set to anything but 0 or false, same as --no-preflight
+  NO_COLOR           when set, disable colour (same as K4S_THEME=mono)
 `
 
-// Parse handles args (the command line without the program name). It returns
-// proceed=true when the TUI should start. Otherwise the caller must exit with
-// code; any version, help or error text has already been written.
-func Parse(args []string, stdout, stderr io.Writer) (proceed bool, code int) {
-	fs := flag.NewFlagSet("k4s", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	// Help goes to stdout and errors to stderr, so usage is printed here
-	// rather than by the flag package.
-	fs.Usage = func() {}
+// Options is the parsed command line. An empty string means the flag was
+// not given.
+type Options struct {
+	// Kubeconfig replaces $KUBECONFIG and the default kubeconfig search.
+	Kubeconfig string
+	// Context replaces the kubeconfig's current-context.
+	Context string
+	// Namespace is a valid DNS-1123 label.
+	Namespace string
+	// AllNamespaces wins over Namespace, as -A does in kubectl.
+	AllNamespaces bool
+	// Theme is one of Themes, lower-cased.
+	Theme string
+	// NoPreflight is --no-preflight, or K4S_NO_PREFLIGHT when the flag is
+	// not given.
+	NoPreflight bool
+}
+
+// Parse handles args (the command line without the program name), reading
+// K4S_NO_PREFLIGHT through getenv. It returns proceed=true when the TUI
+// should start. Otherwise the caller must exit with code; any version, help
+// or error text has already been written. Stray positional arguments are
+// ignored, as in earlier releases.
+func Parse(args []string, getenv func(string) string, stdout, stderr io.Writer) (opts Options, proceed bool, code int) {
+	opts = Options{NoPreflight: envSwitch(getenv(envNoPreflight))}
+	fs := newFlagSet(&opts, stderr)
 	showVersion := fs.Bool("version", false, "print the version and exit")
 
-	err := fs.Parse(args)
+	err := parseInterspersed(fs, args)
 	var w io.Writer
 	var msg string
 	switch {
@@ -54,14 +82,50 @@ func Parse(args []string, stdout, stderr io.Writer) (proceed bool, code int) {
 	case *showVersion:
 		w, msg, code = stdout, versionLine()+"\n", 0
 	default:
-		return true, 0
+		return opts, true, 0
 	}
 	// A failed write to stderr changes nothing, but `k4s --version` into a
 	// closed pipe must not report success.
 	if _, werr := io.WriteString(w, msg); werr != nil && code == 0 {
-		return false, 1
+		return opts, false, 1
 	}
-	return false, code
+	return opts, false, code
+}
+
+// Getenv layers the command line over base: --theme stands in for
+// K4S_THEME and hides NO_COLOR, since an explicit flag beats both
+// (https://no-color.org). Pass the result to the theme setup.
+func (o Options) Getenv(base func(string) string) func(string) string {
+	if o.Theme == "" {
+		return base
+	}
+	theme := o.Theme
+	return func(key string) string {
+		switch key {
+		case "K4S_THEME":
+			return theme
+		case "NO_COLOR":
+			return ""
+		}
+		return base(key)
+	}
+}
+
+// parseInterspersed lets flags follow a stray positional argument, as in
+// `k4s pods -n web`: the flag package stops at the first one and would
+// silently drop -n. Everything after "--" stays positional.
+func parseInterspersed(fs *flag.FlagSet, args []string) error {
+	for {
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		rest := fs.Args()
+		consumed := len(args) - len(rest)
+		if len(rest) == 0 || (consumed > 0 && args[consumed-1] == "--") {
+			return nil
+		}
+		args = rest[1:]
+	}
 }
 
 func versionLine() string {
