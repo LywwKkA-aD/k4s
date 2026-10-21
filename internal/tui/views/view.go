@@ -5,6 +5,8 @@ package views
 import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 )
 
 // View is the contract every k4s screen implements. It mirrors tea.Model,
@@ -43,6 +45,15 @@ type View interface {
 	// goroutines). Called by the root model whenever the view is replaced or
 	// popped from history. Must be safe to call multiple times.
 	Close() error
+}
+
+// StatusMsg asks the root model to show Text in the footer's status row.
+// Errors stay until the next key or status.TTL, whichever is later; every
+// other level for status.TTL. A view emits it instead of failing silently,
+// for example "deployment web has 0 replicas".
+type StatusMsg struct {
+	Level status.Level
+	Text  string
 }
 
 // NamespaceSelectedMsg is emitted by the namespaces view when the user picks

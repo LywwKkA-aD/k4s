@@ -17,7 +17,7 @@
          │                                                            │
          │   commands                                                 │
          │     :dashboard    home                                     │
+         │     :pods         po, pod                                  │
 ──────────────────────────────────────────────────────────────────────────────
- q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  r refresh  ·  w
- watch
+ q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  r refresh  ·  …
  ≈ kubectl get all -A --watch

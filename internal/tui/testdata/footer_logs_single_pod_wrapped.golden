@@ -1,3 +1,2 @@
- q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  ↑↓/pgup/pgdn scroll  ·  f follow  ·  w wrap  ·  / search  ·  n next match  ·  N prev match  ·
- c clear
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  ↑↓/pgup/pgdn scroll  ·  f follow  ·  w wrap  ·  / search  ·  n next match  ·  N prev match  · …
  ≈ kubectl logs -f web-1 -n demo --tail=100

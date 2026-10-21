@@ -16,8 +16,8 @@ RESTARTS   AGE
 
 
 
+
+
 ──────────────────────────────────────────────────────────────────────────────
- q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  enter describe
- ·  l logs  ·  e exec  ·  f port-forward  ·  / filter  ·  w watch  ·  r
- refresh
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  enter describe…
  ≈ kubectl get pods -A --watch

@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -113,32 +114,33 @@ func (m Model) renderHeader() string {
 	return fit(styles.Header, w, strings.Join(parts, "  ·  "))
 }
 
+// renderFooter is always two rows under the rule: the command bar, the
+// status message or the key hints first, the kubectl command second. Each
+// row is cut to the width with an ellipsis, so the body height never
+// depends on what the footer says.
 func (m Model) renderFooter() string {
 	w := max(m.width-2, 0)
+	cw := max(w-styles.Footer.GetHorizontalFrameSize(), 1)
+	rows := []string{m.footerTopRow(cw), m.footerCommandRow(cw)}
+	return styles.Footer.Width(w).Render(strings.Join(rows, "\n"))
+}
 
-	// Only the single-line ":" command renders inline in the footer.
-	// Multi-field prompts (tail / container) live in a centred popup
-	// drawn in the body, so the footer stays informative.
+func (m Model) footerTopRow(width int) string {
 	if m.cmdMode == cmdBarCommand {
-		return fit(styles.Footer, w, m.cmdBarView())
+		return ansi.Truncate(m.cmdBarView(), width, "…")
 	}
+	if msg, ok := m.status.Current(m.now()); ok {
+		return statusStyle(msg.Level).Render(ansi.Truncate(msg.Text, width, "…"))
+	}
+	return styles.Hint.Render(ansi.Truncate(strings.Join(m.footerBindings(), "  ·  "), width, "…"))
+}
 
-	var top string
-	if m.cmdError != "" {
-		top = styles.Warn.Render(m.cmdError)
-	} else {
-		top = styles.Hint.Render(strings.Join(m.footerBindings(), "  ·  "))
+func (m Model) footerCommandRow(width int) string {
+	eq := m.current.KubectlEquivalent()
+	if eq == "" {
+		return ""
 	}
-
-	bottom := ""
-	if eq := m.current.KubectlEquivalent(); eq != "" {
-		bottom = styles.KubectlHint.Render("≈ " + eq)
-	}
-
-	if bottom == "" {
-		return fit(styles.Footer, w, top)
-	}
-	return fit(styles.Footer, w, lipgloss.JoinVertical(lipgloss.Left, top, bottom))
+	return styles.KubectlHint.Render(ansi.Truncate("≈ "+eq, width, "…"))
 }
 
 func (m Model) footerBindings() []string {

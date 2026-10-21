@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -127,11 +128,11 @@ func TestExecRequestWithoutKubectlShowsFooterError(t *testing.T) {
 	m := New(nil, nil)
 	upd, cmd := m.Update(views.ExecRequestMsg{Namespace: "ns", Pod: "pod-1"})
 	m = upd.(Model)
-	if !strings.Contains(m.cmdError, "kubectl not found on PATH") {
-		t.Fatalf("cmdError = %q, want it to mention kubectl not found on PATH", m.cmdError)
+	if msg, ok := m.status.Current(time.Now()); !ok || !strings.Contains(msg.Text, "kubectl not found on PATH") {
+		t.Fatalf("status = %+v, %v; want it to mention kubectl not found on PATH", msg, ok)
 	}
 	if cmd == nil {
-		t.Fatal("expected the footer auto-clear timer, got nil cmd")
+		t.Fatal("expected the status expiry timer, got nil cmd")
 	}
 }
 
