@@ -30,6 +30,7 @@ type fakeConfig struct {
 	objects       []runtime.Object
 	logs          *string
 	metricsStatus int
+	metricsOutage *Outage
 	reactors      []reactor
 }
 
@@ -101,7 +102,7 @@ func NewFakeClient(t testing.TB, opts ...FakeOption) *k8s.Client {
 	if cfg.logs != nil {
 		cs.PrependReactor("get", "pods", logsReactor(*cfg.logs))
 	}
-	metrics, err := newMetricsREST(cfg.metricsStatus)
+	metrics, err := newMetricsREST(cfg.metricsStatus, cfg.metricsOutage)
 	if err != nil {
 		t.Fatalf("build fake metrics client: %v", err)
 	}
