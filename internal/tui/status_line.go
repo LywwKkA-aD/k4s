@@ -4,6 +4,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
@@ -12,6 +13,14 @@ import (
 func (m Model) setStatus(level status.Level, text string) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.status, cmd = m.status.Set(level, text, m.now())
+	return m, cmd
+}
+
+// setStatusAbout is setStatus for a message about c: while it shows, the
+// footer's command row shows c and y copies it (see activeCommand).
+func (m Model) setStatusAbout(level status.Level, text string, c kubectl.Cmd) (Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.status, cmd = m.status.SetCommand(level, text, c, m.now())
 	return m, cmd
 }
 

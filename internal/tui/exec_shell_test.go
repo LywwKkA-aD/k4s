@@ -18,6 +18,8 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
+	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -172,30 +174,33 @@ func exitErr(t *testing.T, code string) error {
 }
 
 // TestShellDoneHintsAtKubectlDebug is M4.6: a container without the shell
-// gets the kubectl debug command, shown and never run.
+// gets the kubectl debug command, shown and never run. The status row says
+// so; the command is the one the status is about, for the command row.
 func TestShellDoneHintsAtKubectlDebug(t *testing.T) {
 	t.Parallel()
 
 	web := views.ExecRequestMsg{Namespace: tuitest.NamespaceDemo, Pod: tuitest.PodWeb1, Container: "app"}
+	noShell := "no sh in demo/web-1 · y copies the kubectl debug command"
 	debug := "kubectl debug -it -n demo web-1 --image=busybox:1.36 --target=app"
 	cases := []struct {
 		name string
 		done shellDoneMsg
 		want string // "" means no status
+		cmd  string // the command the status is about; "" means none
 	}{
 		{name: "clean exit", done: shellDoneMsg{req: web, shell: "sh"}},
 		{
 			name: "127 at once", done: shellDoneMsg{req: web, shell: "sh", err: exitErr(t, "127"), elapsed: time.Second},
-			want: "no sh · " + debug + " · exit 127",
+			want: noShell + " · exit 127", cmd: debug,
 		},
 		{
 			name: "126 at once", done: shellDoneMsg{req: web, shell: "sh", err: exitErr(t, "126"), elapsed: time.Second},
-			want: "no sh · " + debug + " · exit 126",
+			want: noShell + " · exit 126", cmd: debug,
 		},
 		{
 			name: "the runtime says so", done: shellDoneMsg{req: web, shell: "sh", err: exitErr(t, "1"), elapsed: time.Minute,
 				stderr: `OCI runtime exec failed: exec: "sh": executable file not found in $PATH: unknown`},
-			want: "no sh · " + debug + " · exit 1",
+			want: noShell + " · exit 1", cmd: debug,
 		},
 		{
 			name: "127 after a session is the user's last command",
@@ -208,11 +213,11 @@ func TestShellDoneHintsAtKubectlDebug(t *testing.T) {
 		},
 		{
 			name: "not an exit", done: shellDoneMsg{req: web, shell: "sh", err: errors.New("exec: executable file not found in $PATH")},
-			want: "no sh · " + debug,
+			want: noShell, cmd: debug,
 		},
 		{
 			name: "no container named", done: shellDoneMsg{req: views.ExecRequestMsg{Namespace: "demo", Pod: "web-1"}, shell: "sh", err: exitErr(t, "127")},
-			want: "no sh · kubectl debug -it -n demo web-1 --image=busybox:1.36 · exit 127",
+			want: noShell + " · exit 127", cmd: "kubectl debug -it -n demo web-1 --image=busybox:1.36",
 		},
 		{
 			name: "windows has no busybox", done: shellDoneMsg{req: web, shell: "cmd.exe", err: exitErr(t, "127")},
@@ -223,32 +228,107 @@ func TestShellDoneHintsAtKubectlDebug(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			next, _ := New(nil, nil).Update(execDoneMsg(tc.done))
-			msg, ok := next.(Model).status.Current(time.Now())
+			line := next.(Model).status
+			msg, ok := line.Current(time.Now())
 			switch {
 			case tc.want == "" && ok:
 				t.Errorf("status = %+v after a clean exit", msg)
 			case tc.want != "" && (!ok || msg.Text != tc.want):
 				t.Errorf("status = %+v, %v; want %q", msg, ok, tc.want)
 			}
+			if cmd, _ := line.Command(time.Now()); cmd.String() != tc.cmd {
+				t.Errorf("status command = %q, want %q", cmd.String(), tc.cmd)
+			}
 		})
 	}
 }
 
-// TestDebugHintFitsEightyColumns: the status row is cut at the width, and
-// the command must survive it to be copied.
+// commandRows are the footer's two rows: the status (or hints) and the
+// kubectl command.
+func commandRows(t *testing.T, m Model) (top, command string) {
+	t.Helper()
+	top, command, _ = strings.Cut(tuitest.Footer(m), "\n")
+	return strings.TrimSpace(top), strings.TrimSpace(command)
+}
+
+// TestDebugHintFitsEightyColumns: the status row is cut at the width, so
+// the kubectl debug command goes where commands go, the command row, while
+// the status about it shows; y copies it from there, even as the key that
+// dismisses the error, and the view's command comes back once the status
+// goes.
 func TestDebugHintFitsEightyColumns(t *testing.T) {
 	t.Parallel()
 
-	m := New(nil, nil)
+	clk := &manualClock{at: time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)}
+	m := New(nil, nil, WithClock(clk.now))
 	m.width, m.height = 80, 24
+	_, view := commandRows(t, m)
 	done := shellDoneMsg{
 		req:   views.ExecRequestMsg{Namespace: tuitest.NamespaceDemo, Pod: tuitest.PodWeb1, Container: tuitest.ContainerNginx},
 		shell: "sh", err: errors.New(`exec: "sh": executable file not found in $PATH`),
 	}
-	next, _ := m.Update(execDoneMsg(done))
 	want := "kubectl debug -it -n demo web-1 --image=busybox:1.36 --target=nginx"
-	if footer := tuitest.Footer(next); !strings.Contains(footer, want) {
-		t.Errorf("footer at 80 columns lacks %q:\n%s", want, footer)
+
+	m, _ = tuitest.Drive(t, m, execDoneMsg(done))
+	top, command := commandRows(t, m)
+	if top != styles.GlyphErr+" no sh in demo/web-1 · y copies the kubectl debug command" || command != want {
+		t.Fatalf("footer at 80 columns:\n%s\n%s\nwant the command row %q", top, command, want)
+	}
+
+	clk.at = clk.at.Add(time.Minute)
+	m, out := tuitest.Drive(t, m, tuitest.Press("y"))
+	if got, ok := tuitest.Clipboard(out); !ok || got != want {
+		t.Fatalf("y copied %q, %v; want %q", got, ok, want)
+	}
+	if _, command = commandRows(t, m); command != want {
+		t.Errorf("command row while the copy shows = %q, want %q", command, want)
+	}
+
+	clk.at = clk.at.Add(status.TTL)
+	if _, command = commandRows(t, m); command != view {
+		t.Errorf("command row once the status went = %q, want the view's %q", command, view)
+	}
+}
+
+// TestDebugCommandLeavesWithItsStatus: whatever takes the status away
+// gives the command row back to the view.
+func TestDebugCommandLeavesWithItsStatus(t *testing.T) {
+	t.Parallel()
+
+	done := shellDoneMsg{
+		req:   views.ExecRequestMsg{Namespace: tuitest.NamespaceDemo, Pod: tuitest.PodWeb1, Container: tuitest.ContainerNginx},
+		shell: "sh", err: errors.New(`exec: "sh": executable file not found in $PATH`),
+	}
+	debug := "kubectl debug -it -n demo web-1 --image=busybox:1.36 --target=nginx"
+	cases := []struct {
+		name   string
+		before time.Duration // the clock moves on, then x is pressed
+		after  time.Duration // then the clock moves on again
+		debug  bool
+	}{
+		{name: "a key inside the ttl", before: time.Second, debug: true},
+		{name: "the ttl after a key inside it", before: time.Second, after: status.TTL},
+		{name: "a key after the ttl", before: time.Minute},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			clk := &manualClock{at: time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)}
+			m := New(nil, nil, WithClock(clk.now))
+			m.width, m.height = 80, 24
+			_, view := commandRows(t, m)
+			m, _ = tuitest.Drive(t, m, execDoneMsg(done))
+			clk.at = clk.at.Add(tc.before)
+			m, _ = tuitest.Drive(t, m, tuitest.Press("x"))
+			clk.at = clk.at.Add(tc.after)
+			want := view
+			if tc.debug {
+				want = debug
+			}
+			if _, command := commandRows(t, m); command != want {
+				t.Errorf("command row = %q, want %q", command, want)
+			}
+		})
 	}
 }
 
@@ -262,8 +342,9 @@ func TestDebugCommandReachesTheSameCluster(t *testing.T) {
 	m.kubectlSession = newKubectlSession(c, sessionFlags{}, func(string) string { return "" }, "/home/me")
 	done := shellDoneMsg{req: views.ExecRequestMsg{Namespace: "demo", Pod: "web-1", Container: "app"}, shell: "sh", err: exitErr(t, "127")}
 	want := "kubectl --context prod debug -it -n demo web-1 --image=busybox:1.36 --target=app"
-	if got := m.debugCommand(done); got != want {
-		t.Errorf("debugCommand = %q, want %q", got, want)
+	_, out := tuitest.Drive(t, m, execDoneMsg(done), tuitest.Press("y"))
+	if got, _ := tuitest.Clipboard(out); got != want {
+		t.Errorf("debug command = %q, want %q", got, want)
 	}
 }
 

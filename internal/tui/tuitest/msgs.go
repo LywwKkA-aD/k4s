@@ -40,6 +40,18 @@ func Contains(msgs []tea.Msg, want tea.Msg) bool {
 	return false
 }
 
+// Clipboard returns what msgs asked the terminal to put on the clipboard:
+// the text of the first tea.SetClipboard among them. Its message type is
+// unexported, so it is told by name.
+func Clipboard(msgs []tea.Msg) (string, bool) {
+	for _, m := range msgs {
+		if fmt.Sprintf("%T", m) == "tea.setClipboardMsg" {
+			return reflect.ValueOf(m).String(), true
+		}
+	}
+	return "", false
+}
+
 // viewsPkg is where the cross-view request messages live.
 const viewsPkg = "github.com/LywwKkA-aD/k4s/internal/tui/views"
 

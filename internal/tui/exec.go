@@ -149,10 +149,10 @@ type shellDoneMsg struct {
 }
 
 // apply reports a failed session. A container without the shell gets
-// the kubectl debug command that brings one, shown and never run. The
-// command comes right after the reason, so the status row, which is cut
-// at the terminal's width, shows it whole on an 80-column screen; the pod
-// and container are in it.
+// the kubectl debug command that brings one, shown and never run: the
+// status row says so, and the command takes the footer's command row,
+// whole at 80 columns, for as long as that status shows, so y copies it.
+// busybox cannot serve a Windows pod, which gets the reason alone.
 func (d shellDoneMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if d.err == nil {
 		return m, nil
@@ -160,11 +160,11 @@ func (d shellDoneMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if !d.missingShell() {
 		return m.setError("exec: " + d.err.Error())
 	}
-	debug := m.debugCommand(d)
-	if debug == "" {
+	if d.shell == windowsShell {
 		return m.setError("exec: no " + d.shell + " in " + podLabel(d.req) + exitLabel(d.err))
 	}
-	return m.setError("no " + d.shell + " · " + debug + exitLabel(d.err))
+	text := "no " + d.shell + " in " + d.req.Namespace + "/" + d.req.Pod + " · y copies the kubectl debug command" + exitLabel(d.err)
+	return m.setStatusAbout(status.Error, text, debugCommand(d.req))
 }
 
 // missingShell reports a shell that could not start: the runtime says the
@@ -183,17 +183,13 @@ func (d shellDoneMsg) missingShell() bool {
 }
 
 // debugCommand is `kubectl debug -it -n <ns> <pod> --image=busybox:1.36
-// --target=<c>` for d, decorated like the footer; "" for a Windows pod,
-// which busybox cannot serve.
-func (m Model) debugCommand(d shellDoneMsg) string {
-	if d.shell == windowsShell {
-		return ""
+// --target=<c>` for req. The footer decorates it like every command.
+func debugCommand(req views.ExecRequestMsg) kubectl.Cmd {
+	args := []string{"debug", "-it", "-n", req.Namespace, req.Pod, "--image=" + debugImage}
+	if req.Container != "" {
+		args = append(args, "--target="+req.Container)
 	}
-	args := []string{"debug", "-it", "-n", d.req.Namespace, d.req.Pod, "--image=" + debugImage}
-	if d.req.Container != "" {
-		args = append(args, "--target="+d.req.Container)
-	}
-	return m.decorate(kubectl.New(args...)).String()
+	return kubectl.New(args...)
 }
 
 func podLabel(req views.ExecRequestMsg) string {

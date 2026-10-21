@@ -9,6 +9,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 )
 
 // Level ranks a status message; the footer colours it by level.
@@ -42,12 +44,16 @@ type ExpireMsg struct{ seq uint64 }
 // Line holds the current status message. The zero value shows nothing.
 // Methods return a new Line and leave the receiver as it was.
 type Line struct {
-	msg   Message
+	msg Message
+	// cmd is the command msg is about (see SetCommand); zero for most.
+	cmd   kubectl.Cmd
 	shown bool
 	since time.Time
 	// seq tells the expiry of this message from that of one it replaced.
-	seq     uint64
-	keySeen bool
+	seq uint64
+	// keys counts the key presses since msg was set, up to 2: enough to
+	// tell the press that dismissed an error from the ones after it.
+	keys int
 }
 
 // Set shows text at level from now on, replacing any message, and returns
@@ -72,19 +78,23 @@ func (l Line) Clear() Line {
 // KeyPressed records a key press: an error already past its TTL goes, one
 // still inside it goes when the TTL runs out.
 func (l Line) KeyPressed() Line {
-	l.keySeen = true
+	l.keys = min(l.keys+1, 2)
 	return l
 }
 
 // Current returns the message showing at now, if any.
 func (l Line) Current(now time.Time) (Message, bool) {
-	if !l.shown {
+	if !l.showing(now) {
 		return Message{}, false
 	}
-	if now.Sub(l.since) < TTL || (l.msg.Level == Error && !l.keySeen) {
-		return l.msg, true
+	return l.msg, true
+}
+
+func (l Line) showing(now time.Time) bool {
+	if !l.shown {
+		return false
 	}
-	return Message{}, false
+	return now.Sub(l.since) < TTL || (l.msg.Level == Error && l.keys == 0)
 }
 
 // Expire drops the message if it has stopped showing at now. The expiry of

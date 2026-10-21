@@ -299,6 +299,18 @@ func TestIsExec(t *testing.T) {
 	}
 }
 
+func TestClipboard(t *testing.T) {
+	t.Parallel()
+
+	out := tuitest.Collect(t, tea.Batch(emit("a"), tea.SetClipboard("kubectl get pods -A")))
+	if got, ok := tuitest.Clipboard(out); !ok || got != "kubectl get pods -A" {
+		t.Errorf("Clipboard = %q, %v", got, ok)
+	}
+	if got, ok := tuitest.Clipboard([]tea.Msg{label("kubectl"), nil}); ok {
+		t.Errorf("Clipboard found %q in messages without a copy", got)
+	}
+}
+
 // screen is a view-shaped contract: Update returns it rather than
 // tea.Model, the way views.View does.
 type screen interface {

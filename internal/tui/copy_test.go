@@ -2,10 +2,8 @@ package tui_test
 
 import (
 	"cmp"
-	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -15,17 +13,6 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
-
-// clipboard returns what the messages asked the terminal to put on the
-// clipboard: the payload of tea.SetClipboard's message.
-func clipboard(msgs []tea.Msg) (string, bool) {
-	for _, msg := range msgs {
-		if fmt.Sprintf("%T", msg) == "tea.setClipboardMsg" {
-			return reflect.ValueOf(msg).String(), true
-		}
-	}
-	return "", false
-}
 
 // TestCopyTakesTheFooterCommand: y copies what the footer shows, as it
 // would be pasted: with --context after a switch, never with the
@@ -68,7 +55,7 @@ func TestCopyTakesTheFooterCommand(t *testing.T) {
 			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), tc.setup...)
 			before := tuitest.Screen(m)
 			m, out := tuitest.Drive(t, m, tuitest.Press("y"))
-			got, ok := clipboard(out)
+			got, ok := tuitest.Clipboard(out)
 			if !ok || got != tc.want {
 				t.Fatalf("clipboard = %q, %v; want %q\n%s", got, ok, tc.want, tuitest.Describe(out))
 			}
@@ -115,7 +102,7 @@ func TestCopyIsTextWhereTextIsTyped(t *testing.T) {
 			t.Parallel()
 			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), tc.setup...)
 			m, out := tuitest.Drive(t, m, tuitest.Press("y"))
-			if got, ok := clipboard(out); ok {
+			if got, ok := tuitest.Clipboard(out); ok {
 				t.Fatalf("y copied %q", got)
 			}
 			requireScreen(t, m, tc.want)
@@ -128,7 +115,7 @@ func TestCopyWithNothingToCopy(t *testing.T) {
 
 	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), colon("pf")...)
 	m, out := tuitest.Drive(t, m, tuitest.Press("y"))
-	if got, ok := clipboard(out); ok {
+	if got, ok := tuitest.Clipboard(out); ok {
 		t.Fatalf("y copied %q from an empty forwards list", got)
 	}
 	if row := statusRow(footer(m)); row != "nothing to copy" {
@@ -151,7 +138,7 @@ func TestCopyShowsAShortenedHome(t *testing.T) {
 	c.KubeconfigPaths = []string{path}
 	m, out := tuitest.Drive(t, startedWith(t, c, nil), tuitest.Press("y"))
 	want := "kubectl --kubeconfig " + path + " get all -A"
-	if got, _ := clipboard(out); got != want {
+	if got, _ := tuitest.Clipboard(out); got != want {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
 	if row := statusRow(footer(m)); row != "copied: kubectl --kubeconfig ~/clusters/lab.yaml get all -A" {

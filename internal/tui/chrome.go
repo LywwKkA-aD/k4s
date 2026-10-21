@@ -151,11 +151,23 @@ func (m Model) footerBindings() []string {
 	return bindings
 }
 
-// activeCommand is the open overlay's command when it previews one (the
-// tail prompt, the container picker), else the active view's.
+// activeCommand is the command the footer's second row shows: the open
+// overlay's when it previews one (the tail prompt, the container picker),
+// else the one the status row is about (the kubectl debug command after a
+// missing shell), else the active view's.
 func (m Model) activeCommand() kubectl.Cmd {
+	cmd, _ := m.commandOver(m.status.Command(m.now()))
+	return cmd
+}
+
+// commandOver is activeCommand given the status row's command, if any;
+// about reports that the status supplied it.
+func (m Model) commandOver(statusCmd kubectl.Cmd, shown bool) (cmd kubectl.Cmd, about bool) {
 	if cmd, ok := overlay.CommandOf(m.overlay); ok {
-		return cmd
+		return cmd, false
 	}
-	return m.current.Command()
+	if shown {
+		return statusCmd, true
+	}
+	return m.current.Command(), false
 }
