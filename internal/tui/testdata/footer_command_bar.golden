@@ -1,2 +1,2 @@
  : pods, ns, dashboard
- kubectl get all -A
+ ≈ kubectl get nodes,pods,deploy,sts,ds -A

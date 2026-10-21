@@ -19,5 +19,5 @@
 
 
 ──────────────────────────────────────────────────────────────────────────────
- q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  r r…
+ q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  tab…
  kubectl logs -f web-1 --tail=100 -n demo

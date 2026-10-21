@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
@@ -114,6 +115,17 @@ func TestShortcuts(t *testing.T) {
 	}
 	if _, ok := tuitest.KeyName(tuitest.Resize(80, 24)); ok {
 		t.Error("Resize must not be a key message")
+	}
+	for _, msg := range []tea.Msg{tuitest.Blur(), tuitest.Focus()} {
+		if _, ok := tuitest.KeyName(msg); ok {
+			t.Errorf("%T must not be a key message", msg)
+		}
+	}
+	if _, ok := tuitest.Blur().(tea.BlurMsg); !ok {
+		t.Errorf("Blur() = %T, want the framework's blur message", tuitest.Blur())
+	}
+	if _, ok := tuitest.Focus().(tea.FocusMsg); !ok {
+		t.Errorf("Focus() = %T, want the framework's focus message", tuitest.Focus())
 	}
 }
 

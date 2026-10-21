@@ -44,11 +44,11 @@ func TestContextFlagStaysOnFooterCommands(t *testing.T) {
 	t.Parallel()
 
 	m := startedWith(t, tuitest.NewFakeClient(t), nil, tui.WithFlags(cli.Options{Context: tuitest.FakeContext}))
-	if got := commandRow(m); got != "kubectl --context fake get all -A" {
+	if got := commandRow(m); got != "≈ kubectl --context fake get nodes,pods,deploy,sts,ds -A" {
 		t.Errorf("command row = %q", got)
 	}
 	plain := started(t, tuitest.NewFakeClient(t))
-	if got := commandRow(plain); got != "kubectl get all -A" {
+	if got := commandRow(plain); got != "≈ kubectl get nodes,pods,deploy,sts,ds -A" {
 		t.Errorf("without --context the command row = %q", got)
 	}
 }
@@ -111,7 +111,7 @@ func TestContextSwitchReadsTheSessionKubeconfig(t *testing.T) {
 	if !strings.Contains(h, "ctx delta") || !strings.Contains(h, "ns "+tuitest.NamespaceDemo) {
 		t.Errorf("header after the switch = %q", h)
 	}
-	want := fmt.Sprintf("kubectl --kubeconfig %s --context delta get all -A", src.Paths[0])
+	want := fmt.Sprintf("≈ kubectl --kubeconfig %s --context delta get nodes,pods,deploy,sts,ds -n demo", src.Paths[0])
 	if got := commandRow(m); got != want {
 		t.Errorf("command row = %q\nwant          %q", got, want)
 	}
@@ -119,7 +119,7 @@ func TestContextSwitchReadsTheSessionKubeconfig(t *testing.T) {
 	// Switching again goes through the new client and keeps the file;
 	// gamma is the file's current-context, so it needs no --context.
 	m, _ = tuitest.Drive(t, m, views.ContextSelectedMsg{Name: "gamma"})
-	want = fmt.Sprintf("kubectl --kubeconfig %s get all -A", src.Paths[0])
+	want = fmt.Sprintf("≈ kubectl --kubeconfig %s get nodes,pods,deploy,sts,ds -n demo", src.Paths[0])
 	if got := commandRow(m); got != want {
 		t.Errorf("command row after the second switch = %q", got)
 	}

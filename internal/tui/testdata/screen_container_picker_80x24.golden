@@ -19,5 +19,5 @@
 
 
 ──────────────────────────────────────────────────────────────────────────────
- q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  r r…
+ q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  tab…
  kubectl exec -it -n demo -c sidecar multi-0 -- sh

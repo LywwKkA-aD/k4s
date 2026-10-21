@@ -1,23 +1,23 @@
  k4s · ctx fake · ns ALL · dashboard
 ──────────────────────────────────────────────────────────────────────────────
-╭────────────────────────────────────────────────────────────╮
-│  namespaces 3  ·  pods 5  ·  deployments 2  ·  services 2  │
-╰────────────────────────────────────────────────────────────╯
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+›◆ nothing failing in what k4s can see                                 watch 5s
+ ▸ next  kubectl api-resources --api-group=metrics.k8s.io   is the metrics API …
+   1 cluster    ○ readyz not served
+   2 nodes      ○ no nodes registered
+╭─┤ 3 pods ├───────────────────────────────────────────────────────────────────╮
+│ ○ pods not served                                                            │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   4 workloads  ○ deploy not served · ○ sts not served · ○ ds not served
+   5 events     ● no warnings in the last hour
 ──────────────────────────────────────────────────────────────────────────────
  : pods, ns, dashboard
- kubectl get all -A
+ ≈ kubectl get nodes,pods,deploy,sts,ds -A

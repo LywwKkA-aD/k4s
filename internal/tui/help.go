@@ -1,10 +1,14 @@
 package tui
 
 import (
+	"slices"
+
 	"charm.land/bubbles/v2/key"
+	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/command"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
+	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
 // openHelp opens the help popup: every binding the user can act on right
@@ -14,14 +18,43 @@ func (m Model) openHelp() Model {
 	return m
 }
 
-// helpSections is the global keys, the view's own (if any) and the
-// commands, in that order.
+// helpSections is the global keys, the view's own (if any), the view's
+// map (if it has one and the popup still fits the body) and the commands,
+// in that order.
 func (m Model) helpSections() []overlay.HelpSection {
 	sections := []overlay.HelpSection{{Title: "global", Entries: globalHelp(m)}}
 	if vh := viewHelp(m.current.Help()); len(vh) > 0 {
 		sections = append(sections, overlay.HelpSection{Title: "view: " + m.current.Title(), Entries: vh})
 	}
-	return append(sections, overlay.HelpSection{Title: "commands", Entries: commandHelp()})
+	commands := overlay.HelpSection{Title: "commands", Entries: commandHelp()}
+	if mp, ok := m.current.(mapper); ok {
+		if entries := viewHelp(mp.HelpMap()); len(entries) > 0 {
+			withMap := append(slices.Clip(sections), overlay.HelpSection{Title: m.current.Title() + " map", Entries: entries}, commands)
+			if m.helpFits(withMap) {
+				return withMap
+			}
+		}
+	}
+	return append(sections, commands)
+}
+
+// mapper is a view with a map of its parts for the help popup: the
+// dashboard lists its panels with the key that focuses each and its
+// kubectl command.
+type mapper interface {
+	HelpMap() []key.Binding
+}
+
+// helpFits reports whether the help popup with sections fits the body. The
+// popup does not scroll, so a map that would push the commands off screen
+// is left out.
+func (m Model) helpFits(sections []overlay.HelpSection) bool {
+	if m.height == 0 {
+		return true
+	}
+	inner := m.width - styles.PopupBox.GetHorizontalFrameSize()
+	box := styles.PopupBox.Render(overlay.NewHelp(sections).View(inner))
+	return lipgloss.Height(box) <= m.bodyHeight()
 }
 
 // globalHelp lists the bindings the root model owns: quit/home, command bar,

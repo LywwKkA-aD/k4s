@@ -137,11 +137,11 @@ func TestCopyShowsAShortenedHome(t *testing.T) {
 	c.Source = k8s.Source{Paths: []string{path}, Origin: k8s.OriginFlag}
 	c.KubeconfigPaths = []string{path}
 	m, out := tuitest.Drive(t, startedWith(t, c, nil), tuitest.Press("y"))
-	want := "kubectl --kubeconfig " + path + " get all -A"
+	want := "kubectl --kubeconfig " + path + " get nodes,pods,deploy,sts,ds -A"
 	if got, _ := tuitest.Clipboard(out); got != want {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
-	if row := statusRow(footer(m)); row != "copied: kubectl --kubeconfig ~/clusters/lab.yaml get all -A" {
+	if row := statusRow(footer(m)); row != "copied (approximate): kubectl --kubeconfig ~/clusters/lab.yaml get nodes,pods,deploy,sts,ds -A" {
 		t.Errorf("status row = %q", row)
 	}
 }

@@ -1,2 +1,2 @@
- q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  r refresh  ·  w watch
- kubectl get all -A
+ q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  tab/0-7 panel  ·  ←→ neighbour  ·  ↑↓ row  ·  r refresh  ·  w paused
+ ≈ kubectl get nodes,pods,deploy,sts,ds -A

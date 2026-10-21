@@ -148,6 +148,14 @@ func Resize(width, height int) tea.Msg {
 	return tea.WindowSizeMsg{Width: width, Height: height}
 }
 
+// Blur returns the message a terminal with focus reporting sends when its
+// window loses focus.
+func Blur() tea.Msg { return tea.BlurMsg{} }
+
+// Focus returns the message a terminal with focus reporting sends when its
+// window gains focus.
+func Focus() tea.Msg { return tea.FocusMsg{} }
+
 // KeyName returns the name key bindings match msg against, and false when
 // msg is not a key press.
 func KeyName(msg tea.Msg) (string, bool) {

@@ -40,6 +40,8 @@ func (m Model) View() tea.View {
 	v := tea.NewView(content)
 	v.AltScreen = true
 	v.WindowTitle = m.windowTitle()
+	// The dashboard polls slower while the terminal is in the background.
+	v.ReportFocus = true
 	return v
 }
 
