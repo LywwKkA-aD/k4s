@@ -21,11 +21,19 @@ type eventSubject struct {
 	uid                   types.UID
 }
 
+// describeEventsLimit bounds the events a describe lists: an object that
+// has flapped for weeks in a long-lived namespace can have thousands.
+const describeEventsLimit = 500
+
 // eventList is the events about one object, or why they could not be
 // read. Events are best effort: a failed list never fails the describe.
+// more is set when the server held more than describeEventsLimit; they
+// are not read, and subject names the object for the note that says so.
 type eventList struct {
-	items []corev1.Event
-	err   error
+	items   []corev1.Event
+	err     error
+	more    bool
+	subject eventSubject
 }
 
 // eventsFor lists the events about s. They are matched by uid, as kubectl
@@ -37,7 +45,10 @@ func (c *Client) eventsFor(ctx context.Context, s eventSubject) eventList {
 	if s.uid != "" {
 		sel["involvedObject.uid"] = string(s.uid)
 	}
-	list, err := c.Clientset.CoreV1().Events(s.namespace).List(ctx, metav1.ListOptions{FieldSelector: sel.AsSelector().String()})
+	list, err := c.Clientset.CoreV1().Events(s.namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: sel.AsSelector().String(),
+		Limit:         describeEventsLimit,
+	})
 	if err != nil {
 		return eventList{err: fmt.Errorf("list events: %w", err)}
 	}
@@ -47,7 +58,7 @@ func (c *Client) eventsFor(ctx context.Context, s eventSubject) eventList {
 			mine = append(mine, e)
 		}
 	}
-	return eventList{items: mine}
+	return eventList{items: mine, more: list.Continue != "", subject: s}
 }
 
 func (s eventSubject) about(ref corev1.ObjectReference) bool {
@@ -77,6 +88,11 @@ func writeEvents(w describeWriter, ev eventList, now time.Time) {
 	w.write(1, "----\t------\t----\t----\t-------\n")
 	for _, e := range sorted {
 		w.write(1, "%s\t%s\t%s\t%s\t%s\n", e.Type, e.Reason, eventAge(e, now), eventSource(e), strings.TrimSpace(e.Message))
+	}
+	if ev.more {
+		w.flush()
+		s := ev.subject
+		w.write(1, "… more events: kubectl events --for %s/%s -n %s\n", strings.ToLower(s.kind), s.name, s.namespace)
 	}
 }
 
