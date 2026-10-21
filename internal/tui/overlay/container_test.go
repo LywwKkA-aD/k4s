@@ -96,3 +96,18 @@ func TestContainerPickerIgnoresOtherMessages(t *testing.T) {
 	o, _ := feed(t, overlay.NewContainer(pickerRequest()), tuitest.Paste("2"), tuitest.Resize(80, 24))
 	requireShows(t, o, "▶ 1. app")
 }
+
+func TestContainerPickerMarksADetachedTarget(t *testing.T) {
+	t.Parallel()
+
+	req := pickerRequest()
+	req.Detached = true
+	o := overlay.NewContainer(req)
+	requireShows(t, o, "container · pod/multi-0 · ns demo", "(not the selected row)", "▶ 1. app")
+	for width := 1; width <= 80; width++ {
+		requireNarrow(t, o, width)
+	}
+	if strings.Contains(screen(overlay.NewContainer(pickerRequest())), "not the selected row") {
+		t.Error("an attached request is marked")
+	}
+}

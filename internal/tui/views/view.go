@@ -142,7 +142,9 @@ type LogsRequestMsg struct {
 //
 // list views with only one container should bypass this message entirely
 // and emit the next-kind msg directly. Target names the row in the
-// picker's title; Target and Logs are carried on to the tail prompt.
+// picker's title; Target, Logs and Detached are carried on to the tail
+// prompt. Detached has the meaning it has on TailPromptRequestMsg: the
+// picker shows "(not the selected row)".
 type ContainerPromptRequestMsg struct {
 	Namespace  string
 	Pods       []string
@@ -150,6 +152,7 @@ type ContainerPromptRequestMsg struct {
 	NextKind   string // "logs" or "exec"
 	Target     ResourceRef
 	Logs       k8s.LogTarget
+	Detached   bool
 }
 
 // ExecRequestMsg drops the user into a kubectl-exec shell against the named

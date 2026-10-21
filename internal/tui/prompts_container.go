@@ -26,7 +26,7 @@ func dispatchContainerCmd(req views.ContainerPromptRequestMsg, container string)
 		return func() tea.Msg {
 			return views.TailPromptRequestMsg{
 				Namespace: req.Namespace, Pods: req.Pods, Container: container,
-				Target: req.Target, Logs: req.Logs,
+				Target: req.Target, Logs: req.Logs, Detached: req.Detached,
 			}
 		}
 	case "exec":

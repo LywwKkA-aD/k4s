@@ -61,8 +61,12 @@ func (c container) pick(idx int) (Overlay, tea.Cmd) {
 func (c container) View(width int) string {
 	title := styles.PopupTitle.Render("container") +
 		styles.Hint.Render(" · "+targetLabel(c.req.Target, c.req.Namespace, c.req.Pods))
-	lines := make([]string, 0, len(c.req.Containers)+4)
-	lines = append(lines, title, "")
+	lines := make([]string, 0, len(c.req.Containers)+5)
+	lines = append(lines, title)
+	if c.req.Detached {
+		lines = append(lines, styles.Warn.Render("(not the selected row)"))
+	}
+	lines = append(lines, "")
 	for i, name := range c.req.Containers {
 		marker := "  "
 		label := fmt.Sprintf("%d. %s", i+1, name)
