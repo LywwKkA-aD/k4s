@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/LywwKkA-aD/k4s/internal/tui/viz"
 )
 
@@ -24,7 +26,7 @@ func TestMeterShrinksFromTwelveCellsToSixToTheValue(t *testing.T) {
 		{name: "value", width: 5, percent: 38, want: " 38% "},
 		{name: "kubectl rounding 52", width: 18, percent: 52, want: "██████▎·····  52% "},
 		{name: "kubectl rounding 14", width: 18, percent: 14, want: "█▋··········  14% "},
-		{name: "full", width: 18, percent: 100, want: "████████████ 100%▲"},
+		{name: "full", width: 18, percent: 100, want: "████████████ 100%△"},
 		{name: "empty", width: 18, percent: 0, want: "············   0% "},
 	}
 	for _, c := range cases {
@@ -68,9 +70,9 @@ func TestMeterLevelThresholds(t *testing.T) {
 		{percent: 69.5, want: viz.LevelWarn},
 		{percent: 70, want: viz.LevelWarn},
 		{percent: 84.4, want: viz.LevelWarn},
-		{percent: 84.5, want: viz.LevelErr},
-		{percent: 85, want: viz.LevelErr},
-		{percent: 250, want: viz.LevelErr},
+		{percent: 84.5, want: viz.LevelHot},
+		{percent: 85, want: viz.LevelHot},
+		{percent: 250, want: viz.LevelHot},
 		{percent: -5, want: viz.LevelOK},
 		{percent: math.NaN(), want: viz.LevelOK},
 	}
@@ -87,11 +89,11 @@ func TestMeterProgressScalesTheFillNotTheValue(t *testing.T) {
 		progress float64
 		want     string
 	}{
-		{progress: 0, want: "············  87%▲"},
-		{progress: 0.5, want: "█████▎······  87%▲"},
-		{progress: 1, want: "██████████▌·  87%▲"},
-		{progress: 1.3, want: "██████████▌·  87%▲"},
-		{progress: -1, want: "············  87%▲"},
+		{progress: 0, want: "············  87%△"},
+		{progress: 0.5, want: "█████▎······  87%△"},
+		{progress: 1, want: "██████████▌·  87%△"},
+		{progress: 1.3, want: "██████████▌·  87%△"},
+		{progress: -1, want: "············  87%△"},
 	}
 	for _, c := range cases {
 		if got := plain(viz.Meter(viz.Mono(), 18, 87, c.progress)); got != c.want {
@@ -106,7 +108,7 @@ func TestMeterClampsOutOfRangeValues(t *testing.T) {
 		percent float64
 		want    string
 	}{
-		{percent: 150, want: "████████████ 100%▲"},
+		{percent: 150, want: "████████████ 100%△"},
 		{percent: -20, want: "············   0% "},
 		{percent: math.NaN(), want: "············   0% "},
 	}
@@ -124,13 +126,13 @@ func TestMeterValueAtTinyWidths(t *testing.T) {
 		percent float64
 		want    string
 	}{
-		{width: 4, percent: 87, want: "87%▲"},
-		{width: 3, percent: 87, want: "87▲"},
+		{width: 4, percent: 87, want: "87%△"},
+		{width: 3, percent: 87, want: "87△"},
 		{width: 2, percent: 87, want: "87"},
 		{width: 1, percent: 87, want: "…"},
 		{width: 4, percent: 38, want: "38% "},
 		{width: 3, percent: 38, want: "38%"},
-		{width: 4, percent: 100, want: "100▲"},
+		{width: 4, percent: 100, want: "100△"},
 		{width: 3, percent: 100, want: "100"},
 		{width: 1, percent: 5, want: "5"},
 	}
@@ -152,5 +154,45 @@ func TestMeterMonoMarksHotValueWithAttributes(t *testing.T) {
 	cool := viz.Meter(viz.Mono(), 18, 10, 1)
 	if cool != plain(cool) {
 		t.Errorf("ok meter in mono should be plain text: %q", cool)
+	}
+}
+
+// A hot meter is waiting, not failing: warn attributes sit on the number
+// and the glyph alone, the bar keeps only the colour, and the err style is
+// never used.
+func TestMeterHotEscapeOutput(t *testing.T) {
+	t.Parallel()
+	fg := func(hex string) lipgloss.Style { return lipgloss.NewStyle().Foreground(lipgloss.Color(hex)) }
+	th := viz.Theme{
+		Muted: fg("#A8A8A8"),
+		OK:    fg("#04B575"),
+		Warn:  fg("#F2A65A").Bold(true),
+		Err:   fg("#FF7B72").Underline(true),
+	}
+	want := fg("#F2A65A").Render("██████████▌") + th.Muted.Render("·") + "  " +
+		th.Warn.Render("87%") + th.Warn.Render("△") + "  "
+	if got := viz.Meter(th, 20, 87, 1); got != want {
+		t.Errorf("hot meter = %q, want %q", got, want)
+	}
+}
+
+func TestMeterNeverPaintsWithErr(t *testing.T) {
+	t.Parallel()
+	th := colour()
+	th.Err = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Underline(true)
+	for _, pct := range []float64{0, 50, 70, 84, 85, 100} {
+		out := viz.Meter(th, 20, pct, 1)
+		if strings.Contains(out, "255;0;0") || strings.Contains(out, "\x1b[4m") {
+			t.Errorf("Meter(%v) uses the err style: %q", pct, out)
+		}
+	}
+}
+
+func TestMeterWarnBandHasNoGlyph(t *testing.T) {
+	t.Parallel()
+	for _, pct := range []float64{70, 84} {
+		if got := plain(viz.Meter(viz.Mono(), 18, pct, 1)); strings.Contains(got, viz.HotGlyph) {
+			t.Errorf("Meter(%v) = %q, the glyph starts at 85", pct, got)
+		}
 	}
 }

@@ -124,7 +124,9 @@ func TestPhaseLegend(t *testing.T) {
 		{name: "last entry dropped", width: 15, want: "█171 ▓7 ░2 ▚4 …"},
 		{name: "whole entries dropped", width: 14, want: "█171 ▓7 ░2 …  "},
 		{name: "never cuts a count", width: 8, want: "█171 …  "},
-		{name: "ellipsis only", width: 5, want: "…    "},
+		{name: "entries that fit, no room for the ellipsis", width: 5, want: "█171 "},
+		{name: "one entry at four", width: 4, want: "█171"},
+		{name: "ellipsis only", width: 3, want: "…  "},
 		{name: "one column", width: 1, want: "…"},
 	}
 	for _, c := range cases {

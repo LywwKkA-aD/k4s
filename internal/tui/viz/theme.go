@@ -26,7 +26,8 @@ type Theme struct {
 	Accent lipgloss.Style
 	// Accent2 paints the ≈ history: block and braille sparklines.
 	Accent2 lipgloss.Style
-	// OK, Warn and Err paint the meter levels and the Running, Pending and
+	// OK and Warn paint the meter levels (a hot meter is warn, never err); OK,
+	// Warn and Err paint the Running, Pending and
 	// failing phases.
 	OK, Warn, Err lipgloss.Style
 }
