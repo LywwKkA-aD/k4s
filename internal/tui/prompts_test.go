@@ -37,7 +37,7 @@ func TestTailPrompt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), tailRequest())
-			requireScreen(t, m, "tail lines", "Enter run · Esc cancel · default 100", "tail lines: 100")
+			requireScreen(t, m, "tail lines · pod/web-1 · ns demo", "Enter run · Esc cancel · default 100", "❯ 100")
 
 			m, out := tuitest.Drive(t, m, tc.keys...)
 			logs := tuitest.All[views.LogsRequestMsg](out)
@@ -69,7 +69,7 @@ func TestPromptsCaptureGlobalKeys(t *testing.T) {
 	if hasQuit(out) {
 		t.Fatal("q inside the tail prompt quit the app")
 	}
-	requireScreen(t, m, "tail lines: 100q:?")
+	requireScreen(t, m, "❯ 100q:?")
 	refuteScreen(t, m, "global")
 }
 
@@ -119,8 +119,8 @@ func TestContainerPicker(t *testing.T) {
 			if len(tails) != 1 || !tuitest.Contains(out, want) {
 				t.Fatalf("want %+v, got:\n%s", want, tuitest.Describe(out))
 			}
-			// The pick chains into the tail prompt.
-			requireScreen(t, m, "tail lines: 100")
+			// The pick chains into the tail prompt, which names the pod.
+			requireScreen(t, m, "tail lines · pod/multi-0 · ns demo", "❯ 100")
 		})
 	}
 }
@@ -243,7 +243,9 @@ func TestForwardPromptOpensPrefilled(t *testing.T) {
 	}
 }
 
-func TestForwardPromptRejectsBadInput(t *testing.T) {
+// TestForwardPromptKeepsBadInputOpen: a typo in the pair keeps the popup
+// open with the reason in it, so the user can fix it in place.
+func TestForwardPromptKeepsBadInputOpen(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -252,14 +254,14 @@ func TestForwardPromptRejectsBadInput(t *testing.T) {
 		input string
 		want  string
 	}{
-		{name: "empty without a hint", input: "", want: "port-forward: port required (try 8080:80)"},
-		{name: "not a number", hint: 80, input: "abc", want: `port-forward: "abc" is not a port number`},
-		{name: "zero", hint: 80, input: "0", want: "port-forward: port must be > 0"},
-		{name: "out of range", hint: 80, input: "70000", want: `port-forward: "70000" is not a port number`},
-		{name: "both sides empty", hint: 80, input: ":", want: "port-forward: both ports empty"},
-		{name: "bad local side", hint: 80, input: "x:80", want: `port-forward: local port: "x" is not a port number`},
-		{name: "bad remote side", hint: 80, input: "8080:y", want: `port-forward: remote port: "y" is not a port number`},
-		{name: "three parts", hint: 80, input: "1:2:3", want: `port-forward: remote port: "2:3" is not a port number`},
+		{name: "empty without a hint", input: "", want: "port required (try 8080:80)"},
+		{name: "not a number", hint: 80, input: "abc", want: `"abc" is not a port number`},
+		{name: "zero", hint: 80, input: "0", want: "port must be > 0"},
+		{name: "out of range", hint: 80, input: "70000", want: `"70000" is not a port number`},
+		{name: "both sides empty", hint: 80, input: ":", want: "both ports empty"},
+		{name: "bad local side", hint: 80, input: "x:80", want: `local port: "x" is not a port number`},
+		{name: "bad remote side", hint: 80, input: "8080:y", want: `remote port: "y" is not a port number`},
+		{name: "three parts", hint: 80, input: "1:2:3", want: `remote port: "2:3" is not a port number`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -270,16 +272,17 @@ func TestForwardPromptRejectsBadInput(t *testing.T) {
 				keys = append(keys, tuitest.Type(tc.input))
 			}
 			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), append(keys, tuitest.Enter())...)
-			if got := footer(m); !strings.Contains(got, tc.want) {
-				t.Errorf("footer = %q, want %q", got, tc.want)
+			requireScreen(t, m, "port-forward", tc.want, "format local:remote")
+			if got := footer(m); strings.Contains(got, tc.want) {
+				t.Errorf("the error went to the footer too: %q", got)
 			}
 			requireView(t, m, "dashboard")
 
-			// Reopening the prompt wipes the stale error.
+			// Esc drops the prompt and its error; reopening starts clean.
+			m, _ = tuitest.Drive(t, m, tuitest.Esc())
+			refuteScreen(t, m, "format local:remote", tc.want)
 			m, _ = tuitest.Drive(t, m, req)
-			if got := footer(m); strings.Contains(got, "port-forward:") {
-				t.Errorf("stale error after reopening: %q", got)
-			}
+			refuteScreen(t, m, tc.want)
 		})
 	}
 }

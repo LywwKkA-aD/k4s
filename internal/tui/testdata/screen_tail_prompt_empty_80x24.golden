@@ -6,9 +6,9 @@
 
                 ╭──────────────────────────────────────────────╮
                 │                                              │
-                │   tail lines                                 │
+                │   tail lines · pod/web-1 · ns demo           │
                 │                                              │
-                │   tail lines: 100                            │
+                │   ❯ 100                                      │
                 │                                              │
                 │   Enter run · Esc cancel · default 100       │
                 │                                              │

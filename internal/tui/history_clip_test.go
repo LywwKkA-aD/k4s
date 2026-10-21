@@ -17,11 +17,10 @@ import (
 func TestEscOnEarlierModelIgnoresLaterNavigation(t *testing.T) {
 	t.Parallel()
 
+	// The command bar answers through a Cmd, so its messages are driven.
 	send := func(m tea.Model, msgs ...tea.Msg) tea.Model {
-		for _, msg := range msgs {
-			m, _ = m.Update(msg)
-		}
-		return m
+		next, _ := tuitest.Drive(t, m.(Model), msgs...)
+		return next
 	}
 	esc := tuitest.Esc()
 	command := func(m tea.Model, name string) tea.Model {

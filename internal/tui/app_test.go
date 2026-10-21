@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
+	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
@@ -197,9 +199,8 @@ func TestSwitchToSamePageDoesNotPushHistory(t *testing.T) {
 	}
 }
 
-// TestHelpPopupOpensAndCloses asserts '?' opens the help mode and the next
-// key — any key — closes it again. The popup blocks key forwarding to the
-// active view, so the dashboard underneath stays untouched.
+// TestHelpPopupOpensAndCloses asserts '?' opens help as the one overlay and
+// Esc closes it without going back: the dashboard underneath stays.
 func TestHelpPopupOpensAndCloses(t *testing.T) {
 	t.Parallel()
 
@@ -209,8 +210,8 @@ func TestHelpPopupOpensAndCloses(t *testing.T) {
 
 	upd, _ = m.Update(tuitest.Press("?"))
 	m = upd.(Model)
-	if m.cmdMode != cmdBarHelp {
-		t.Fatalf("cmdMode after '?' = %v, want cmdBarHelp", m.cmdMode)
+	if m.overlay == nil || overlay.PlacementOf(m.overlay) != overlay.Popup {
+		t.Fatalf("overlay after '?' = %T, want the help popup", m.overlay)
 	}
 
 	out := m.View().Content
@@ -220,8 +221,32 @@ func TestHelpPopupOpensAndCloses(t *testing.T) {
 
 	upd, _ = m.Update(tuitest.Esc())
 	m = upd.(Model)
-	if m.cmdMode != cmdBarOff {
-		t.Fatalf("cmdMode after Esc = %v, want cmdBarOff", m.cmdMode)
+	if m.overlay != nil {
+		t.Fatalf("overlay after Esc = %T, want none", m.overlay)
+	}
+	if m.current.Title() != viewDashboard {
+		t.Fatalf("Esc on help left the dashboard for %q", m.current.Title())
+	}
+}
+
+// TestModelKeepsOneOverlayField pins M3.1: prompts and popups live in the
+// overlay field, not in per-prompt pending state.
+func TestModelKeepsOneOverlayField(t *testing.T) {
+	t.Parallel()
+
+	typ := reflect.TypeFor[Model]()
+	overlays := 0
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		if strings.HasPrefix(f.Name, "pending") || f.Name == "cmdMode" || f.Name == "cmdBar" {
+			t.Errorf("Model still has %s", f.Name)
+		}
+		if f.Type == reflect.TypeFor[overlay.Overlay]() {
+			overlays++
+		}
+	}
+	if overlays != 1 {
+		t.Errorf("Model has %d overlay fields, want 1", overlays)
 	}
 }
 
