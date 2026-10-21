@@ -25,8 +25,6 @@ const summaryLabelW = 11
 // View renders the body: exactly as wide and as tall as the last
 // WindowSizeMsg said, every line padded or cut to the width.
 func (m Model) View() string {
-	start := time.Now()
-	defer func() { m.perf.record(time.Since(start)) }()
 	if m.client == nil {
 		return disconnectedView(m.loadErr, m.home)
 	}
@@ -37,7 +35,16 @@ func (m Model) View() string {
 		}
 		return styles.Warn.Render("dashboard unavailable: " + clean(err.Error()))
 	}
-	return render(m.frame(), m.lay)
+	f := m.frame()
+	key := keyOf(f, m.lay)
+	if body, ok := m.memo.get(key); ok {
+		return body
+	}
+	start := time.Now()
+	body := render(f, m.lay)
+	m.perf.record(time.Since(start))
+	m.memo.put(key, body)
+	return body
 }
 
 func (m Model) frame() frame {
