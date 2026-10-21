@@ -2,13 +2,21 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"time"
 
 	"k8s.io/client-go/tools/portforward"
+	"k8s.io/klog/v2"
 	streamhttp "k8s.io/streaming/pkg/httpstream"
 )
+
+// ErrInternal marks a session ended by a bug in k4s rather than by the
+// cluster: a panic on its forwarder goroutine. The stack is in the k4s
+// log.
+var ErrInternal = errors.New("internal error")
 
 // PortForwardSession is the live handle for one in-process forward.
 //
@@ -119,6 +127,17 @@ func runForwarder(dialer streamhttp.Dialer, podName string, localPort, remotePor
 	go func() {
 		defer close(doneCh)
 		defer release()
+		// Bubble Tea recovers only its own goroutines: a panic here would
+		// end k4s with the terminal in raw mode.
+		defer func() {
+			if r := recover(); r != nil {
+				klog.Errorf("port-forward to pod %s panicked: %v\n%s", podName, r, debug.Stack())
+				select {
+				case errCh <- fmt.Errorf("%w: %v", ErrInternal, r):
+				default:
+				}
+			}
+		}()
 		// ForwardPorts blocks until stopCh closes or the connection
 		// dies. Either way we surface the result on Err (non-blocking
 		// because Err is buffered size 1) so the supervisor can record

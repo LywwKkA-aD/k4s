@@ -155,6 +155,7 @@ func (m *Manager) waitForReady(ctx context.Context, id string, attempt uint64, s
 }
 
 func (m *Manager) supervise(id string, attempt uint64, sess *k8s.PortForwardSession) {
+	defer m.recoverSupervisor(id, attempt, sess)
 	// First leg: wait for either Done or an explicit error. fw.ForwardPorts
 	// signals failure by both writing to Err *and* closing Done, so Go's
 	// random select tie-breaking can drop us into either case — that's why
@@ -222,6 +223,12 @@ func (m *Manager) awaitEnd(id string, attempt uint64, sess *k8s.PortForwardSessi
 // longer holds (sess is nil before a session exists), or the user has
 // stopped the forward since.
 func (m *Manager) markError(id string, attempt uint64, sess *k8s.PortForwardSession, err error) {
+	m.fail(id, attempt, sess, err, lastTunnelError(sess))
+}
+
+// fail is markError with the session's last connection failure read
+// already, so a session that panics on that read cannot reach here.
+func (m *Manager) fail(id string, attempt uint64, sess *k8s.PortForwardSession, err error, ended k8s.TunnelError) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cur, ok := m.owned(id, attempt)
@@ -237,7 +244,7 @@ func (m *Manager) markError(id string, attempt uint64, sess *k8s.PortForwardSess
 	cur.Status = StatusError
 	cur.Err = err
 	if sess != nil {
-		cur.ended = lastTunnelError(sess)
+		cur.ended = ended
 		cur.session = nil
 	}
 	m.notify()

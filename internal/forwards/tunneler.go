@@ -34,6 +34,9 @@ type deps struct {
 	// after is the previous Manager's stop this one waits for before it
 	// registers or starts anything; nil waits for nothing.
 	after *Stopping
+	// logf writes to the k4s log; nil means klog, which the log sink
+	// routes there.
+	logf func(format string, args ...any)
 }
 
 // Option changes how NewManager builds a Manager.

@@ -1,16 +1,24 @@
 package forwards
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 )
 
 // decorateError appends the captured stderr from the portforwarder to
 // the raw error when it carries useful detail. The unwrapped error
 // from ForwardPorts is often just "lost connection to pod" — the real
-// reason ("bind: permission denied") lives in the captured output.
+// reason ("bind: permission denied") lives in the captured output. A
+// panic in the forwarder reads as an internal error that points at the
+// log holding its stack.
 func decorateError(err error, output func() string) error {
+	if errors.Is(err, k8s.ErrInternal) {
+		return internalError()
+	}
 	if output == nil {
 		return err
 	}

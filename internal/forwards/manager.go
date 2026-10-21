@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/klog/v2"
+
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 )
 
@@ -86,6 +88,7 @@ type Manager struct {
 	stopWait  time.Duration
 	// after is read-only once the Manager is built; see After.
 	after *Stopping
+	logf  func(format string, args ...any)
 	state State
 	// notice is said once, by TakeNotice: why the saved forwards were set
 	// aside on load.
@@ -133,6 +136,9 @@ func newManager(d deps) (*Manager, error) {
 	if d.stopWait <= 0 {
 		d.stopWait = stopDeadline
 	}
+	if d.logf == nil {
+		d.logf = klog.Errorf
+	}
 	m := &Manager{
 		tunnel:    d.tunnel,
 		cluster:   d.cluster,
@@ -140,6 +146,7 @@ func newManager(d deps) (*Manager, error) {
 		statePath: d.statePath,
 		stopWait:  d.stopWait,
 		after:     d.after,
+		logf:      d.logf,
 		state:     state,
 		notice:    notice,
 		active:    make(map[string]*Active),

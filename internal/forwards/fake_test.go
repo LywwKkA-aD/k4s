@@ -30,9 +30,12 @@ type fakeSession struct {
 	*k8s.PortForwardSession
 	doneOnce sync.Once
 	errs     chan struct{}
-	mu       sync.Mutex
-	stderr   string
-	tunnel   k8s.TunnelError
+	// panicOnStderr makes reading the stderr capture panic, the way a bug
+	// in the supervisor's path would.
+	panicOnStderr atomic.Bool
+	mu            sync.Mutex
+	stderr        string
+	tunnel        k8s.TunnelError
 }
 
 // newFakeSession returns a session that winds down once stopped, or, when
@@ -92,6 +95,9 @@ func (s *fakeSession) lastError() k8s.TunnelError {
 }
 
 func (s *fakeSession) stderrText() string {
+	if s.panicOnStderr.Load() {
+		panic("stderr capture broke")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.stderr
