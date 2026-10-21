@@ -288,7 +288,7 @@ func TestExecReadsTheShellEnvironment(t *testing.T) {
 			t.Setenv(kubectl.EnvKubeconfig, tc.kubeconfig)
 			c := &k8s.Client{Context: "dev", CurrentContext: "dev", KubeconfigPaths: []string{tc.path}}
 			m := New(c, nil, WithFlags(tc.opts))
-			m = withLookPath(m, foundAt(fakeKubectlPath), []string{"PATH=/bin"})
+			m = withLookPath(m, foundAt("/opt/bin/kubectl"), []string{"PATH=/bin"})
 
 			shown := m.decorate(mustExec(t, req)).String()
 			if got := strings.Contains(shown, "--kubeconfig "+tc.path); got != tc.wantFlag {
