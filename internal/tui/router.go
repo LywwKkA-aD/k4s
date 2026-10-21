@@ -107,7 +107,7 @@ func (m Model) onNamespaceSelected(msg views.NamespaceSelectedMsg) (tea.Model, t
 
 func (m Model) onDescribeRequest(msg views.DescribeRequestMsg) (tea.Model, tea.Cmd) {
 	m = m.pushHistory()
-	m = m.swap(describe.New(m.client, describe.Kind(msg.Kind), msg.Namespace, msg.Name))
+	m = m.swap(describe.New(m.client, describe.Kind(msg.Kind), msg.Namespace, msg.Name, describe.WithKubectl(m.describer)))
 	return m, m.relayoutCmd()
 }
 

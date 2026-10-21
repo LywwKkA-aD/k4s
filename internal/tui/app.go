@@ -18,6 +18,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
 )
 
 // View names used both for routing and for history entries.
@@ -54,10 +55,14 @@ type Model struct {
 	startup startup.Session
 	flags   sessionFlags
 	// kubectlSession tells kubectl.Decorate how a pasted command reaches
-	// this cluster; runner starts exec with the client's kubeconfig. Both
-	// follow the client through :ctx.
+	// this cluster; runner starts exec and describe with the client's
+	// kubeconfig, and describer runs describe through it. All three follow
+	// the client through :ctx. runnerConfig is the base every runner is
+	// built from (see WithRunnerConfig).
 	kubectlSession kubectl.Session
 	runner         *kubectl.Runner
+	runnerConfig   kubectl.RunnerConfig
+	describer      describe.Kubectl
 
 	namespace string // "" = all
 	current   views.View
@@ -92,6 +97,14 @@ type Option func(*Model)
 // tests can step through the status TTL and the confirm grace period.
 func WithClock(now func() time.Time) Option {
 	return func(m *Model) { m.now = now }
+}
+
+// WithRunnerConfig makes the session's kubectl runs (exec, describe) look
+// kubectl up and build its environment through cfg; tests point it at a
+// fake kubectl. The kubeconfig is always the client's: cfg.Kubeconfig is
+// replaced.
+func WithRunnerConfig(cfg kubectl.RunnerConfig) Option {
+	return func(m *Model) { m.runnerConfig = cfg }
 }
 
 // New constructs the root model with the dashboard as the landing screen,
@@ -130,15 +143,29 @@ func New(client *k8s.Client, loadErr error, opts ...Option) Model {
 }
 
 // withClient makes c the active client: its starting namespace, the
-// kubectl session footer commands are decorated with and the runner exec
-// goes through.
+// kubectl session footer commands are decorated with, and the runner exec
+// and describe go through.
 func (m Model) withClient(c *k8s.Client) Model {
 	m.client = c
 	m.ident = newIdentity(c)
 	m.namespace = clientNamespace(c)
 	m.kubectlSession = newKubectlSession(c, m.flags, os.Getenv, homedir.HomeDir())
-	m.runner = kubectl.NewRunner(kubectl.RunnerConfig{Kubeconfig: kubeconfigPaths(c)})
+	cfg := m.runnerConfig
+	cfg.Kubeconfig = kubeconfigPaths(c)
+	m.runner = kubectl.NewRunner(cfg)
+	m.describer = newDescriber(c, m.runner, m.kubectlSession)
 	return m
+}
+
+// newDescriber runs describe through r, decorated for session as the
+// footer is. A client that names no kubeconfig files cannot point kubectl
+// at its cluster (a bare kubectl could reach another one), so it gets the
+// built-in describer alone.
+func newDescriber(c *k8s.Client, r *kubectl.Runner, session kubectl.Session) describe.Kubectl {
+	if len(kubeconfigPaths(c)) == 0 {
+		return describe.Kubectl{}
+	}
+	return describe.NewKubectl(r, func(cmd kubectl.Cmd) kubectl.Cmd { return kubectl.Decorate(cmd, session) })
 }
 
 // Init starts the active view, asks the server for the header's version

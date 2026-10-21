@@ -30,6 +30,9 @@ const (
 // Tests that need their own state directory use t.Setenv and do not run in
 // parallel.
 func TestMain(m *testing.M) {
+	if code, ok := playFakeKubectl(); ok {
+		os.Exit(code)
+	}
 	os.Exit(runIsolated(m))
 }
 
