@@ -52,6 +52,17 @@ func TestRefreshKeepsTheCursorOnItsRow(t *testing.T) {
 	}
 }
 
+// TestAgeReadsLikeKubectl: the demo services are 90 minutes old, which
+// kubectl prints as 90m, not 1h.
+func TestAgeReadsLikeKubectl(t *testing.T) {
+	t.Parallel()
+
+	screen := tuitest.Screen(mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo))
+	if !strings.Contains(screen, " 90m") {
+		t.Errorf("no kubectl-style age in:\n%s", screen)
+	}
+}
+
 func TestPasteGoesToTheOpenFilter(t *testing.T) {
 	t.Parallel()
 

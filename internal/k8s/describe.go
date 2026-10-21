@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/util/duration"
 )
 
 // kubectl writes the entire pod spec back as this annotation on every apply,
@@ -40,7 +41,7 @@ func (c *Client) DescribePod(ctx context.Context, namespace, name string) (strin
 		field("Node:", pod.Spec.NodeName)
 	}
 	if !pod.CreationTimestamp.IsZero() {
-		field("Age:", HumanizeDuration(time.Since(pod.CreationTimestamp.Time)))
+		field("Age:", duration.HumanDuration(time.Since(pod.CreationTimestamp.Time)))
 		field("Started:", pod.CreationTimestamp.Format(time.RFC3339))
 	}
 	field("Status:", podStatus(pod))
@@ -95,7 +96,7 @@ func (c *Client) DescribeDeployment(ctx context.Context, namespace, name string)
 	field("Name:", dep.Name)
 	field("Namespace:", dep.Namespace)
 	if !dep.CreationTimestamp.IsZero() {
-		field("Age:", HumanizeDuration(time.Since(dep.CreationTimestamp.Time)))
+		field("Age:", duration.HumanDuration(time.Since(dep.CreationTimestamp.Time)))
 		field("Created:", dep.CreationTimestamp.Format(time.RFC3339))
 	}
 	if dep.Spec.Selector != nil {
@@ -179,7 +180,7 @@ func (c *Client) DescribeService(ctx context.Context, namespace, name string) (s
 	field("Name:", svc.Name)
 	field("Namespace:", svc.Namespace)
 	if !svc.CreationTimestamp.IsZero() {
-		field("Age:", HumanizeDuration(time.Since(svc.CreationTimestamp.Time)))
+		field("Age:", duration.HumanDuration(time.Since(svc.CreationTimestamp.Time)))
 		field("Created:", svc.CreationTimestamp.Format(time.RFC3339))
 	}
 	field("Type:", string(svc.Spec.Type))
@@ -369,7 +370,7 @@ func writeEvents(ctx context.Context, c *Client, w *strings.Builder, namespace, 
 	for _, e := range mine {
 		age := "?"
 		if t := eventTime(e); !t.IsZero() {
-			age = HumanizeDuration(time.Since(t))
+			age = duration.HumanDuration(time.Since(t))
 		}
 		msg := strings.ReplaceAll(e.Message, "\n", " ")
 		fmt.Fprintf(w, "  %-8s %-22s %-8s %s\n", e.Type, e.Reason, age, msg)

@@ -3,6 +3,7 @@ package services
 import (
 	"charm.land/bubbles/v2/table"
 	"charm.land/lipgloss/v2"
+	"k8s.io/apimachinery/pkg/util/duration"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -92,7 +93,7 @@ func toRows(items []k8s.Service, showNamespace bool) []table.Row {
 			s.ClusterIP,
 			s.ExternalIP,
 			s.Ports,
-			k8s.HumanizeDuration(s.Age),
+			duration.HumanDuration(s.Age),
 		))
 	}
 	return rows

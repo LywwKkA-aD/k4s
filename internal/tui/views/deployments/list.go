@@ -8,6 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
+	"k8s.io/apimachinery/pkg/util/duration"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
@@ -151,7 +152,7 @@ func toRows(items []k8s.Deployment, showNamespace bool) []table.Row {
 			fmt.Sprintf("%d/%d", d.Ready, d.Replicas),
 			strconv.Itoa(int(d.UpToDate)),
 			strconv.Itoa(int(d.Available)),
-			k8s.HumanizeDuration(d.Age),
+			duration.HumanDuration(d.Age),
 		))
 	}
 	return rows
