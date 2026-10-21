@@ -118,9 +118,15 @@ func drawBox(f frame, pl place) string {
 	return box.Render(f.th, pl.w, pl.h, strings.Join(body.lines, "\n"))
 }
 
-// bodyOf is what panel p shows inside its w x h box. Until the panels'
-// own renderers land every panel shows its summary line.
-func bodyOf(f frame, p dash.Panel, _, _ int) panelBody {
+func bodyOf(f frame, p dash.Panel, w, h int) panelBody {
+	switch p {
+	case dash.PanelCluster:
+		return clusterBody(f, w, h)
+	case dash.PanelNodes:
+		return nodesBody(f, w, h)
+	case dash.PanelPods:
+		return podsBody(f, w, h)
+	}
 	return summaryBody(f, p)
 }
 
