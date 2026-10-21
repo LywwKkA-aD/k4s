@@ -66,8 +66,11 @@ type nodeHistory struct {
 // of pods that are not ok, one point a minute.
 type history struct {
 	cpu, mem series
-	nodes    map[string]nodeHistory
-	notOK    series
+	// cpuMin and memMin are the same samples a minute a cell, for the
+	// spark rows of the narrower layouts.
+	cpuMin, memMin clockMinutes
+	nodes          map[string]nodeHistory
+	notOK          series
 
 	metricsAt time.Duration // plan time of the last metrics sample taken
 	sampledAt time.Time     // its wall time
@@ -100,6 +103,8 @@ func (h history) foldMetrics(s dash.Snapshot) history {
 	h.metricsAt, h.sampledAt = u.At, s.At
 	h.cpu = h.cpu.gap(missing, historyLimit).push(percentOf(s.Nodes.CPU), historyLimit)
 	h.mem = h.mem.gap(missing, historyLimit).push(percentOf(s.Nodes.Memory), historyLimit)
+	h.cpuMin = h.cpuMin.add(s.At, percentOf(s.Nodes.CPU))
+	h.memMin = h.memMin.add(s.At, percentOf(s.Nodes.Memory))
 	h.nodes = foldNodes(h.nodes, s.Nodes.Rows, missing)
 	return h
 }
