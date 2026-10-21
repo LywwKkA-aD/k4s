@@ -57,12 +57,13 @@ func viewHelp(bindings []key.Binding) []overlay.HelpEntry {
 }
 
 // commandHelp turns the command registry into a static list — the help
-// popup shows what `:` accepts so users do not have to memorize the aliases.
+// popup shows what `:` accepts so users do not have to memorize the aliases
+// — followed by the namespace switch, the one command with an argument.
 func commandHelp() []overlay.HelpEntry {
 	names := command.All()
-	out := make([]overlay.HelpEntry, 0, len(names))
+	out := make([]overlay.HelpEntry, 0, len(names)+1)
 	for _, name := range names {
 		out = append(out, overlay.HelpEntry{Keys: ":" + name, Desc: command.Aliases(name)})
 	}
-	return out
+	return append(out, overlay.HelpEntry{Keys: ":ns <name>", Desc: "switch namespace (:ns -A for all)"})
 }
