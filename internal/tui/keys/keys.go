@@ -11,13 +11,15 @@ type Map struct {
 	Help      key.Binding
 	Command   key.Binding
 	Back      key.Binding
+	Copy      key.Binding
 }
 
 // Default returns the baseline keymap.
 //
 // q is "go home, then quit" — the first press takes you back to the
 // dashboard, the second press (now on the dashboard) exits. ctrl+c is the
-// always-quit escape hatch and works even inside the command bar.
+// always-quit escape hatch and works even inside the command bar. y copies
+// the footer's kubectl command; in a text prompt it is just a letter.
 func Default() Map {
 	return Map{
 		Quit: key.NewBinding(
@@ -39,6 +41,10 @@ func Default() Map {
 		Back: key.NewBinding(
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "back"),
+		),
+		Copy: key.NewBinding(
+			key.WithKeys("y"),
+			key.WithHelp("y", "copy"),
 		),
 	}
 }

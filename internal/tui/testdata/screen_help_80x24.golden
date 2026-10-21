@@ -10,14 +10,14 @@
          │     esc     back                                           │
          │     :       command bar                                    │
          │     ?       this help                                      │
+         │     y       copy the kubectl command below (OSC 52)        │
+         │             in tmux: set -g set-clipboard on               │
          │                                                            │
          │   view: dashboard                                          │
          │     r  refresh                                             │
          │     w  watch                                               │
          │                                                            │
          │   commands                                                 │
-         │     :dashboard    home                                     │
-         │     :pods         po, pod                                  │
 ──────────────────────────────────────────────────────────────────────────────
- q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  r refresh  ·  …
+ q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  r r…
  kubectl get all -A

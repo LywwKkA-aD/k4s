@@ -19,5 +19,5 @@ CrashLoopBackOff    7          1h
 
 
 ──────────────────────────────────────────────────────────────────────────────
- q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  enter describe…
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  ent…
  kubectl get pods -A
