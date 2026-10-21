@@ -43,7 +43,7 @@ func (m Model) frame() frame {
 	if m.forced {
 		hint = "refreshing…"
 	}
-	return frame{
+	f := frame{
 		snap:    m.mem.snap,
 		loaded:  m.mem.loaded,
 		hist:    m.mem.hist,
@@ -52,9 +52,15 @@ func (m Model) frame() frame {
 		ctx:     clean(m.client.Context),
 		session: m.session,
 		hint:    hint,
+		retry:   m.next,
 		th:      themeOf(ds),
 		ds:      ds,
 	}
+	// The fast tier is the pulse: when pods time out, the cluster is gone.
+	if u := m.mem.snap.Ledger[dash.Pods]; u.State == dash.StateStale {
+		f.staleSince = m.mem.start.Add(u.StaleSince)
+	}
+	return f
 }
 
 // segment is a run drawn at column x of one body line.
@@ -113,10 +119,22 @@ func drawBox(f frame, pl place) string {
 	inW, inH := max(pl.w-2, 0), max(pl.h-2, 0)
 	body := panelBody{lines: []string{" " + f.muted("loading…")}}
 	if f.loaded {
-		body = bodyOf(f, pl.panel, inW, inH)
+		body = panelOf(f, pl.panel, inW, inH)
 	}
 	box := viz.Box{Title: panelLabel(pl.panel), Info: body.info, Footer: body.footer, Focused: f.focus.panel == pl.panel}
 	return box.Render(f.th, pl.w, pl.h, strings.Join(body.lines, "\n"))
+}
+
+// panelOf is panel p's body, dimmed and marked "stale 2m" in its top edge
+// while its data is the last answer of a source that stopped answering.
+func panelOf(f frame, p dash.Panel, w, h int) panelBody {
+	a, ok := staleOf(f.snap, p)
+	if !ok {
+		return bodyOf(f, p, w, h)
+	}
+	body := bodyOf(f.dimmed(), p, w, h)
+	body.info = joinNotes(body.info, "stale "+ago(a.Stale))
+	return body
 }
 
 func bodyOf(f frame, p dash.Panel, w, h int) panelBody {
@@ -142,6 +160,9 @@ func drawLine(f frame, pl place) string {
 	summary := f.muted("loading…")
 	if f.loaded {
 		summary = summaryOf(f, pl.panel)
+	}
+	if a, ok := staleOf(f.snap, pl.panel); ok && f.loaded {
+		summary += f.muted(" · stale " + ago(a.Stale))
 	}
 	if f.focus.panel == pl.panel {
 		return fitText(f.ds.Selection.Render(styles.CursorMarker+"  "+label+"  "+ansi.Strip(summary)), pl.w)

@@ -47,7 +47,7 @@ func eventsBody(f frame, w, h int) panelBody {
 	case len(e.Rows) == 0:
 		body.lines = []string{
 			" " + f.paint(markOK) + " no warnings in the last hour",
-			"   " + f.muted("events live about an hour, so older trouble is not listed"),
+			"   " + f.muted("events live about an hour"),
 		}
 		return body
 	}

@@ -93,6 +93,9 @@ type Usage struct {
 	Wall       time.Duration // wall time of the last request
 	StaleSince time.Duration // plan time the current run of stale results began
 	Err        error         // the last error, for the status line; nil when OK
+	// Answered is set while the snapshot holds an answer of this endpoint:
+	// from its first OK until a state that drops the data (or a new scope).
+	Answered bool
 }
 
 // Ledger holds every endpoint's Usage. It is an array, so copies are deep

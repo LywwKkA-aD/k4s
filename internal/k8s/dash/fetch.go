@@ -131,9 +131,11 @@ func record(s Snapshot, o outcome, p Plan) Snapshot {
 	switch {
 	case o.state == StateOK && o.apply != nil:
 		o.apply(&s.st)
+		u.Answered = true
 	case o.state == StateOK:
+		u.Answered = true
 	case o.state.keepsData():
-		u.Rows, u.Bytes = prev.Rows, prev.Bytes
+		u.Rows, u.Bytes, u.Answered = prev.Rows, prev.Bytes, prev.Answered
 	default:
 		clearData(&s.st, e)
 	}

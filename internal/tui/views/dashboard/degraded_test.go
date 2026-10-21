@@ -30,7 +30,7 @@ func TestDegradedSources(t *testing.T) {
 			change: func(s *dash.Snapshot) {
 				s.Nodes = dash.NodesPanel{Avail: denied("auth", "can-i", "list", "nodes"), Cmd: s.Nodes.Cmd}
 			},
-			want: []string{"— nodes forbidden", "kubectl auth can-i list nodes", "pods per node are still shown in 3 pods"},
+			want: []string{"— nodes: list forbidden for devops-friend", "kubectl auth can-i list nodes", "pods per node still shown in 3 pods"},
 			not:  []string{"0/0 Ready"},
 		},
 		{
@@ -39,8 +39,11 @@ func TestDegradedSources(t *testing.T) {
 				s.Nodes.Metrics = dash.Avail{State: dash.StateAbsent}
 				s.Cluster.Version.Distro = "k3s"
 			},
-			want: []string{"○ no metrics-server: bundled with k3s; started with --disable=metrics-server?"},
-			not:  []string{"cluster cpu"},
+			want: []string{
+				"○ no metrics-server: metrics.k8s.io is not served",
+				"bundled with k3s; --disable=metrics-server?",
+			},
+			not: []string{"cluster cpu", "re-checked"},
 		},
 		{
 			name: "no metrics-server elsewhere",
@@ -48,7 +51,7 @@ func TestDegradedSources(t *testing.T) {
 				s.Nodes.Metrics = dash.Avail{State: dash.StateAbsent}
 				s.Cluster.Version.Distro = "eks"
 			},
-			want: []string{"○ no metrics-server: install kubernetes-sigs/metrics-server"},
+			want: []string{"○ no metrics-server: metrics.k8s.io is not served", "install: kubernetes-sigs/metrics-server"},
 		},
 		{
 			name:   "metrics not ready",
@@ -60,7 +63,7 @@ func TestDegradedSources(t *testing.T) {
 			change: func(s *dash.Snapshot) {
 				s.Nodes.Metrics = denied("auth", "can-i", "list", "nodes.metrics.k8s.io")
 			},
-			want: []string{"— metrics forbidden · kubectl auth can-i list nodes.metrics.k8s.io"},
+			want: []string{"— metrics forbidden", "kubectl auth can-i list nodes.metrics.k8s.io"},
 		},
 		{
 			name:   "no nodes",

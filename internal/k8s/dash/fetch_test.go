@@ -114,9 +114,35 @@ func TestTimeoutKeepsDataAndMarksStale(t *testing.T) {
 		if s.Pods.Avail.State != StateStale || s.Pods.Total != total || s.Ledger[Pods].StaleSince != 5*sec {
 			t.Fatalf("refresh %d: avail %+v total %d (want %d) since %v", i, s.Pods.Avail, s.Pods.Total, total, s.Ledger[Pods].StaleSince)
 		}
+		if s.Pods.Avail.Unanswered {
+			t.Fatalf("refresh %d: the kept data counts as unanswered", i)
+		}
 	}
 	if s.Pods.Avail.Stale != time.Minute {
 		t.Fatalf("stale for %v, want 1m", s.Pods.Avail.Stale)
+	}
+}
+
+// TestStaleWithoutAnAnswerHasNoData: a source that timed out before it
+// ever answered has nothing to keep, and says so, so its empty panel is
+// not read as an empty list.
+func TestStaleWithoutAnAnswerHasNoData(t *testing.T) {
+	t.Parallel()
+
+	a := newAPIServer(t, busyK3s(fixedNow))
+	a.override("/api/v1/pods", k8stest.Hang())
+	start := NewSnapshot(Scope{})
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	s := fetcher(a).Fetch(ctx, MakePlan(start.PlanInput(0, true, false, watching)), start)
+	if s.Pods.Avail.State != StateStale || !s.Pods.Avail.Unanswered {
+		t.Fatalf("pods = %+v, want stale and unanswered", s.Pods.Avail)
+	}
+	if s.Nodes.Avail.State != StateOK || s.Nodes.Avail.Unanswered || !s.Ledger[Nodes].Answered {
+		t.Fatalf("nodes = %+v (answered %v), want an answer", s.Nodes.Avail, s.Ledger[Nodes].Answered)
+	}
+	if again := s.Rescope(Scope{Namespace: "shop"}); again.Ledger[Pods].Answered {
+		t.Fatal("a new scope must start unanswered")
 	}
 }
 

@@ -37,10 +37,11 @@ func podsBody(f frame, w, h int) panelBody {
 	body := panelBody{info: podsInfo(f.snap)}
 	switch {
 	case p.Avail.State == dash.StateForbidden:
-		body.lines = []string{
-			" " + f.paint(markUnknown) + " pods forbidden",
-			"   " + f.command(p.Avail.CanI),
+		denied := " " + f.paint(markUnknown) + " pods forbidden"
+		if noScope(f.snap) {
+			denied += " · :ns <name> to switch"
 		}
+		body.lines = []string{denied, "   " + f.command(p.Avail.CanI)}
 		return body
 	case !readable(p.Avail):
 		body.lines = []string{" " + f.unreadable("pods", p.Avail)}

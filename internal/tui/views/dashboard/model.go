@@ -57,9 +57,11 @@ type Model struct {
 	lay     layout
 	blurred bool
 	lastKey time.Time
-	// cadence and slowed are the last plan's, for the watch hint.
+	// cadence and slowed are the last plan's, for the watch hint; next is
+	// when it asks again, backoff included, for the stale banner.
 	cadence time.Duration
 	slowed  bool
+	next    time.Duration
 
 	keys keyMap
 }
@@ -93,6 +95,7 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 		blurred: cfg.blurred,
 		lastKey: now,
 		cadence: baseCadence,
+		next:    baseCadence,
 		keys:    newKeyMap(),
 	}
 	m.poll = async.NewPoller(async.New(), async.Config{

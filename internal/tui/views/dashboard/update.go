@@ -97,7 +97,7 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 // interval, which carries the blur, idle, size and 429 stretches, and
 // never when watch is off.
 func (m Model) settle(p dash.Plan, tok async.Token, err error) (Model, tea.Cmd) {
-	m.cadence, m.slowed = p.Cadence, p.Slowed
+	m.cadence, m.slowed, m.next = p.Cadence, p.Slowed, p.Next
 	if p.Arm && p.Next > 0 {
 		m.poll, _ = m.poll.WithInterval(p.Next) // not armed while busy: nothing to replace
 	}
@@ -110,7 +110,7 @@ func (m Model) settle(p dash.Plan, tok async.Token, err error) (Model, tea.Cmd) 
 // shorter interval re-arms it at once, a longer one applies from the next.
 func (m Model) retime() (Model, tea.Cmd) {
 	p := m.plan(false)
-	m.cadence, m.slowed = p.Cadence, p.Slowed
+	m.cadence, m.slowed, m.next = p.Cadence, p.Slowed, p.Next
 	if !p.Arm || p.Next <= 0 {
 		return m, nil
 	}
