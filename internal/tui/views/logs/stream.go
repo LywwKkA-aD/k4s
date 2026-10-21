@@ -16,6 +16,11 @@ func streamOnePod(ctx context.Context, src streamer, ns, pod string, opts k8s.Lo
 		send(ctx, ch, logEvent{Pod: pod, Err: err, Done: true})
 		return
 	}
+	readOnePod(ctx, stream, pod, ch)
+}
+
+// readOnePod reads an open log stream into ch and closes it.
+func readOnePod(ctx context.Context, stream io.ReadCloser, pod string, ch chan<- logEvent) {
 	defer func() { _ = stream.Close() }()
 
 	lines := newLineReader(stream)

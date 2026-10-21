@@ -19,6 +19,7 @@ type keyMap struct {
 	next       key.Binding
 	prev       key.Binding
 	clear      key.Binding
+	previous   key.Binding
 	scroll     key.Binding
 }
 
@@ -33,6 +34,7 @@ func newKeyMap() keyMap {
 		next:       key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "next match")),
 		prev:       key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "prev match")),
 		clear:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clear")),
+		previous:   key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "previous")),
 		scroll: key.NewBinding(
 			key.WithKeys("up", "down", "pgup", "pgdown"),
 			key.WithHelp("↑↓/pgup/pgdn", "scroll"),
@@ -91,10 +93,22 @@ func (m Model) handleViewKey(msg tea.KeyPressMsg) (views.View, tea.Cmd, bool) {
 		m.gotoMatch(-1)
 	case key.Matches(msg, k.clear):
 		m.clearOrCancel()
+	case key.Matches(msg, k.previous):
+		next, cmd := m.togglePrevious()
+		return next, cmd, true
 	default:
 		return m, nil, false
 	}
 	return m, nil, true
+}
+
+// previousKey is p as the footer shows it: what pressing it switches to.
+func (m Model) previousKey() key.Binding {
+	b := m.keys.previous
+	if m.previous {
+		b.SetHelp("p", "current")
+	}
+	return b
 }
 
 // clearOrCancel is the two-step clear: while a search is active (prompt

@@ -14,6 +14,8 @@
 //     occurrence, wrapped lines included.
 //   - 't' toggles per-pod tags: a coloured bar (▌) by default, "[pod-name]"
 //     when on. Single-pod views have no prefix and 't' is a no-op.
+//   - 'p' switches a single pod's stream to the previous instance of its
+//     container (kubectl logs --previous) and back.
 package logs
 
 import (
@@ -81,6 +83,13 @@ type Model struct {
 	target k8s.LogTarget
 
 	sess session
+	// lastGen numbers sessions and openings, so a reply always knows
+	// whether it is still wanted.
+	lastGen int
+	// previous is set while the stream shows the previous instance of the
+	// container; opening is the request for it in flight, if any.
+	previous bool
+	opening  opening
 
 	viewport viewport.Model
 	rawLines []logLine
@@ -184,7 +193,8 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 	for _, opt := range opts {
 		opt(&m)
 	}
-	m.sess = startSession(m.sess.gen+1, m.spec())
+	m.lastGen = 1
+	m.sess = startSession(m.lastGen, m.spec())
 	return m
 }
 
@@ -210,6 +220,8 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		return m.onLogEventsBatch(msg)
 	case streamsClosedMsg:
 		return m, nil
+	case previousOpenedMsg:
+		return m.onPreviousOpened(msg)
 	case tea.KeyPressMsg:
 		return m.onKey(msg)
 	case tea.PasteMsg:
@@ -249,6 +261,9 @@ func (m Model) Title() string {
 	if m.container != "" {
 		base += " / " + m.container
 	}
+	if m.previous {
+		base += " · previous"
+	}
 	if m.search.text != "" {
 		if len(m.matches) > 0 {
 			base += fmt.Sprintf(" · /%s · %d/%d", m.search.text, m.matchIdx+1, len(m.matches))
@@ -262,13 +277,18 @@ func (m Model) Title() string {
 	return base
 }
 
-// Command implements views.View.
+// Command implements views.View: the stream's kubectl logs command, with
+// --previous instead of -f while the previous instance shows.
 func (m Model) Command() kubectl.Cmd {
-	return views.LogsCommand(m.namespace, m.pods, m.container, m.tail, m.target)
+	c := views.LogsCommand(m.namespace, m.pods, m.container, m.tail, m.target)
+	if m.previous {
+		return previousCommand(c)
+	}
+	return c
 }
 
 // Help implements views.View. 't' is only advertised when there is more
-// than one pod, where it does something. The
+// than one pod and 'p' only for one, where each does something. The
 // horizontal-scroll keys only appear when wrap is off, since they are a
 // no-op in wrap mode.
 func (m Model) Help() []key.Binding {
@@ -280,7 +300,11 @@ func (m Model) Help() []key.Binding {
 	if len(m.pods) > 1 {
 		bindings = append(bindings, k.tags)
 	}
-	return append(bindings, k.searchOpen, k.next, k.prev, k.clear)
+	bindings = append(bindings, k.searchOpen, k.next, k.prev, k.clear)
+	if len(m.pods) == 1 {
+		bindings = append(bindings, m.previousKey())
+	}
+	return bindings
 }
 
 // CapturesKeys implements views.View. Returns true while the search prompt
@@ -288,9 +312,11 @@ func (m Model) Help() []key.Binding {
 // global navigation.
 func (m Model) CapturesKeys() bool { return m.searchOpen }
 
-// Close cancels the streams, draining the goroutines, which eventually
-// closes the events channel. Idempotent.
+// Close cancels the streams, and a previous-instance request in flight,
+// draining the goroutines, which eventually closes the events channel.
+// Idempotent.
 func (m Model) Close() error {
 	m.sess.stop()
+	m.opening.stop()
 	return nil
 }

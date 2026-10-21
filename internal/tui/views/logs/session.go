@@ -38,6 +38,11 @@ func (m Model) spec() streamSpec {
 	return streamSpec{src: m.src, namespace: m.namespace, pods: m.pods, tail: m.tail, container: m.container}
 }
 
+// options are the log options of one pod's current log.
+func (s streamSpec) options() k8s.LogOptions {
+	return k8s.LogOptions{Container: s.container, Tail: s.tail}
+}
+
 // startSession starts the streams of spec: one pod is read as it comes,
 // several are merged (see runMergedStreams). Without a client or pods the
 // events channel is closed at once.
@@ -50,8 +55,7 @@ func startSession(gen int, spec streamSpec) session {
 	case len(spec.pods) == 1:
 		go func() {
 			defer close(events)
-			opts := k8s.LogOptions{Container: spec.container, Tail: spec.tail}
-			streamOnePod(ctx, spec.src, spec.namespace, spec.pods[0], opts, events)
+			streamOnePod(ctx, spec.src, spec.namespace, spec.pods[0], spec.options(), events)
 		}()
 	default:
 		go runMergedStreams(ctx, spec.src, spec.namespace, spec.pods, spec.tail, spec.container, events)

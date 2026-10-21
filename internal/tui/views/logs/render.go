@@ -149,6 +149,9 @@ func (m Model) View() string {
 // not jiggle.
 func (m Model) statusLine() string {
 	bits := make([]string, 0, 4)
+	if m.previous {
+		bits = append(bits, styles.Hint.Render("[previous instance — press p for the current one]"))
+	}
 	if !m.autoFollow {
 		bits = append(bits, styles.Warn.Render("[paused — press f to follow]"))
 	}
