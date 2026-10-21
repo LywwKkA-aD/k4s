@@ -203,14 +203,40 @@ func tiny(w, h int, sh shown) (int, []place) {
 	return banner, summaryLines(w, h, banner, panels)
 }
 
+// summaryLines lays the panels out one line each under top rows of
+// banner, as many as fit (see keep).
 func summaryLines(w, h, top int, panels []dash.Panel) []place {
-	out := make([]place, 0, len(panels))
-	for i, p := range panels {
-		y := top + i
-		if y >= h {
+	kept := keep(panels, h-top)
+	out := make([]place, 0, len(kept))
+	for i, p := range kept {
+		out = append(out, place{panel: p, x: 0, y: top + i, w: w, h: 1, line: true})
+	}
+	return out
+}
+
+// collapseOrder is the order panels give way when the body runs short:
+// the least urgent first, pods last.
+var collapseOrder = []dash.Panel{
+	dash.PanelTopPods, dash.PanelK3s, dash.PanelCluster, dash.PanelEvents,
+	dash.PanelWorkloads, dash.PanelNodes, dash.PanelPods,
+}
+
+// keep is the n panels that stay, in panel order, when only n fit.
+func keep(panels []dash.Panel, n int) []dash.Panel {
+	drop := map[dash.Panel]bool{}
+	for _, p := range collapseOrder {
+		if len(panels)-len(drop) <= max(n, 0) {
 			break
 		}
-		out = append(out, place{panel: p, x: 0, y: y, w: w, h: 1, line: true})
+		if slices.Contains(panels, p) {
+			drop[p] = true
+		}
+	}
+	out := make([]dash.Panel, 0, len(panels)-len(drop))
+	for _, p := range panels {
+		if !drop[p] {
+			out = append(out, p)
+		}
 	}
 	return out
 }

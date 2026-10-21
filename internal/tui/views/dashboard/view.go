@@ -75,6 +75,7 @@ func render(f frame, l layout) string {
 	if l.w <= 0 || l.h <= 0 {
 		return ""
 	}
+	f.kind = l.kind
 	rows := make([][]segment, l.h)
 	for y, line := range bannerLines(f, l) {
 		rows[y] = []segment{{x: 0, text: line}}

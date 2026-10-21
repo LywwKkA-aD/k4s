@@ -1,34 +1,34 @@
- ▲ attention  ▲ 3 CrashLoopBackOff  ▲ 1 ImagePullBackOff  ▲ 4 workloads not ready  ▲ 1 job failed  +3          watch 5s 
+ ▲ attention  3 CrashLoopBackOff · 1 ImagePullBackOff · 4 workloads · 1 job  △ k3s-agent-1 mem 87% · +2        watch 5s 
  ▸ next 1/2  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --previous   why does it keep crashing?     
    6 k3s        ● 4/4 components · ◆ etcd snapshot 4h ago                                                               
 ╭─┤ 1 cluster ├──────────────────────────────────── ◆ k3s ─╮┏━┫ 2 nodes ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3/3 Ready ━┓
-│ ● api        ready · 8/8 checks · etcd ok                │┃   NODE         STATUS  CPU          MEMORY               ┃
-│ ◆ version    v1.36.3+k3s1 · embedded etcd · 1 control pl…│┃ ● k3s-cp-1     Ready   ██▍···  39%  ████▎·  70%          ┃
-│ ● you        devops-friend                               │┃ △ k3s-agent-1  Ready   ███▎··  55%  █████▎  87%△         ┃
-│   age        212d (namespace kube-system)                │┃ ● k3s-agent-2  Ready   █▏····  18%  ██▎···  37%          ┃
-│   ns         33 · 0 terminating                          │┃                                                          ┃
-│ ● storage    26/26 pvc Bound                             │┃   cpu ≈15m              38%   mem ≈15m              69%  ┃
-│ ○ network    102 svc · 1 LoadBalancer <pending>          │┃       ⢠⣠⣠⣠⣄⣤⣠⣠⣠⣄⣤⣠⣠⣠⣄⣤⣠⣠⣠⣄⣤       ⢰⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  ┃
-│   server     https://10.0.0.5:6443                       │┃   ≈ history k4s builds from kubectl top nodes, one poin… ┃
+│ ● api      ready · 8/8 checks · etcd ok                  │┃   NODE         STATUS  CPU          MEMORY          PODS ┃
+│ ◆ version  v1.36.3+k3s1 · embedded etcd                  │┃ ● k3s-cp-1     Ready   ██▍···  39%  ████▎·  70%  112/250 ┃
+│ ● you      devops-friend                                 │┃ △ k3s-agent-1  Ready   ███▎··  55%  █████▎  87%△  41/110 ┃
+│   age      212d (namespace kube-system)                  │┃ ● k3s-agent-2  Ready   █▏····  18%  ██▎···  37%   32/110 ┃
+│   ns       33 · 0 terminating                            │┃                                                          ┃
+│ ● storage  26/26 pvc Bound                               │┃   cpu ≈30m                  ▄▄▄▄▄▄▄▄▄▄▄  38% of 36 cores ┃
+│ ○ network  102 svc · 1 LoadBalancer <pending>            │┃   mem ≈30m                  ▆▆▆▆▆▆▆▆▆▆▆  69% of 192 GiB  ┃
+│   server   https://10.0.0.5:6443                         │┃   ≈ history from kubectl top nodes · △ ≥ 85%             ┃
 ╰─────────────────────────────────────────────── ctx fake ─╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ kubelet v1.36.3+k3s1 ━┛
 ╭─┤ 3 pods ├───────────────────────────────────────────────────────────────────────────────────────────── 185 · 33 ns ─╮
 │ ███████████████████████████████████████████████████████████████████████████████████████████████████████▓▓▓▓░▚▚·  185 │
 │ █ Running 171   ▓ Completed 7   ░ Pending/NotReady 2   ▚ CrashLoopBackOff 3 · ImagePullBackOff 1   · Evicted 1       │
-│ ≈30m not ok                    ███████████  8 now   per node  k3s-agent-1 41 · k3s-agent-2 32 · k3s-cp-1 112         │
-│                                                                                                                      │
 │   NAMESPACE    NAME                             READY  STATUS            RESTARTS      AGE  NODE                     │
 │ ▲ shop         payments-worker-6c9f7d8b5-xk2lp  0/1    CrashLoopBackOff  41 (2m ago)   3h   k3s-agent-1              │
 │ ▲ shop         payments-worker-6c9f7d8b5-r8vqn  0/1    CrashLoopBackOff  39 (2m ago)   3h   k3s-agent-2              │
 │ ▲ monitoring   loki-backend-0                   1/2    CrashLoopBackOff  12 (<1m ago)  5d   k3s-cp-1                 │
 │ ▲ staging      api-7f6d9c4b8-2mzqt              0/1    ImagePullBackOff  0             22m  k3s-agent-1              │
-╰─────────────────────────────────────────────────────────────────────────────── +5 · 6 need attention · 2 restarting ─╯
+│ △ monitoring   grafana-5d8f7c6b9-wq2lx          0/1    Running           0             9m   k3s-cp-1                 │
+│ △ ci           runner-build-8812-k7x2p          0/1    Pending           0             6m   <none>                   │
+╰─────────────────────────────────────────────────────────────────────────────── +3 · 6 need attention · 2 restarting ─╯
 ╭─┤ 4 workloads ├──────────────────────────── 61/65 ready ─╮╭─┤ 5 events ├───────────────────────── type=Warning · 1h ─╮
-│ deploy 49/52 · sts 7/8 · ds 5/5 · jobs ▲1 · cron ○1      ││ ≈ last hour ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂▃▂▁▁▂▃▆▇▆▅▆▇█▇█   10 warning… │
-│                                                          ││                                                          │
-│   KIND    NAMESPACE/NAME            READY                ││   LAST SEEN  REASON                OBJECT                │
-│ ▲ deploy  shop/payments-worker      0/2                  ││ ◇ <1m        BackOff               pod/loki-backend-0    │
-│ ▲ deploy  staging/api               0/1                  ││ ◇ 2m         BackOff               pod/payments-worker-… │
-│ ▲ deploy  monitoring/grafana        0/1                  ││ ◇ 2m         BackOff               pod/payments-worker-… │
-│ ▲ sts     monitoring/loki-backend   0/1                  ││ △ 4m         FailedMount           pod/backup-7d9f8c6b5… │
-│ ▲ job     ci/nightly-e2e-28741000   failed 41m           ││ ◇ 6m         FailedScheduling      pod/runner-build-881… │
-╰────────────────────────────────── +1 · 5 need attention ─╯╰─────────────────────────── +5 · newest first · 10 of 10 ─╯
+│ deploy 49/52 · sts 7/8 · ds 5/5 · jobs ▲1 · cron ○1      ││ ◇ <1m  BackOff               pod/loki-backend-0          │
+│                                                          ││     Back-off restarting failed container ingester in po… │
+│   KIND    NAMESPACE/NAME            READY                ││ ◇ 2m   BackOff               pod/payments-worker-6c9f7d… │
+│ ▲ deploy  shop/payments-worker      0/2                  ││     Back-off restarting failed container worker in pod … │
+│ ▲ deploy  staging/api               0/1                  ││ ◇ 2m   BackOff               pod/payments-worker-6c9f7d… │
+│ ▲ deploy  monitoring/grafana        0/1                  ││     Back-off restarting failed container worker in pod … │
+│ ▲ sts     monitoring/loki-backend   0/1                  ││ △ 4m   FailedMount           pod/backup-7d9f8c6b5-q2w4e  │
+│ ▲ job     ci/nightly-e2e-28741000   failed 41m           ││     MountVolume.SetUp failed for volume "creds" : secre… │
+╰────────────────────────────────── +1 · 5 need attention ─╯╰─────────────────────────── +6 · newest first · 10 of 10 ─╯

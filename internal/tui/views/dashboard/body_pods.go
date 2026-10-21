@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/tui/viz"
 )
@@ -62,24 +64,53 @@ func podsBody(f frame, w, h int) panelBody {
 
 // podsHead is what stands above the rows, losing lines from the bottom up
 // (the gap, the strip, the legend) while the rows would get fewer than
-// minListRows.
+// minListRows. Only the wide layout has room for the ≈ strip; the narrow
+// ones fold the legend into its counts beside the bar.
 func podsHead(f frame, w int, items []podItem, h int) []string {
-	counts := phaseCounts(f.snap.Pods)
-	total := "  " + strconv.Itoa(f.snap.Pods.Total)
-	head := []string{
-		" " + viz.PhaseBar(f.th, max(w-2-len(total), 0), counts, 1) + total,
-		" " + viz.PhaseLegend(f.th, w-2, counts),
-		" " + notOKLine(f, w-2),
-		"",
-	}
 	need := min(len(items), minListRows) + 1 // rows plus their header
 	if len(items) == 0 {
 		need = 1
 	}
-	for len(head) > 0 && h-len(head) < need {
-		head = head[:len(head)-1]
+	counts := phaseCounts(f.snap.Pods)
+	if f.narrow() {
+		tally := phaseTally(f, counts)
+		bar := viz.PhaseBar(f.th, max(w-2-2-ansi.StringWidth(tally)-1, 0), counts, 1)
+		return fitHead(h, need, []string{" " + bar + "  " + tally})
 	}
-	return head
+	total := "  " + strconv.Itoa(f.snap.Pods.Total)
+	bar := " " + viz.PhaseBar(f.th, max(w-2-len(total), 0), counts, 1) + total
+	legend := " " + viz.PhaseLegend(f.th, w-2, counts)
+	if f.kind != kindWide {
+		return fitHead(h, need, []string{bar, legend}, []string{bar})
+	}
+	strip := " " + notOKLine(f, w-2)
+	return fitHead(h, need, []string{bar, legend, strip, ""}, []string{bar, legend, strip}, []string{bar, legend}, []string{bar})
+}
+
+// phaseTally is the legend as counts alone, "█171 ▓7 ░2 ▚4 ·1": one per
+// phase with pods, in bar order.
+func phaseTally(f frame, counts []viz.PhaseCount) string {
+	totals := map[viz.Phase]int{}
+	for _, c := range counts {
+		totals[c.Phase] += c.Count
+	}
+	parts := make([]string, 0, len(totals))
+	for _, p := range []viz.Phase{viz.PhaseRunning, viz.PhaseCompleted, viz.PhasePending, viz.PhaseFailing, viz.PhaseOther} {
+		if totals[p] == 0 {
+			continue
+		}
+		st := f.th.Muted
+		switch p {
+		case viz.PhaseRunning:
+			st = f.th.OK
+		case viz.PhasePending:
+			st = f.th.Warn
+		case viz.PhaseFailing:
+			st = f.th.Err
+		}
+		parts = append(parts, st.Render(p.Glyph())+strconv.Itoa(totals[p]))
+	}
+	return strings.Join(parts, " ")
 }
 
 // phaseCounts feeds the phase bar and its legend: one failing entry per

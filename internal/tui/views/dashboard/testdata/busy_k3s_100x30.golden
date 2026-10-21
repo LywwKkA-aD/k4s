@@ -1,0 +1,24 @@
+›▲ 3 CrashLoop · 1 ImagePull · 4 workloads · 1 job  △ k3s-agent-1 mem 87% · 2 not ready · +1        
+ ▸ next  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --previous                  
+   1 cluster    ● api ready · 33 ns · 26/26 pvc Bound · ○ 1 LB <pending>                            
+   2 nodes      △ 3/3 Ready · cpu ██▎···  38% · mem ████▏·  69% · △ 1 degraded                      
+╭─┤ 3 pods ├───────────────────────────────────────────────────────────────────────── 185 · 33 ns ─╮
+│ ███████████████████████████████████████████████████████████████████████▓▓▓░▚·  █171 ▓7 ░2 ▚4 ·1  │
+│   NAMESPACE    NAME                             READY  STATUS            RESTARTS      AGE       │
+│ ▲ shop         payments-worker-6c9f7d8b5-xk2lp  0/1    CrashLoopBackOff  41 (2m ago)   3h        │
+│ ▲ shop         payments-worker-6c9f7d8b5-r8vqn  0/1    CrashLoopBackOff  39 (2m ago)   3h        │
+│ ▲ monitoring   loki-backend-0                   1/2    CrashLoopBackOff  12 (<1m ago)  5d        │
+│ ▲ staging      api-7f6d9c4b8-2mzqt              0/1    ImagePullBackOff  0             22m       │
+│ △ monitoring   grafana-5d8f7c6b9-wq2lx          0/1    Running           0             9m        │
+│ △ ci           runner-build-8812-k7x2p          0/1    Pending           0             6m        │
+│ · growlytics   report-28741230-9q8wd            0/1    Evicted           0             48m       │
+│ ◇ kube-system  traefik-6f5f87584-x7k2p          1/1    Running           7 (1d ago)    12d       │
+│ ◇ growlytics   ingest-6d8c7b5f9-m2kzp           1/1    Running           3 (5h ago)    2d        │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────── 6 need attention · 2 restarting ─╯
+   4 workloads  ▲ 61/65 ready · ▲ 1 job failed · ○ 1 cronjob suspended                              
+   5 events     △ 10 warnings in 1h · BackOff ×4 · FailedMount · FailedScheduling                   
+   6 k3s        ● 4/4 components · ◆ etcd snapshot 4h ago                                           
+   7 top pods   ◆ prometheus-k8s-0 1420m · ◆ payments-api-5f7b8c9d4-tq8vn 910m · ◆ ingest-6d8c7b5f9…

@@ -33,7 +33,7 @@ func nodeRows(s dash.Snapshot, chart bool) []row {
 // three node rows under it.
 func (l layout) drawsChart(s dash.Snapshot) bool {
 	pl, ok := l.placeOf(dash.PanelNodes)
-	if !ok || pl.line || !hasMetrics(s) {
+	if !ok || pl.line || l.kind <= kindCompact || !hasMetrics(s) {
 		return false
 	}
 	return chartSize(len(s.Nodes.Rows), pl.h-2) > 0

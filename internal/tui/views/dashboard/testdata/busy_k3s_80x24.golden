@@ -1,17 +1,17 @@
- ▲ attention  ▲ 3 CrashLoopBackOff  ▲ 1 ImagePullBackOff  +5           watch 5s 
- ▸ next 1/2  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --p…
+ ▲ 3 CrashLoop · 1 ImagePull · 4 workloads · 1 job  △ k3s-agent-1 mem 87% · +2  
+ ▸ next  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --previ…
    1 cluster    ● api ready · 33 ns · 26/26 pvc Bound · ○ 1 LB <pending>        
    2 nodes      △ 3/3 Ready · cpu ██▎···  38% · mem ████▏·  69% · △ 1 degraded  
 ┏━┫ 3 pods ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 185 · 33 ns ━┓
-┃ █████████████████████████████████████████████████████████████████▓▓▓░▚·  185 ┃
-┃ █171 ▓7 ░2 ▚4 ·1                                                             ┃
-┃ ≈30m not ok                    ███████████  8 now   per node  k3s-agent-1 4… ┃
-┃                                                                              ┃
+┃ ████████████████████████████████████████████████████▓▓░▚·  █171 ▓7 ░2 ▚4 ·1  ┃
 ┃   NAME                                  READY  STATUS            RESTARTS    ┃
 ┃›▲ shop/payments-worker-6c9f7d8b5-xk2lp  0/1    CrashLoopBackOff  41          ┃
 ┃ ▲ shop/payments-worker-6c9f7d8b5-r8vqn  0/1    CrashLoopBackOff  39          ┃
 ┃ ▲ monitoring/loki-backend-0             1/2    CrashLoopBackOff  12          ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/9 · +6 · 6 need attention · 2 restarting ━┛
+┃ ▲ staging/api-7f6d9c4b8-2mzqt           0/1    ImagePullBackOff  0           ┃
+┃ △ monitoring/grafana-5d8f7c6b9-wq2lx    0/1    Running           0           ┃
+┃ △ ci/runner-build-8812-k7x2p            0/1    Pending           0           ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/9 · +3 · 6 need attention · 2 restarting ━┛
    4 workloads  ▲ 61/65 ready · ▲ 1 job failed · ○ 1 cronjob suspended          
    5 events     △ 10 warnings in 1h · BackOff ×4 · FailedMount · FailedScheduli…
    6 k3s        ● 4/4 components · ◆ etcd snapshot 4h ago                       

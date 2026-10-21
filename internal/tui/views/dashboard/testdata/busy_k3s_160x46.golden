@@ -1,0 +1,40 @@
+›▲ attention  3 CrashLoopBackOff · 1 ImagePullBackOff · 4 workloads · 1 job  △ k3s-agent-1 mem 87% · 2 not ready · 1 warning in 10m                   watch 15s 
+ ▸ next 1/2  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --previous   why does it keep crashing?                                             
+   6 k3s        ● 4/4 components · ◆ etcd snapshot 4h ago                                                                                                       
+╭─┤ 1 cluster ├──────────────────────────────────────────────────────── ◆ k3s ─╮╭─┤ 2 nodes ├────────────────────────────────────────────────────── 3/3 Ready ─╮
+│ ● api        ready · 8/8 checks · etcd ok                                    ││   NODE         STATUS  CPU                MEMORY                PODS  AGE    │
+│ ◆ version    v1.36.3+k3s1 · embedded etcd · 1 control plane                  ││ ● k3s-cp-1     Ready   ████▋·······  39%  ████████▍···  70%  112/250  212d   │
+│ ● you        devops-friend                                                   ││ △ k3s-agent-1  Ready   ██████▋·····  55%  ██████████▌·  87%△  41/110  212d   │
+│   age        212d (namespace kube-system)                                    ││ ● k3s-agent-2  Ready   ██▏·········  18%  ████▌·······  37%   32/110  98d    │
+│   ns         33 · 0 terminating                                              ││                                                                              │
+│ ● storage    26/26 pvc Bound                                                 ││   cpu ≈50m                                      ▄▄▄▄▄▄▄▄▄▄▄  38% of 36 cores │
+│ ○ network    102 svc · 1 LoadBalancer <pending>                              ││   mem ≈50m                                      ▆▆▆▆▆▆▆▆▆▆▆  69% of 192 GiB  │
+│   server     https://10.0.0.5:6443                                           ││   ≈ history from kubectl top nodes · △ ≥ 85%                                 │
+╰─────────────────────────────────────────────────────────────────── ctx fake ─╯╰─────────────────────────────────────────────────────── kubelet v1.36.3+k3s1 ─╯
+╭─┤ 3 pods ├───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 185 · 33 ns ─╮
+│ ███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████▓▓▓▓▓▓░░▚▚▚·  185 │
+│ █ Running 171   ▓ Completed 7   ░ Pending/NotReady 2   ▚ CrashLoopBackOff 3 · ImagePullBackOff 1   · Evicted 1                                               │
+│   NAMESPACE    NAME                             READY  STATUS            RESTARTS      AGE  NODE                                                             │
+│ ▲ shop         payments-worker-6c9f7d8b5-xk2lp  0/1    CrashLoopBackOff  41 (2m ago)   3h   k3s-agent-1                                                      │
+│ ▲ shop         payments-worker-6c9f7d8b5-r8vqn  0/1    CrashLoopBackOff  39 (2m ago)   3h   k3s-agent-2                                                      │
+│ ▲ monitoring   loki-backend-0                   1/2    CrashLoopBackOff  12 (<1m ago)  5d   k3s-cp-1                                                         │
+│ ▲ staging      api-7f6d9c4b8-2mzqt              0/1    ImagePullBackOff  0             22m  k3s-agent-1                                                      │
+│ △ monitoring   grafana-5d8f7c6b9-wq2lx          0/1    Running           0             9m   k3s-cp-1                                                         │
+│ △ ci           runner-build-8812-k7x2p          0/1    Pending           0             6m   <none>                                                           │
+│ · growlytics   report-28741230-9q8wd            0/1    Evicted           0             48m  k3s-agent-1                                                      │
+│ ◇ kube-system  traefik-6f5f87584-x7k2p          1/1    Running           7 (1d ago)    12d  k3s-cp-1                                                         │
+│ ◇ growlytics   ingest-6d8c7b5f9-m2kzp           1/1    Running           3 (5h ago)    2d   k3s-agent-2                                                      │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+│                                                                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 6 need attention · 2 restarting ─╯
+╭─┤ 4 workloads ├──────────────────────────────────────────────── 61/65 ready ─╮╭─┤ 5 events ├───────────────────────────────────────────── type=Warning · 1h ─╮
+│ deploy 49/52 · sts 7/8 · ds 5/5 · jobs ▲1 · cron ○1                          ││ ◇ <1m  BackOff               pod/loki-backend-0 · monitoring                 │
+│                                                                              ││     Back-off restarting failed container ingester in pod loki-backend-0_mon… │
+│   KIND    NAMESPACE/NAME            READY  UP-TO-DATE  AVAIL                 ││ ◇ 2m   BackOff               pod/payments-worker-6c9f7d8b5-xk2lp · shop      │
+│ ▲ deploy  shop/payments-worker      0/2    2           0                     ││     Back-off restarting failed container worker in pod payments-worker-6c9f… │
+│ ▲ deploy  staging/api               0/1    1           0                     ││ ◇ 2m   BackOff               pod/payments-worker-6c9f7d8b5-r8vqn · shop      │
+│ ▲ deploy  monitoring/grafana        0/1    1           0                     ││     Back-off restarting failed container worker in pod payments-worker-6c9f… │
+│ ▲ sts     monitoring/loki-backend   0/1                                      ││ △ 4m   FailedMount           pod/backup-7d9f8c6b5-q2w4e · growlytics         │
+│ ▲ job     ci/nightly-e2e-28741000   failed 41m                               ││     MountVolume.SetUp failed for volume "creds" : secret "backup-creds" not… │
+╰────────────────────────────────────────────────────── +1 · 5 need attention ─╯╰─────────────────────────────────────────────── +6 · newest first · 10 of 10 ─╯

@@ -2,19 +2,51 @@ package dashboard
 
 import (
 	"fmt"
+	"slices"
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 )
 
 // clusterItem is one line of panel 1: a state glyph, a label, a value and
-// the command the line stands for.
+// the command the line stands for. extra follows the value where there is
+// room; short replaces it where there is not.
 type clusterItem struct {
 	key   string
 	mark  mark
 	label string
 	value string
+	extra string
+	short string
 	cmd   dash.Cmd
+}
+
+// valueIn fits the line's value to w columns: with its extra note, then
+// without, then the short form, then losing whole " · " parts from the
+// end, then cut.
+func (it clusterItem) valueIn(w int) string {
+	full := it.value
+	if it.extra != "" {
+		full += " " + it.extra
+	}
+	for _, v := range []string{full, it.value, it.short} {
+		if v != "" && ansi.StringWidth(v) <= w {
+			return v
+		}
+	}
+	v := it.value
+	if it.short != "" {
+		v = it.short
+	}
+	parts := strings.Split(v, " · ")
+	for n := len(parts) - 1; n >= 1; n-- {
+		if s := strings.Join(parts[:n], " · "); ansi.StringWidth(s) <= w {
+			return s
+		}
+	}
+	return cutText(v, w)
 }
 
 // clusterItems are panel 1's lines in order. A line whose source is
@@ -68,17 +100,19 @@ func apiItem(r dash.APIRow) (clusterItem, bool) {
 	if !r.Ready {
 		it.mark, parts[0] = markErr, "not ready"
 	}
+	// The failing checks come first: a narrow panel drops parts from the
+	// end, and they are what to look at.
+	if len(r.Failed) > 0 {
+		parts = append(parts, "failing "+clean(strings.Join(r.Failed, ", ")))
+	}
 	if r.Checks > 0 {
 		parts = append(parts, fmt.Sprintf("%d/%d checks", r.Passed, r.Checks))
 	}
-	switch r.Etcd {
-	case dash.StateOK:
+	switch {
+	case r.Etcd == dash.StateOK:
 		parts = append(parts, "etcd ok")
-	case dash.StateFailed:
+	case r.Etcd == dash.StateFailed && !slices.Contains(r.Failed, "etcd"):
 		parts = append(parts, "etcd failing")
-	}
-	if len(r.Failed) > 0 {
-		parts = append(parts, "failing "+clean(strings.Join(r.Failed, ", ")))
 	}
 	it.value = strings.Join(parts, " · ") + staleNote(r.Avail)
 	return it, true
@@ -117,7 +151,7 @@ func ageItem(r dash.AgeRow) (clusterItem, bool) {
 	if !readable(r.Avail) || !r.Known {
 		return clusterItem{}, false
 	}
-	return clusterItem{key: "age", label: "age", value: ago(r.Age) + " (namespace kube-system)", cmd: r.Cmd}, true
+	return clusterItem{key: "age", label: "age", value: ago(r.Age), extra: "(namespace kube-system)", cmd: r.Cmd}, true
 }
 
 func nsItem(r dash.NamespacesRow) (clusterItem, bool) {
@@ -191,6 +225,7 @@ func networkItem(r dash.NetworkRow, ns string) (clusterItem, bool) {
 		parts = append(parts, "no LoadBalancer")
 	}
 	it.value = strings.Join(parts, " · ") + staleNote(r.Avail)
+	it.short = strings.ReplaceAll(it.value, "LoadBalancer", "LB")
 	return it, true
 }
 
