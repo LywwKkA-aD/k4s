@@ -13,6 +13,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 // bodyHeight returns the number of lines available between header and footer,
@@ -140,12 +141,18 @@ func (m Model) footerCommandRow(width int) string {
 	return styles.KubectlHint.Render(ansi.Truncate(shown, width, "…"))
 }
 
+// footerBindings are the key hints: the root's keys, then the view's. o
+// is hinted only on a view with an object to open (views.Selection);
+// elsewhere it just says there is none.
 func (m Model) footerBindings() []string {
 	quitLabel := "q quit"
 	if m.current.Title() != viewDashboard {
 		quitLabel = "q home"
 	}
 	bindings := []string{quitLabel, "^c quit", "esc back", ": command", "? help", "y copy"}
+	if _, ok := m.current.(views.Selection); ok {
+		bindings = append(bindings, m.keys.YAML.Help().Key+" yaml")
+	}
 	for _, b := range m.current.Help() {
 		h := b.Help()
 		if h.Key != "" && h.Desc != "" {

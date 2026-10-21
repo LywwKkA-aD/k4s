@@ -1,2 +1,2 @@
- q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  ↑↓/pgup/pgdn scroll  ·  / search  ·  n/N next/prev match  ·  r refresh
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  o yaml  ·  ↑↓/pgup/pgdn scroll  ·  / search  ·  n/N next/prev match  ·  r refresh
  ≈ kubectl describe service web -n demo

@@ -10,10 +10,10 @@
 │     esc     back                                         │
 │     :       command bar                                  │
 │     ?       this help                                    │
+│     o       YAML of the selected object                  │
 │     y       copy the kubectl command below (OSC 52)      │
 │             in tmux: set -g set-clipboard on             │
 │                                                          │
-│   view: dashboard                                        │
 ──────────────────────────────────────────────────────────
  q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? hel…
  kubectl get all -A
