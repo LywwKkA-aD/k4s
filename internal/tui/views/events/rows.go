@@ -12,11 +12,11 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
-// Column widths. LAST SEEN holds kubectl's "51s (x294 over 15h)", TYPE
+// Column widths. LAST SEEN holds kubectl's "3m16s (x208 over 2d3h)", TYPE
 // "Warning"; NAMESPACE, OBJECT and MESSAGE share what the screen has
 // left, MESSAGE taking the most.
 const (
-	lastSeenWidth = 20
+	lastSeenWidth = 22
 	typeWidth     = 7
 	reasonWidth   = 20
 

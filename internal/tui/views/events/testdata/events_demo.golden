@@ -1,5 +1,5 @@
- LAST SEEN             TYPE     REASON                OBJECT                              MESSAGE
+ LAST SEEN               TYPE     REASON                OBJECT                             MESSAGE
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 10m (x5 over 15h)     Warning  BackOff               Pod/web-1                           Back-off restarting failed container nginx
- 20m                   Normal   Pulled                Pod/web-1                           Container image "nginx:1.27" already present on machine
- 30m                   Normal   ScalingReplicaSet     Deployment/web                      Scaled up replica set web-7d4b9c to 2
+ 10m (x5 over 15h)       Warning  BackOff               Pod/web-1                          Back-off restarting failed container nginx
+ 20m                     Normal   Pulled                Pod/web-1                          Container image "nginx:1.27" already present on machine
+ 30m                     Normal   ScalingReplicaSet     Deployment/web                     Scaled up replica set web-7d4b9c to 2

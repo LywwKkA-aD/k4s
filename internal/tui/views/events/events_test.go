@@ -43,6 +43,18 @@ func TestListsAsKubectlEvents(t *testing.T) {
 	}
 }
 
+// TestLastSeenFitsALongSeries: the widest LAST SEEN kubectl prints for a
+// repeated event is not cut.
+func TestLastSeenFitsALongSeries(t *testing.T) {
+	t.Parallel()
+
+	long := ev(demo, "long.1", "Warning", "BackOff", "again", pod(demo, "web-1"), 1234, 51*time.Hour, 59*time.Minute)
+	m, _ := mounted(t, tuitest.NewFakeClient(t, tuitest.WithObjects(long)), "")
+	if got := rows(m); len(got) != 1 || !strings.Contains(got[0], "59m (x1234 over 2d3h)") {
+		t.Errorf("row:\n%s", strings.Join(got, "\n"))
+	}
+}
+
 // TestWarningsOnly: W keeps the Warning events and says so in the
 // command; W again brings the rest back.
 func TestWarningsOnly(t *testing.T) {
