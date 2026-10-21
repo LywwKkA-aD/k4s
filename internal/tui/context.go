@@ -19,7 +19,8 @@ import (
 // and every saved view state (they reference resources that may not
 // exist in the new cluster), starts in the new context's namespace,
 // rebuilds the kubectl session and lands on the dashboard. Failures
-// surface in the status row and the previous client stays active.
+// surface in the status row and the previous client stays active. A
+// context with a credential plugin is probed for a login (login.go).
 func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.Cmd) {
 	client, err := m.switchClient(msg.Name)
 	if err != nil {
@@ -35,7 +36,7 @@ func (m Model) onContextSelected(msg views.ContextSelectedMsg) (tea.Model, tea.C
 	m.startup = startup.Session{Source: m.startup.Source, Distro: cluster.Detect("", client.Context, nil)}
 	m, errCmd := m.resetForwards(client)
 	m.current = dashboard.New(m.client, nil)
-	return m, tea.Batch(m.relayoutCmd(), errCmd)
+	return m, tea.Batch(m.relayoutCmd(), errCmd, loginProbe(client, false))
 }
 
 // switchClient loads context name from the session's kubeconfig: through
