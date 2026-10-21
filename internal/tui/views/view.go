@@ -163,10 +163,15 @@ type LogsRequestMsg struct {
 // picker's title; Target, Logs and Detached are carried on to the tail
 // prompt. Detached has the meaning it has on TailPromptRequestMsg: the
 // picker shows "(not the selected row)".
+//
+// Init names the entries of Containers that are init containers or native
+// sidecars (k8s.Containers.InitNames). The picker labels them init:<name>;
+// the label is display only, and the chosen container is the bare name.
 type ContainerPromptRequestMsg struct {
 	Namespace  string
 	Pods       []string
 	Containers []string
+	Init       []string
 	NextKind   string // "logs" or "exec"
 	Target     ResourceRef
 	Logs       k8s.LogTarget

@@ -2,6 +2,7 @@ package overlay
 
 import (
 	"fmt"
+	"slices"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -69,7 +70,7 @@ func (c container) View(width int) string {
 	lines = append(lines, "")
 	for i, name := range c.req.Containers {
 		marker := "  "
-		label := fmt.Sprintf("%d. %s", i+1, name)
+		label := fmt.Sprintf("%d. %s", i+1, c.label(name))
 		if i == c.cursor {
 			marker = styles.OK.Render("▶ ")
 			label = styles.OK.Render(label)
@@ -78,6 +79,15 @@ func (c container) View(width int) string {
 	}
 	lines = append(lines, "", styles.Hint.Render("↑↓/jk navigate · 1-9 quick · Enter pick · Esc cancel"))
 	return rows(width, lines...)
+}
+
+// label is how the picker names a container: init:<name> for an init
+// container or native sidecar. Picking it still answers the bare name.
+func (c container) label(name string) string {
+	if slices.Contains(c.req.Init, name) {
+		return "init:" + name
+	}
+	return name
 }
 
 // Command is what picking the highlighted container leads to: the logs at

@@ -111,3 +111,61 @@ func TestContainerPickerMarksADetachedTarget(t *testing.T) {
 		t.Error("an attached request is marked")
 	}
 }
+
+func initPickerRequest() views.ContainerPromptRequestMsg {
+	return views.ContainerPromptRequestMsg{
+		Namespace:  "k4s-broken",
+		Pods:       []string{"init-crashloop"},
+		Containers: []string{"app", "log-shipper", "migrate"},
+		Init:       []string{"log-shipper", "migrate"},
+		NextKind:   "logs",
+		Target:     views.ResourceRef{Kind: "pod", Namespace: "k4s-broken", Name: "init-crashloop"},
+	}
+}
+
+func TestContainerPickerLabelsInitContainers(t *testing.T) {
+	t.Parallel()
+
+	o := overlay.NewContainer(initPickerRequest())
+	requireShows(t, o, "▶ 1. app", "  2. init:log-shipper", "  3. init:migrate")
+	if strings.Contains(screen(o), "init:app") {
+		t.Errorf("an app container is labelled init:\n%s", screen(o))
+	}
+	o, _ = feed(t, o, keys("down")...)
+	requireShows(t, o, "  1. app", "▶ 2. init:log-shipper")
+	for width := 1; width <= 80; width++ {
+		requireNarrow(t, o, width)
+	}
+}
+
+func TestContainerPickerInitLabelIsDisplayOnly(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		keys []string
+		want string
+	}{
+		{name: "digit", keys: []string{"3"}, want: "migrate"},
+		{name: "enter after moving", keys: []string{"down", "enter"}, want: "log-shipper"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			o, out := feed(t, overlay.NewContainer(initPickerRequest()), keys(tc.keys...)...)
+			if o != nil {
+				t.Fatalf("still open:\n%s", screen(o))
+			}
+			want := overlay.ContainerChosenMsg{Request: initPickerRequest(), Container: tc.want}
+			if len(out) != 1 || !tuitest.Contains(out, want) {
+				t.Fatalf("messages = %s, want %+v", tuitest.Describe(out), want)
+			}
+		})
+	}
+
+	o, _ := feed(t, overlay.NewContainer(initPickerRequest()), keys("up")...)
+	cmd, _ := overlay.CommandOf(o)
+	if got, want := cmd.String(), "kubectl logs -f init-crashloop --tail=100 -n k4s-broken -c migrate"; got != want {
+		t.Errorf("Command = %q, want %q", got, want)
+	}
+}
