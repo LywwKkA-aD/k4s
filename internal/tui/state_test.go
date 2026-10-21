@@ -213,8 +213,7 @@ func TestCorruptStateIsSetAside(t *testing.T) {
 
 	m := started(t, tuitest.NewFakeClient(t))
 	refuteScreen(t, m, "restore port-forwards")
-	m, _ = tuitest.Drive(t, m, colon("pf")...)
-	if got := footer(m); !strings.Contains(got, "saved forwards were unreadable") {
+	if got := footer(m); !strings.Contains(got, "forwards: saved forwards were unreadable") {
 		t.Errorf("footer = %q, want the notice about the corrupt file", got)
 	}
 	if aside, _ := filepath.Glob(path + ".corrupt-*"); len(aside) != 1 {

@@ -54,7 +54,9 @@ func (m Model) switchClient(name string) (*k8s.Client, error) {
 // for them as a Cmd: a hung tunnel must not freeze the switch. The new
 // client's Manager is built After that stop and refuses to register or
 // start a forward until the old sessions are down or timed out, since a
-// new forward could otherwise lose its local port to an old one.
+// new forward could otherwise lose its local port to an old one. A state
+// file the new Manager could not read is reported over the stop, which
+// says how it went once it ends.
 func (m Model) resetForwards(client *k8s.Client) (Model, tea.Cmd) {
 	var stop *forwards.Stopping
 	if m.forwardMgr != nil {
@@ -77,10 +79,13 @@ func (m Model) resetForwards(client *k8s.Client) (Model, tea.Cmd) {
 
 	mgr, err := forwards.NewManager(client, forwards.After(stop))
 	m.forwardMgr = mgr
+	notice := forwardsNotice(mgr)
 	var statusCmd tea.Cmd
 	switch {
 	case err != nil:
 		m, statusCmd = m.setError("forwards: " + err.Error())
+	case notice != "":
+		m, statusCmd = m.setStatus(status.Warn, notice)
 	case waitCmd != nil:
 		m, statusCmd = m.setStatus(status.Info, "stopping "+stopping+"…")
 	}

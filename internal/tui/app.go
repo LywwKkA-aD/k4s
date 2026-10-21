@@ -171,14 +171,23 @@ func newDescriber(c *k8s.Client, r *kubectl.Runner, session kubectl.Session) des
 }
 
 // Init starts the active view, asks the server for the header's version
-// and the terminal for its background, and reports a failed preflight.
+// and the terminal for its background, and reports a failed preflight and
+// a saved-forwards file that could not be read.
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.current.Init(), m.fetchVersion(), m.askBackground()}
 	if err := m.startup.PreflightErr; err != nil {
-		warn := views.StatusMsg{Level: status.Warn, Text: preflightText(err)}
-		cmds = append(cmds, func() tea.Msg { return warn })
+		cmds = append(cmds, warnCmd(preflightText(err)))
+	}
+	if notice := forwardsNotice(m.forwardMgr); notice != "" {
+		cmds = append(cmds, warnCmd(notice))
 	}
 	return tea.Batch(cmds...)
+}
+
+// warnCmd emits text as a warning for the status row.
+func warnCmd(text string) tea.Cmd {
+	msg := views.StatusMsg{Level: status.Warn, Text: text}
+	return func() tea.Msg { return msg }
 }
 
 // currentContextName is a small helper so the contexts view can render the

@@ -8,8 +8,24 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 )
+
+// forwardsNotice is the status for what mgr had to say about loading the
+// saved forwards, such as a corrupt file set aside; "" when there is
+// nothing to say. The Manager says it once, so the forwards view, which
+// asks too, does not repeat it. The text quotes the file's parse error.
+func forwardsNotice(mgr *forwards.Manager) string {
+	if mgr == nil {
+		return ""
+	}
+	n := mgr.TakeNotice()
+	if n == "" {
+		return ""
+	}
+	return "forwards: " + sanitize.Line(n)
+}
 
 // onRestoreDecision acts on the startup question about saved forwards.
 //
