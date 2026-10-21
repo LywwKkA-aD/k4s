@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"time"
 
@@ -61,6 +63,7 @@ func run() error {
 	}
 	p := tea.NewProgram(tui.New(client, loadErr), opts...)
 	_, err := p.Run()
+	err = runError(err)
 
 	// The TUI has released the terminal: show what was held back.
 	_ = logsink.FlushPluginStderr(os.Stderr)
@@ -78,4 +81,15 @@ func warmUp(client *k8s.Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), warmUpTimeout)
 	defer cancel()
 	_ = client.WarmUp(ctx)
+}
+
+// runError shortens the framework's error when there is no terminal (ssh
+// without -t, cron, a container without -t): it nests two "bubbletea:"
+// prefixes around the open(/dev/tty) failure.
+func runError(err error) error {
+	var pe *fs.PathError
+	if errors.As(err, &pe) && pe.Path == "/dev/tty" {
+		return fmt.Errorf("no terminal: %w", pe)
+	}
+	return err
 }
