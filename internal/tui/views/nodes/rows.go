@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"strconv"
+	"strings"
 
 	"charm.land/bubbles/v2/table"
 	"charm.land/lipgloss/v2"
@@ -61,17 +62,27 @@ func toItems(ns []k8s.Node) []item {
 	out := make([]item, 0, len(ns))
 	for _, n := range ns {
 		out = append(out, item{name: n.Name, cells: table.Row{
-			sanitize.Line(n.Name),
-			sanitize.Line(n.Status),
-			sanitize.Line(n.Roles),
+			cell(n.Name),
+			cell(n.Status),
+			cell(n.Roles),
 			duration.HumanDuration(n.Age),
-			sanitize.Line(n.Version),
-			sanitize.Line(n.InternalIP),
-			sanitize.Line(n.OSArch),
+			cell(n.Version),
+			cell(n.InternalIP),
+			cell(n.OSArch),
 			strconv.Itoa(n.Taints),
 		}})
 	}
 	return out
+}
+
+// blanks turns the whitespace a table cell cannot hold into spaces: a
+// tab, which the cell would widen after measuring it, cannot push the
+// next column out.
+var blanks = strings.NewReplacer("\n", " ", "\t", " ")
+
+// cell is s on one inert line.
+func cell(s string) string {
+	return sanitize.Line(blanks.Replace(s))
 }
 
 // applyFilter rebuilds the rows from items through the filter. A

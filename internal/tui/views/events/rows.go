@@ -79,9 +79,14 @@ func toItems(evs []k8s.Event, showNamespace bool) []item {
 	return out
 }
 
-// cell is s on one inert line: a multi-line message keeps its words apart.
+// blanks turns the whitespace a table cell cannot hold into spaces: a
+// multi-line message keeps its words apart, and a tab, which the cell
+// would widen after measuring it, cannot push the next column out.
+var blanks = strings.NewReplacer("\n", " ", "\t", " ")
+
+// cell is s on one inert line.
 func cell(s string) string {
-	return sanitize.Line(strings.ReplaceAll(s, "\n", " "))
+	return sanitize.Line(blanks.Replace(s))
 }
 
 // applyFilter rebuilds the rows from items through W and the filter, the

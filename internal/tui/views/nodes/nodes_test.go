@@ -102,15 +102,15 @@ func TestFilterAndBack(t *testing.T) {
 func TestClusterTextIsInert(t *testing.T) {
 	t.Parallel()
 
-	evil := node("evil", "10.0.0.66", "v1.36.5\x1b]52;c;cm0gLXJmIH4=\x07", "arm64\x1b[2J", nil, 0)
+	evil := node("evil", "10.0.0.66", "v1.36.5\x1b]52;c;cm0gLXJmIH4=\x07\tk3s", "arm64\x1b[2J", nil, 0)
 	m, _ := mounted(t, tuitest.NewFakeClient(t, tuitest.WithObjects(evil)))
 	frame := tuitest.Frame(m)
-	for _, b := range []string{"\x1b]", "\x07", "\x1b[2J"} {
+	for _, b := range []string{"\x1b]", "\x07", "\x1b[2J", "\t"} {
 		if strings.Contains(frame, b) {
 			t.Errorf("the frame carries %q", b)
 		}
 	}
-	if got := rows(m); len(got) != 1 || !strings.Contains(got[0], "linux/arm64") {
+	if got := rows(m); len(got) != 1 || !strings.Contains(got[0], "linux/arm64") || !strings.Contains(got[0], "v1.36.5 k3s") {
 		t.Errorf("row:\n%s", strings.Join(got, "\n"))
 	}
 }

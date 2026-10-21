@@ -194,11 +194,11 @@ func TestSelectedIsTheEvent(t *testing.T) {
 func TestClusterTextIsInert(t *testing.T) {
 	t.Parallel()
 
-	evil := ev(demo, "evil.1", "Warning", "Bad\x1b[2JReason", "line one\nline two \x1b]52;c;cm0gLXJmIH4=\x07done",
+	evil := ev(demo, "evil.1", "Warning", "Bad\x1b[2JReason", "line one\nline\ttwo \x1b]52;c;cm0gLXJmIH4=\x07done",
 		pod(demo, "web\x1b[31m-1"), 1, time.Hour, time.Hour)
 	m, _ := mounted(t, tuitest.NewFakeClient(t, tuitest.WithObjects(evil)), demo)
 	frame := tuitest.Frame(m)
-	for _, b := range []string{"\x1b]", "\x07", "\x1b[2J", "\x1b[31m"} {
+	for _, b := range []string{"\x1b]", "\x07", "\x1b[2J", "\x1b[31m", "\t"} {
 		if strings.Contains(frame, b) {
 			t.Errorf("the frame carries %q", b)
 		}
