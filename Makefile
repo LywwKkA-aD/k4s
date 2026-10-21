@@ -96,7 +96,7 @@ cover: ## print per-package test coverage, lowest last (profile: COVER_PROFILE)
 		$(COVER_PROFILE) | sort -k2,2nr -k1,1 | awk '{ printf "%-36s %7s%%\n", $$1, $$2 }'
 	@$(GO) tool cover -func=$(COVER_PROFILE) | awk 'END { printf "%-36s %8s\n", "total", $$NF }'
 
-ci: ## full quality gate: tidy-check + line cap + vet + lint + test + vuln
+ci: ## full quality gate: tidy-check + line cap + vet + lint + test + idle-cpu lint/test + vuln
 	@$(MAKE) --no-print-directory tools-go-check
 	@$(MAKE) --no-print-directory lines
 	$(GO) mod tidy -diff
@@ -104,6 +104,7 @@ ci: ## full quality gate: tidy-check + line cap + vet + lint + test + vuln
 	$(GO) vet $(PKGS)
 	$(TOOL) golangci-lint run $(PKGS)
 	$(GO) test -race -cover $(PKGS)
+	@$(MAKE) --no-print-directory idle-cpu-lint idle-cpu-test
 	$(TOOL) govulncheck $(PKGS)
 	@echo "all checks passed"
 
@@ -219,11 +220,11 @@ kind-down: ## delete the kind cluster
 IDLE_CPU_BIN  ?= bin/idlecpu
 IDLE_CPU_ARGS ?=
 
-.PHONY: idle-cpu idle-cpu-bin idle-cpu-test
+.PHONY: idle-cpu idle-cpu-bin idle-cpu-test idle-cpu-lint
 
 # The release is built on the go.mod toolchain, so the measured k4s is too
 # (target-specific exports reach the build prerequisite).
-idle-cpu idle-cpu-bin idle-cpu-test: export GOTOOLCHAIN ?= $(GO_TOOLCHAIN)
+idle-cpu idle-cpu-bin idle-cpu-test idle-cpu-lint: export GOTOOLCHAIN ?= $(GO_TOOLCHAIN)
 
 idle-cpu: build idle-cpu-bin ## idle CPU and RSS of bin/k4s on make demo (IDLE_CPU_ARGS='--max-cpu 2 --max-rss 40MB')
 	$(IDLE_CPU_BIN) --bin $(BIN) --kubeconfig $(KUBECONFIG_PATH) $(IDLE_CPU_ARGS)
@@ -234,6 +235,9 @@ idle-cpu-bin: ## build the idle-cpu harness (tools/idlecpu); GOOS/GOARCH cross-b
 
 idle-cpu-test: ## unit-test the idle-cpu harness (tools module, race detector)
 	cd tools && $(GO) test -race -cover ./idlecpu/...
+
+idle-cpu-lint: ## lint the idle-cpu harness (tools module, repo lint config)
+	cd tools && $(GO) tool golangci-lint run --config ../.golangci.yml ./idlecpu/...
 
 gif: build ## record docs/demo.gif via VHS (requires: brew install vhs ttyd ffmpeg)
 	@command -v vhs >/dev/null || { echo "vhs not on PATH — brew install vhs ttyd ffmpeg"; exit 1; }
