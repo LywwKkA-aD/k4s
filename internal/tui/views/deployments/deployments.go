@@ -7,7 +7,8 @@
 // running replica through the multi-pod machinery, with a coloured per-pod
 // prefix.
 //
-// The list refreshes through an async.Poller.
+// The list refreshes through an async.Poller, and Esc from describe or logs
+// brings it back as it was left (views.Stateful and views.Restorer).
 package deployments
 
 import (
@@ -76,6 +77,8 @@ type Model struct {
 	acts  async.InFlight
 	// logsFor is the deployment the logs resolve in flight is for.
 	logsFor views.ResourceRef
+	// pending is a restored row waiting for the first list.
+	pending pendingRow
 
 	keys keyMap
 }
@@ -144,7 +147,8 @@ func listTimeout(namespace string) time.Duration {
 	return namespaceTimeout
 }
 
-// Init sends the first list New started, from the watch cache like a tick.
+// Init sends the first list New started; a restored view lists the same
+// way, from the watch cache.
 func (m Model) Init() tea.Cmd {
 	if !m.poll.Busy() {
 		return nil
