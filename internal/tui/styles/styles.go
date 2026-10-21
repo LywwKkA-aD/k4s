@@ -118,9 +118,9 @@ func Table() table.Styles {
 }
 
 // FitTable sizes t to the width its columns render at. A bubbles v2 table
-// renders no rows at width 0, which is what an unsized bubbles v1 table
-// treated as "as wide as the columns"; rows wider than the screen still
-// wrap in the body as before.
+// renders no rows at width 0, where an unsized table used to take the
+// width of its columns; rows wider than the screen still wrap in the body
+// as before.
 func FitTable(t *table.Model) {
 	pad := Table().Cell.GetHorizontalFrameSize()
 	w := 0
