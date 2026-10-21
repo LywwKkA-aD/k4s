@@ -93,6 +93,14 @@ func (m Model) Commit() Model {
 	return m
 }
 
+// WithQuery returns m with q committed, as if it had been typed and
+// confirmed with Enter: closed, filtering, its bar showing "/ q". A blank
+// q closes the filter. Views use it to restore a views.State.
+func (m Model) WithQuery(q string) Model {
+	m.input.SetValue(q)
+	return m.Commit()
+}
+
 // Update handles a key press or a paste while the input is focused.
 // Returns the updated model, a Cmd from textinput, and a "consumed" flag the
 // host uses to decide whether to also let its own bindings run.
