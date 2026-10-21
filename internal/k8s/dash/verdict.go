@@ -56,12 +56,24 @@ func verdictOf(s Snapshot) Verdict {
 		v.Chips = append(v.Chips, Chip{Sev: SevWaiting, Panel: PanelEvents, Count: n, Text: plural(n, "warning", "warnings") + " in 10m"})
 	}
 	sort.SliceStable(v.Chips, func(i, j int) bool { return v.Chips[i].Sev > v.Chips[j].Sev })
-	v.Partial = s.Scope.Fallback || s.Ledger[Nodes].State == StateForbidden || s.Ledger[Deployments].State == StateForbidden
+	v.Partial = s.Scope.Fallback || s.Events.Truncated || !sourcesFresh(s)
 	v.AllClear = len(v.Chips) == 0 && s.Pods.Avail.State == StateOK && !v.Partial
 	if len(v.Chips) > 0 {
 		v.Focus = v.Chips[0].Panel
 	}
 	return v
+}
+
+// sourcesFresh reports whether every list the verdict leans on answered:
+// a stale, failed, absent or denied source says nothing about its part of
+// the cluster, so the banner must not claim all clear over it.
+func sourcesFresh(s Snapshot) bool {
+	for _, e := range []Endpoint{Nodes, Deployments, Events, Readyz} {
+		if s.Ledger[e].State != StateOK {
+			return false
+		}
+	}
+	return true
 }
 
 func nodeChips(p NodesPanel) []Chip {
