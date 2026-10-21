@@ -8,7 +8,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/pager"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 // text is n numbered lines, every tenth of them naming the needle.
@@ -134,6 +136,28 @@ func TestSearchWithoutMatch(t *testing.T) {
 	m = feed(t, m, tuitest.Press("n"))
 	if strings.Join(screen(m), "\n") != strings.Join(before, "\n") {
 		t.Error("n without matches moved the view")
+	}
+}
+
+// TestStepWithoutSearchSaysSo: n and N before any search answer in the
+// status row instead of doing nothing.
+func TestStepWithoutSearchSaysSo(t *testing.T) {
+	t.Parallel()
+
+	for _, k := range []string{"n", "N"} {
+		t.Run(k, func(t *testing.T) {
+			t.Parallel()
+			m := sized(text(50), 40, 10)
+			next, cmd := m.Update(tuitest.Press(k))
+			got, ok := tuitest.Find[views.StatusMsg](tuitest.Collect(t, cmd))
+			want := views.StatusMsg{Level: status.Info, Text: "no search: press / first"}
+			if !ok || got != want {
+				t.Errorf("%s without a search said %+v, want %+v", k, got, want)
+			}
+			if strings.Join(screen(next), "\n") != strings.Join(screen(m), "\n") {
+				t.Errorf("%s without a search moved the view", k)
+			}
+		})
 	}
 }
 

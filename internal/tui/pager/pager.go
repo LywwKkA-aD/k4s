@@ -10,7 +10,8 @@
 //	Enter              → the query is committed and the first match shown;
 //	                     an empty query ends the search
 //	Esc in the prompt  → the prompt closes, the committed query stays
-//	n / N              → the next or previous match, wrapping around
+//	n / N              → the next or previous match, wrapping around;
+//	                     before any search, a status says to press /
 //	ClearSearch        → the host's Esc: the search ends
 //
 // Matching ignores case. The text is drawn as given: callers pass text
@@ -29,7 +30,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
@@ -151,10 +154,14 @@ func (m Model) onKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.input.CursorEnd()
 		blink := m.input.Focus()
 		return m.relayout(), blink
-	case key.Matches(msg, nextKey):
+	case key.Matches(msg, nextKey), key.Matches(msg, prevKey):
+		if m.query == "" {
+			return m, noSearch
+		}
+		if key.Matches(msg, prevKey) {
+			return m.step(-1), nil
+		}
 		return m.step(1), nil
-	case key.Matches(msg, prevKey):
-		return m.step(-1), nil
 	case key.Matches(msg, topKey):
 		m.vp.GotoTop()
 		return m, nil
@@ -181,6 +188,12 @@ func (m Model) onPromptKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// noSearch answers n and N before any search: a key that cannot do its
+// job says so.
+func noSearch() tea.Msg {
+	return views.StatusMsg{Level: status.Info, Text: "no search: press / first"}
 }
 
 // commit makes query the search and shows its first match.
