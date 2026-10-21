@@ -151,4 +151,3 @@ func TestListServicesEmptyPortsRendersAsNone(t *testing.T) {
 		t.Errorf("ports = %q, want <none>", got[0].Ports)
 	}
 }
-

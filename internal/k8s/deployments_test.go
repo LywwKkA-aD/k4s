@@ -80,4 +80,3 @@ func TestListDeploymentsHandlesNilReplicas(t *testing.T) {
 		t.Errorf("expected nil Spec.Replicas to surface as 0, got %+v", got)
 	}
 }
-

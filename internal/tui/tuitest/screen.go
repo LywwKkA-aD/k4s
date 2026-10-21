@@ -32,6 +32,19 @@ func Screen(v any) string {
 	return Strip(Frame(v))
 }
 
+// Footer renders v, the root model, and returns what lies under the
+// footer's top rule: the hints or status row and the kubectl row, trailing
+// blanks trimmed. It is empty when the screen has no rule.
+func Footer(v any) string {
+	lines := strings.Split(Screen(v), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if s := strings.TrimSpace(lines[i]); s != "" && strings.Trim(s, "─") == "" {
+			return TrimLines(strings.Join(lines[i+1:], "\n"))
+		}
+	}
+	return ""
+}
+
 // TrimLines strips trailing spaces from every line and drops trailing empty
 // lines. Width-padded renders then compare by content alone.
 func TrimLines(s string) string {
