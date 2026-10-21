@@ -130,7 +130,7 @@ func (m Model) fetch() tea.Cmd {
 	return async.Run(m.tok, kubectlTimeout+fetchTimeout, func(ctx context.Context) (output, error) {
 		var kubectlErr error
 		if k.enabled() {
-			text, version, err := k.describe(ctx, cmd)
+			text, version, err := k.describe(ctx, string(kind), name, cmd)
 			if err == nil {
 				return output{text: text, version: version}, nil
 			}

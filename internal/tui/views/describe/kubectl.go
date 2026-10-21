@@ -46,10 +46,15 @@ func NewKubectl(r Runner, decorate func(kubectl.Cmd) kubectl.Cmd) Kubectl {
 
 func (k Kubectl) enabled() bool { return k.runner != nil && k.decorate != nil }
 
-// describe runs cmd, decorated, and returns its stdout and kubectl's
-// version. stderr is ignored when kubectl exits 0: it carries warnings,
+// describe runs cmd, the describe of the kind object called name,
+// decorated, and returns its stdout and kubectl's version. A name kubectl
+// would read as a flag ("--all") never reaches it; the runner checks the
+// namespace. stderr is ignored when kubectl exits 0: it carries warnings,
 // not the describe.
-func (k Kubectl) describe(ctx context.Context, cmd kubectl.Cmd) (string, string, error) {
+func (k Kubectl) describe(ctx context.Context, kind, name string, cmd kubectl.Cmd) (string, string, error) {
+	if err := kubectl.CheckSubdomain(kind, name); err != nil {
+		return "", "", err
+	}
 	ctx, cancel := context.WithTimeout(ctx, kubectlTimeout)
 	defer cancel()
 	res, err := k.runner.Run(ctx, k.decorate(cmd))

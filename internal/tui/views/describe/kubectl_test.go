@@ -175,15 +175,24 @@ func TestKubectlVersionInTheTitle(t *testing.T) {
 func TestKubectlRefusesAnInvalidName(t *testing.T) {
 	t.Parallel()
 
-	f := fakeKubectl(t, "ok", true)
-	k := describe.NewKubectl(kubectl.NewRunner(f.cfg), decorate)
-	m := describe.New(tuitest.NewFakeClient(t), describe.KindPod, "-A", tuitest.PodWeb1, describe.WithKubectl(k))
-	_, msgs := tuitest.InitWith(t, driver, m)
-	if got := f.ranArgv(t); got != nil {
-		t.Errorf("kubectl ran %q", got)
+	cases := []struct{ name, namespace, pod string }{
+		{name: "namespace", namespace: "-A", pod: tuitest.PodWeb1},
+		{name: "pod", namespace: tuitest.NamespaceDemo, pod: "--all"},
 	}
-	st, ok := statusOf(msgs)
-	if !ok || st.Level != status.Warn || !strings.Contains(st.Text, "built-in describe: invalid name") {
-		t.Errorf("status = %+v (found %v)", st, ok)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := fakeKubectl(t, "ok", true)
+			k := describe.NewKubectl(kubectl.NewRunner(f.cfg), decorate)
+			m := describe.New(tuitest.NewFakeClient(t), describe.KindPod, tc.namespace, tc.pod, describe.WithKubectl(k))
+			_, msgs := tuitest.InitWith(t, driver, m)
+			if got := f.ranArgv(t); got != nil {
+				t.Errorf("kubectl ran %q", got)
+			}
+			st, ok := statusOf(msgs)
+			if !ok || st.Level != status.Warn || !strings.Contains(st.Text, "built-in describe: invalid name") {
+				t.Errorf("status = %+v (found %v)", st, ok)
+			}
+		})
 	}
 }
