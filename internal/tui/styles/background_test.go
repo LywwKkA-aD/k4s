@@ -1,9 +1,11 @@
 package styles
 
 import (
-	"errors"
+	"fmt"
 	"image/color"
 	"testing"
+
+	"charm.land/lipgloss/v2"
 )
 
 func TestColorFGBGIsDark(t *testing.T) {
@@ -62,68 +64,122 @@ func TestIsDarkColor(t *testing.T) {
 	}
 }
 
-// The detectDark tests swap package hooks, so they run sequentially.
-func TestDetectDark(t *testing.T) {
-	light := color.RGBA{R: 0xFD, G: 0xF6, B: 0xE3, A: 0xFF}
+// onTerminal makes stdout a terminal (or not) for one test. Tests that
+// use it swap package state, so they run sequentially.
+func onTerminal(t *testing.T, tty bool) {
+	t.Helper()
+	prev := stdoutIsTerminal
+	t.Cleanup(func() {
+		stdoutIsTerminal = prev
+		resetTheme()
+	})
+	stdoutIsTerminal = func() bool { return tty }
+}
+
+// Before the terminal answers k4s guesses from COLORFGBG; the program asks
+// with OSC 11 only where the answer belongs to this terminal.
+func TestBackgroundPolicy(t *testing.T) {
 	cases := []struct {
-		name      string
-		env       map[string]string
-		tty       bool
-		windows   bool
-		reply     color.Color
-		replyErr  error
-		want      bool
-		wantQuery bool
+		name     string
+		env      map[string]string
+		tty      bool
+		wantDark bool
+		wantAsk  bool
 	}{
-		{name: "light reply", env: map[string]string{"TERM": "xterm-256color"}, tty: true, reply: light, want: false, wantQuery: true},
-		{name: "dark reply", env: map[string]string{"TERM": "xterm-256color"}, tty: true, reply: color.Black, want: true, wantQuery: true},
-		{name: "no reply falls back to COLORFGBG", env: map[string]string{"TERM": "xterm", "COLORFGBG": "0;15"}, tty: true, replyErr: errors.New("timeout"), want: false, wantQuery: true},
-		{name: "no reply and no COLORFGBG is dark", env: map[string]string{"TERM": "xterm"}, tty: true, replyErr: errors.New("timeout"), want: true, wantQuery: true},
-		{name: "tmux is not queried", env: map[string]string{"TERM": "tmux-256color", "COLORFGBG": "0;15"}, tty: true, reply: color.Black, want: false},
-		{name: "screen is not queried", env: map[string]string{"TERM": "screen"}, tty: true, reply: light, want: true},
-		{name: "dumb is not queried", env: map[string]string{"TERM": "dumb"}, tty: true, reply: light, want: true},
-		{name: "not a terminal", env: map[string]string{"TERM": "xterm", "COLORFGBG": "0;15"}, tty: false, reply: light, want: true},
-		{name: "CI", env: map[string]string{"TERM": "xterm", "CI": "true"}, tty: true, reply: light, want: true},
-		{name: "windows assumes dark", env: map[string]string{"TERM": "xterm", "COLORFGBG": "0;15"}, tty: true, windows: true, reply: light, want: true},
+		{name: "a terminal is asked", env: map[string]string{"TERM": "xterm-256color"}, tty: true, wantDark: true, wantAsk: true},
+		{name: "COLORFGBG guesses light until the answer", env: map[string]string{"TERM": "xterm", "COLORFGBG": "0;15"}, tty: true, wantDark: false, wantAsk: true},
+		{name: "tmux is not asked", env: map[string]string{"TERM": "tmux-256color", "COLORFGBG": "0;15"}, tty: true, wantDark: false},
+		{name: "screen is not asked", env: map[string]string{"TERM": "screen"}, tty: true, wantDark: true},
+		{name: "dumb is not asked", env: map[string]string{"TERM": "dumb", "COLORFGBG": "0;15"}, tty: true, wantDark: false},
+		{name: "not a terminal", env: map[string]string{"TERM": "xterm", "COLORFGBG": "0;15"}, tty: false, wantDark: true},
+		{name: "CI", env: map[string]string{"TERM": "xterm", "CI": "true", "COLORFGBG": "0;15"}, tty: true, wantDark: true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			prevQuery, prevTTY, prevWindows := queryBackground, stdoutIsTerminal, isWindows
-			t.Cleanup(func() { queryBackground, stdoutIsTerminal, isWindows = prevQuery, prevTTY, prevWindows })
-			queried := false
-			queryBackground = func() (color.Color, error) {
-				queried = true
-				return c.reply, c.replyErr
+			onTerminal(t, c.tty)
+			getenv := envOf(c.env)
+			if got := guessDark(getenv); got != c.wantDark {
+				t.Errorf("guessDark = %v, want %v", got, c.wantDark)
 			}
-			stdoutIsTerminal = func() bool { return c.tty }
-			isWindows = c.windows
-
-			if got := detectDark(envOf(c.env)); got != c.want {
-				t.Errorf("detectDark = %v, want %v", got, c.want)
-			}
-			if queried != c.wantQuery {
-				t.Errorf("queried the terminal = %v, want %v", queried, c.wantQuery)
+			if got := canAskBackground(getenv); got != c.wantAsk {
+				t.Errorf("canAskBackground = %v, want %v", got, c.wantAsk)
 			}
 		})
 	}
 }
 
-func TestInitAutoUsesDetectedBackground(t *testing.T) {
-	prevQuery, prevTTY := queryBackground, stdoutIsTerminal
-	t.Cleanup(func() {
-		queryBackground, stdoutIsTerminal = prevQuery, prevTTY
-		resetTheme()
-	})
-	queryBackground = func() (color.Color, error) { return color.White, nil }
-	stdoutIsTerminal = func() bool { return true }
+// Only the themes that follow the terminal ask for its background.
+func TestWantsBackground(t *testing.T) {
+	cases := []struct {
+		theme   string
+		noColor bool
+		want    bool
+	}{
+		{theme: "auto", want: true},
+		{theme: "high-contrast", want: true},
+		{theme: "dark"},
+		{theme: "light"},
+		{theme: "mono"},
+		{theme: "auto", noColor: true},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%s no_color=%v", c.theme, c.noColor), func(t *testing.T) {
+			onTerminal(t, true)
+			env := map[string]string{"TERM": "xterm-256color", "K4S_THEME": c.theme}
+			if c.noColor {
+				env["NO_COLOR"] = "1"
+			}
+			if err := Init(envOf(env)); err != nil {
+				t.Fatalf("Init: %v", err)
+			}
+			if got := WantsBackground(); got != c.want {
+				t.Fatalf("WantsBackground = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
 
-	if err := Init(envOf(map[string]string{"TERM": "xterm-256color"})); err != nil {
-		t.Fatalf("Init: %v", err)
+func TestSetBackground(t *testing.T) {
+	light := color.RGBA{R: 0xFD, G: 0xF6, B: 0xE3, A: 0xFF}
+	type step struct {
+		bg       color.Color
+		changed  bool
+		wantHint string
 	}
-	if active.dark {
-		t.Error("a white background should select the light palette")
+	cases := []struct {
+		name  string
+		theme string
+		steps []step
+	}{
+		{name: "auto follows the answer", theme: "auto", steps: []step{
+			{bg: light, changed: true, wantHint: tokenMuted.Light},
+			{bg: color.White, changed: false, wantHint: tokenMuted.Light},
+			{bg: color.Black, changed: true, wantHint: tokenMuted.Dark},
+		}},
+		{name: "high contrast follows the answer", theme: "high-contrast", steps: []step{
+			{bg: light, changed: true, wantHint: highContrastTokens.muted.Light},
+		}},
+		{name: "an explicit dark theme stays", theme: "dark", steps: []step{
+			{bg: light, changed: false, wantHint: tokenMuted.Dark},
+		}},
+		{name: "no colour is no answer", theme: "auto", steps: []step{
+			{bg: nil, changed: false, wantHint: tokenMuted.Dark},
+		}},
 	}
-	if Hint.GetForeground() != tokenMuted.on(false) {
-		t.Errorf("Hint fg = %v, want the light muted token", Hint.GetForeground())
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			onTerminal(t, true)
+			if err := Init(envOf(map[string]string{"TERM": "xterm-256color", "K4S_THEME": c.theme})); err != nil {
+				t.Fatalf("Init: %v", err)
+			}
+			for i, s := range c.steps {
+				if got := SetBackground(s.bg); got != s.changed {
+					t.Errorf("step %d: SetBackground changed = %v, want %v", i, got, s.changed)
+				}
+				if got := Hint.GetForeground(); got != lipgloss.Color(s.wantHint) {
+					t.Errorf("step %d: Hint fg = %v, want %s", i, got, s.wantHint)
+				}
+			}
+		})
 	}
 }

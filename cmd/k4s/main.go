@@ -35,8 +35,8 @@ func main() {
 }
 
 func run(opts cli.Options) error {
-	// Before tea.NewProgram: auto mode queries the terminal background, and
-	// that reply would race Bubble Tea's stdin reader.
+	// Before the model is built: the theme decides whether the program asks
+	// the terminal for its background (auto, high-contrast).
 	if err := styles.Init(opts.Getenv(os.Getenv)); err != nil {
 		return fmt.Errorf("init theme: %w", err)
 	}
@@ -60,7 +60,7 @@ func run(opts cli.Options) error {
 	if profile, ok := styles.ColorProfile(); ok {
 		progOpts = append(progOpts, tea.WithColorProfile(profile))
 	}
-	root := tui.New(sess.Client, sess.LoadErr, tui.WithSession(sess), tui.WithFlags(opts))
+	root := tui.New(sess.Client, sess.LoadErr, tui.WithSession(sess), tui.WithFlags(opts), tui.WithBackgroundQuery(styles.WantsBackground()))
 	p := tea.NewProgram(root, progOpts...)
 	final, err := p.Run()
 	err = runError(err)

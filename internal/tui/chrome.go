@@ -27,9 +27,14 @@ func (m Model) bodyHeight() int {
 }
 
 // View is the full-screen frame: the composed screen on the alternate
-// screen buffer.
+// screen buffer, blank while the first frame waits for the terminal's
+// background.
 func (m Model) View() tea.View {
-	v := tea.NewView(m.render())
+	content := ""
+	if !m.holdFrame {
+		content = m.render()
+	}
+	v := tea.NewView(content)
 	v.AltScreen = true
 	v.WindowTitle = m.windowTitle()
 	return v

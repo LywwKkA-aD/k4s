@@ -73,6 +73,7 @@ func TestParseModeErrorNamesValueAndChoices(t *testing.T) {
 func resetTheme() {
 	use(colourPalette(true))
 	forcedProfile = nil
+	background = backgroundState{}
 }
 
 // The Init tests change this package's styles, so they run sequentially and

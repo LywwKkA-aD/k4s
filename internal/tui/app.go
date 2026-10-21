@@ -80,6 +80,9 @@ type Model struct {
 	ident identity
 	// recap collects the commands main prints on exit (recap.go).
 	recap recap
+	// holdFrame keeps the first frame blank until the terminal says what
+	// its background is (background.go).
+	holdFrame bool
 }
 
 // Option changes how New builds the root model.
@@ -139,9 +142,9 @@ func (m Model) withClient(c *k8s.Client) Model {
 }
 
 // Init starts the active view, asks the server for the header's version
-// and reports a failed preflight.
+// and the terminal for its background, and reports a failed preflight.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.current.Init(), m.fetchVersion()}
+	cmds := []tea.Cmd{m.current.Init(), m.fetchVersion(), m.askBackground()}
 	if err := m.startup.PreflightErr; err != nil {
 		warn := views.StatusMsg{Level: status.Warn, Text: preflightText(err)}
 		cmds = append(cmds, func() tea.Msg { return warn })

@@ -2,40 +2,69 @@ package styles
 
 import (
 	"image/color"
-	"os"
-	"runtime"
 	"strconv"
 	"strings"
-
-	"charm.land/lipgloss/v2"
 )
 
-// queryBackground asks the terminal for its background colour with an OSC
-// 11 query. It writes to and reads from stdout, as k4s always has, so a
-// redirected stdin does not change the answer. Tests replace it so they
-// never touch the real terminal.
-var queryBackground = func() (color.Color, error) {
-	return lipgloss.BackgroundColor(os.Stdout, os.Stdout)
+// backgroundState is how the theme tracks the terminal's background.
+type backgroundState struct {
+	// follow is set for auto and high-contrast, which re-theme when the
+	// terminal answers; tokens is their preset.
+	follow bool
+	tokens tokenSet
+	// ask reports whether the program may ask the terminal at all.
+	ask bool
 }
 
-// isWindows is a variable so tests can take the Windows branch anywhere.
-var isWindows = runtime.GOOS == "windows"
+// background is what Init chose; SetBackground reads it.
+var background backgroundState
 
-// detectDark reports whether the terminal background is dark. Windows, CI
-// and a stdout that is not a terminal assume dark without asking. TERM
-// values for screen, tmux and dumb are never queried, since a multiplexer
-// may sit in front of several terminals at once. Without an answer,
-// COLORFGBG decides, and then dark.
-func detectDark(getenv func(string) string) bool {
-	if isWindows || getenv("CI") != "" || !stdoutIsTerminal() {
+// follow starts tokens on the guessed background and lets SetBackground
+// move it once the terminal answers.
+func follow(tokens tokenSet, getenv func(string) string) {
+	background = backgroundState{follow: true, tokens: tokens, ask: canAskBackground(getenv)}
+	use(tokens.resolve(guessDark(getenv)))
+}
+
+// WantsBackground reports whether the program should ask the terminal for
+// its background (tea.RequestBackgroundColor) and hand the answer to
+// SetBackground: the theme follows the background and the terminal can be
+// asked.
+func WantsBackground() bool {
+	return background.follow && background.ask
+}
+
+// SetBackground re-themes for the terminal's background bg when the theme
+// follows it (auto, high-contrast) and bg moves it between dark and light.
+// It reports whether the styles changed. Call it where views render (the
+// program's Update), since it replaces every style in this package.
+func SetBackground(bg color.Color) bool {
+	if !background.follow || bg == nil {
+		return false
+	}
+	dark := isDarkColor(bg)
+	if dark == active.dark {
+		return false
+	}
+	use(background.tokens.resolve(dark))
+	return true
+}
+
+// guessDark is the background before the terminal answers: COLORFGBG on a
+// terminal, else dark. CI and a stdout that is not a terminal assume dark.
+func guessDark(getenv func(string) string) bool {
+	if getenv("CI") != "" || !stdoutIsTerminal() {
 		return true
 	}
-	if !skipsBackgroundQuery(getenv("TERM")) {
-		if bg, err := queryBackground(); err == nil && bg != nil {
-			return isDarkColor(bg)
-		}
-	}
 	return colorFGBGIsDark(getenv("COLORFGBG"))
+}
+
+// canAskBackground reports whether an OSC 11 answer would describe this
+// terminal. CI and a stdout that is not a terminal have none to give, and
+// screen, tmux and dumb TERMs are never asked, since a multiplexer may sit
+// in front of several terminals at once.
+func canAskBackground(getenv func(string) string) bool {
+	return getenv("CI") == "" && stdoutIsTerminal() && !skipsBackgroundQuery(getenv("TERM"))
 }
 
 func skipsBackgroundQuery(termName string) bool {

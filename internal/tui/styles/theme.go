@@ -61,10 +61,10 @@ func ParseMode(getenv func(string) string) (Mode, error) {
 // Init applies the theme chosen by K4S_THEME and NO_COLOR (see ParseMode)
 // to every style in this package.
 //
-// Call it once from main, before building the TUI model and before
-// tea.NewProgram. Auto mode asks the terminal for its background with an
-// OSC 11 query; run any later and the reply races Bubble Tea's stdin
-// reader. The other modes fix the answer so nothing queries at all.
+// Call it once from main, before building the TUI model. Auto and
+// high-contrast start from a guess (COLORFGBG, else dark) and follow the
+// terminal's answer to the program's background request: see
+// WantsBackground and SetBackground. The other modes fix the background.
 func Init(getenv func(string) string) error {
 	mode, err := ParseMode(getenv)
 	if err != nil {
@@ -80,6 +80,7 @@ var forcedProfile *colorprofile.Profile
 
 func apply(mode Mode, getenv func(string) string) {
 	forcedProfile = nil
+	background = backgroundState{}
 	switch mode {
 	case ModeDark:
 		use(colourPalette(true))
@@ -90,9 +91,9 @@ func apply(mode Mode, getenv func(string) string) {
 		p := monoProfile(stdoutIsTerminal(), getenv("TERM"))
 		forcedProfile = &p
 	case ModeHighContrast:
-		use(highContrastPalette(detectDark(getenv)))
+		follow(highContrastTokens, getenv)
 	default:
-		use(colourPalette(detectDark(getenv)))
+		follow(defaultTokens, getenv)
 	}
 	if mode != ModeMono && wantsTruecolor(stdoutIsTerminal(), getenv("TERM"), getenv("COLORTERM")) {
 		p := colorprofile.TrueColor
