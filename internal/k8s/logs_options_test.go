@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/k8stest"
@@ -30,6 +31,11 @@ func TestStreamLogsRequest(t *testing.T) {
 			want: url.Values{"previous": {"true"}, "tailLines": {"100"}, "container": {"migrate"}},
 		},
 		{name: "no tail sends the whole log", opts: k8s.LogOptions{Tail: -5}, want: url.Values{"follow": {"true"}}},
+		{
+			name: "since a time, to the second",
+			opts: k8s.LogOptions{Tail: 50, Since: time.Date(2026, 10, 21, 12, 0, 5, 999_000_000, time.UTC), Timestamps: true},
+			want: url.Values{"follow": {"true"}, "tailLines": {"50"}, "sinceTime": {"2026-10-21T12:00:05Z"}, "timestamps": {"true"}},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

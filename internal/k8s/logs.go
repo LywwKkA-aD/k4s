@@ -3,8 +3,10 @@ package k8s
 import (
 	"context"
 	"io"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // LogOptions says which log of a pod StreamLogs opens.
@@ -22,6 +24,10 @@ type LogOptions struct {
 	// Timestamps prefixes every line with its RFC3339Nano time, which the
 	// caller strips before showing the line.
 	Timestamps bool
+	// Since starts the log at this time; the API takes it to the second,
+	// so a caller resuming a stream drops the lines it has already shown.
+	// Zero means no start.
+	Since time.Time
 }
 
 // StreamLogs opens the named pod's log as o says, followed unless it is
@@ -38,6 +44,9 @@ func (c *Client) StreamLogs(ctx context.Context, namespace, podName string, o Lo
 	if o.Tail > 0 {
 		tail := o.Tail
 		opts.TailLines = &tail
+	}
+	if !o.Since.IsZero() {
+		opts.SinceTime = &metav1.Time{Time: o.Since}
 	}
 	return c.Clientset.CoreV1().Pods(namespace).GetLogs(podName, opts).Stream(ctx)
 }
