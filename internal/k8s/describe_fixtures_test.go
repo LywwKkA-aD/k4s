@@ -49,8 +49,15 @@ func tokenMount(volume string) corev1.VolumeMount {
 	return corev1.VolumeMount{Name: volume, MountPath: saMountPath, ReadOnly: true}
 }
 
+// tokenVolume is the service account volume the API server adds to a pod.
 func tokenVolume(name string) corev1.Volume {
-	return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{}}}
+	return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
+		Sources: []corev1.VolumeProjection{
+			{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{ExpirationSeconds: ptr[int64](3607), Path: "token"}},
+			{ConfigMap: &corev1.ConfigMapProjection{LocalObjectReference: corev1.LocalObjectReference{Name: "kube-root-ca.crt"}}},
+			{DownwardAPI: &corev1.DownwardAPIProjection{}},
+		},
+	}}}
 }
 
 func defaultTolerations() []corev1.Toleration {
@@ -184,7 +191,16 @@ func sidecarPod() *corev1.Pod {
 	setupCmd, setupArgs := shell("echo setup done")
 	appCmd, appArgs := shell("while true; do sleep 2; done")
 	pod.Spec.InitContainers = []corev1.Container{
-		{Name: "log-shipper", Image: busybox, Command: shipCmd, Args: shipArgs, RestartPolicy: ptr(corev1.ContainerRestartPolicyAlways), Resources: smallResources(), VolumeMounts: []corev1.VolumeMount{tokenMount("kube-api-access-gdslw"), logs}},
+		{
+			Name: "log-shipper", Image: busybox, Command: shipCmd, Args: shipArgs,
+			RestartPolicy: ptr(corev1.ContainerRestartPolicyAlways),
+			Resources:     smallResources(),
+			StartupProbe: &corev1.Probe{
+				ProbeHandler:   corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"test", "-f", "/var/log/app/app.log"}}},
+				TimeoutSeconds: 1, PeriodSeconds: 1, SuccessThreshold: 1, FailureThreshold: 30,
+			},
+			VolumeMounts: []corev1.VolumeMount{tokenMount("kube-api-access-gdslw"), logs},
+		},
 		{Name: "setup", Image: busybox, Command: setupCmd, Args: setupArgs, VolumeMounts: []corev1.VolumeMount{logs}},
 	}
 	pod.Spec.Containers = []corev1.Container{{
@@ -193,6 +209,25 @@ func sidecarPod() *corev1.Pod {
 			{Name: "http", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
 			{Name: "metrics", ContainerPort: 9090, HostPort: 9090, Protocol: corev1.ProtocolTCP},
 		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromString("http")}},
+			PeriodSeconds: 10, SuccessThreshold: 1, FailureThreshold: 3, TimeoutSeconds: 1,
+		},
+		EnvFrom: []corev1.EnvFromSource{
+			{Prefix: "APP_", ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "app-env"}}},
+			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "app-secrets"}, Optional: ptr(true)}},
+		},
+		Env: []corev1.EnvVar{
+			{Name: "LOG_DIR", Value: "/var/log/app"},
+			{Name: "BANNER", Value: "two\nlines"},
+			{Name: "POD_NAME", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "metadata.name"}}},
+			{Name: "TIER", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "metadata.labels['app']"}}},
+			{Name: "API_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "api"}, Key: "token"}}},
+			{Name: "MODE", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "app-config"}, Key: "mode", Optional: ptr(true)}}},
+			{Name: "CPU_LIMIT", ValueFrom: &corev1.EnvVarSource{ResourceFieldRef: &corev1.ResourceFieldSelector{Resource: "limits.cpu"}}},
+			{Name: "MEM_REQUEST_MI", ValueFrom: &corev1.EnvVarSource{ResourceFieldRef: &corev1.ResourceFieldSelector{Resource: "requests.memory", Divisor: resource.MustParse("1Mi")}}},
+		},
+		Resources:    corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("48Mi")}},
 		VolumeMounts: []corev1.VolumeMount{logs, {Name: "config", MountPath: "/etc/app", SubPath: "app.conf", ReadOnly: true}},
 	}}
 	pod.Spec.Volumes = []corev1.Volume{
@@ -293,6 +328,11 @@ func webDeployment() *appsv1.Deployment {
 					Containers: []corev1.Container{{
 						Name: "nginx", Image: "nginx:1.27-alpine",
 						Ports: []corev1.ContainerPort{{ContainerPort: 80, Protocol: corev1.ProtocolTCP}},
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/", Port: intstr.FromInt32(80), Scheme: corev1.URISchemeHTTP}},
+							InitialDelaySeconds: 2, TimeoutSeconds: 1, PeriodSeconds: 5, SuccessThreshold: 1, FailureThreshold: 3,
+						},
+						Env: []corev1.EnvVar{{Name: "POD_IP", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "status.podIP"}}}},
 						Resources: corev1.ResourceRequirements{
 							Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("64Mi"), corev1.ResourceCPU: resource.MustParse("100m")},
 						},
@@ -344,7 +384,7 @@ func lbService() *corev1.Service {
 			},
 		},
 		Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{
-			Ingress: []corev1.LoadBalancerIngress{{IP: "192.168.156.2"}},
+			Ingress: []corev1.LoadBalancerIngress{{IP: "192.168.156.2", IPMode: ptr(corev1.LoadBalancerIPModeVIP)}, {Hostname: "lb.example.test"}},
 		}},
 	}
 }

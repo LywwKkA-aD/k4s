@@ -10,9 +10,9 @@ import (
 )
 
 // writeContainers writes a "Containers:" (or "Init Containers:") section.
-// statuses is nil for a pod template, which has no Container ID, Image ID
-// or state. space indents the section inside a template.
-func writeContainers(w describeWriter, label, space string, containers []corev1.Container, statuses []corev1.ContainerStatus) {
+// pod is nil for a pod template, which has no Container ID, Image ID or
+// state; space indents the section inside one.
+func writeContainers(w describeWriter, label, space string, pod *corev1.Pod, containers []corev1.Container, statuses []corev1.ContainerStatus) {
 	none := ""
 	if len(containers) == 0 {
 		none = " <none>"
@@ -32,6 +32,9 @@ func writeContainers(w describeWriter, label, space string, containers []corev1.
 			w.write(2, "Restart Count:\t%d\n", st.RestartCount)
 		}
 		writeResources(w, c.Resources)
+		writeProbes(w, c)
+		writeEnvFrom(w, c.EnvFrom)
+		writeEnv(w, pod, c)
 		writeMounts(w, c.VolumeMounts)
 	}
 }
@@ -64,9 +67,6 @@ func writeContainerInfo(w describeWriter, space string, c *corev1.Container, st 
 	} else {
 		w.write(2, "Port:\t%s\n", orNone(ports))
 		w.write(2, "Host Port:\t%s\n", orNone(hostPorts))
-	}
-	if c.RestartPolicy != nil {
-		w.write(2, "Restart Policy:\t%s\n", *c.RestartPolicy)
 	}
 }
 

@@ -75,9 +75,9 @@ func writePodTemplate(w describeWriter, t *corev1.PodTemplateSpec) {
 		w.write(1, "Service Account:\t%s\n", t.Spec.ServiceAccountName)
 	}
 	if len(t.Spec.InitContainers) > 0 {
-		writeContainers(w, "Init Containers", "  ", t.Spec.InitContainers, nil)
+		writeContainers(w, "Init Containers", "  ", nil, t.Spec.InitContainers, nil)
 	}
-	writeContainers(w, "Containers", "  ", t.Spec.Containers, nil)
+	writeContainers(w, "Containers", "  ", nil, t.Spec.Containers, nil)
 	writeVolumes(w, "  ", t.Spec.Volumes)
 	writeLabels(w, "  Node-Selectors", t.Spec.NodeSelector)
 	writeTolerations(w, "  Tolerations", t.Spec.Tolerations)
@@ -142,15 +142,19 @@ func writeServiceHeader(w describeWriter, svc *corev1.Service) {
 	}
 }
 
+// ingressText lists the load balancer's addresses with their IP mode:
+// "192.168.156.2 (VIP), lb.example.test".
 func ingressText(ingress []corev1.LoadBalancerIngress) string {
 	out := make([]string, 0, len(ingress))
 	for _, in := range ingress {
-		switch {
-		case in.IP != "":
-			out = append(out, in.IP)
-		case in.Hostname != "":
-			out = append(out, in.Hostname)
+		addr := in.IP
+		if addr == "" {
+			addr = in.Hostname
 		}
+		if in.IPMode != nil {
+			addr += " (" + string(*in.IPMode) + ")"
+		}
+		out = append(out, addr)
 	}
 	return strings.Join(out, ", ")
 }

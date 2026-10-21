@@ -38,8 +38,9 @@ Init Containers:
       cpu:     50m
       memory:  32Mi
     Requests:
-      cpu:     10m
-      memory:  8Mi
+      cpu:        10m
+      memory:     8Mi
+    Environment:  <none>
     Mounts:
       /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-4x7zv (ro)
   migrate:
@@ -71,8 +72,9 @@ Init Containers:
       cpu:     50m
       memory:  32Mi
     Requests:
-      cpu:     10m
-      memory:  8Mi
+      cpu:        10m
+      memory:     8Mi
+    Environment:  <none>
     Mounts:
       /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-4x7zv (ro)
 Containers:
@@ -86,6 +88,7 @@ Containers:
       Reason:       PodInitializing
     Ready:          False
     Restart Count:  0
+    Environment:    <none>
     Mounts:
       /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-4x7zv (ro)
 Conditions:
@@ -97,11 +100,15 @@ Conditions:
   PodScheduled                True 
 Volumes:
   kube-api-access-4x7zv:
-    Type:        Projected (a volume that contains injected data from multiple sources)
-QoS Class:       Burstable
-Node-Selectors:  <none>
-Tolerations:     node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                 node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   Burstable
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
 Events:
   Type     Reason     Age                   From               Message
   ----     ------     ----                  ----               -------

@@ -6,7 +6,7 @@ import (
 
 // writeVolumes writes a "Volumes:" section for the common volume types:
 // the type line kubectl prints and the fields that name what is mounted.
-// Projected sources and the rarer types show their type alone.
+// The rarer types show their type alone.
 func writeVolumes(w describeWriter, space string, volumes []corev1.Volume) {
 	if len(volumes) == 0 {
 		w.write(0, "%sVolumes:\t<none>\n", space)
@@ -55,8 +55,28 @@ func writeVolumeSource(w describeWriter, src corev1.VolumeSource) {
 		w.write(2, "ReadOnly:\t%t\n", src.PersistentVolumeClaim.ReadOnly)
 	case src.Projected != nil:
 		w.write(2, "Type:\tProjected (a volume that contains injected data from multiple sources)\n")
+		writeProjections(w, src.Projected.Sources)
 	default:
 		w.write(1, "<unknown>\n")
+	}
+}
+
+// writeProjections writes the sources of a projected volume, such as the
+// service account token, CA bundle and downward API every pod gets.
+func writeProjections(w describeWriter, sources []corev1.VolumeProjection) {
+	for _, src := range sources {
+		switch {
+		case src.Secret != nil:
+			w.write(2, "SecretName:\t%s\n", src.Secret.Name)
+			w.write(2, "Optional:\t%t\n", isTrue(src.Secret.Optional))
+		case src.DownwardAPI != nil:
+			w.write(2, "DownwardAPI:\ttrue\n")
+		case src.ConfigMap != nil:
+			w.write(2, "ConfigMapName:\t%s\n", src.ConfigMap.Name)
+			w.write(2, "Optional:\t%t\n", isTrue(src.ConfigMap.Optional))
+		case src.ServiceAccountToken != nil && src.ServiceAccountToken.ExpirationSeconds != nil:
+			w.write(2, "TokenExpirationSeconds:\t%d\n", *src.ServiceAccountToken.ExpirationSeconds)
+		}
 	}
 }
 

@@ -15,12 +15,11 @@ IPs:
 Controlled By:  ReplicaSet/native-sidecar-6b7f9
 Init Containers:
   log-shipper:
-    Container ID:    containerd://44884348fc53
-    Image:           busybox:1.37
-    Image ID:        docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
-    Port:            <none>
-    Host Port:       <none>
-    Restart Policy:  Always
+    Container ID:  containerd://44884348fc53
+    Image:         busybox:1.37
+    Image ID:      docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+    Port:          <none>
+    Host Port:     <none>
     Command:
       /bin/sh
       -c
@@ -39,8 +38,10 @@ Init Containers:
       cpu:     50m
       memory:  32Mi
     Requests:
-      cpu:     10m
-      memory:  8Mi
+      cpu:        10m
+      memory:     8Mi
+    Startup:      exec [test -f /var/log/app/app.log] delay=0s timeout=1s period=1s #success=1 #failure=30
+    Environment:  <none>
     Mounts:
       /var/log/app from logs (rw)
       /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-gdslw (ro)
@@ -62,6 +63,7 @@ Init Containers:
       Finished:     Tue, 20 Oct 2026 22:52:53 +0000
     Ready:          True
     Restart Count:  1
+    Environment:    <none>
     Mounts:
       /var/log/app from logs (rw)
 Containers:
@@ -85,6 +87,22 @@ Containers:
       Finished:     Tue, 20 Oct 2026 22:52:44 +0000
     Ready:          True
     Restart Count:  1
+    Requests:
+      memory:  48Mi
+    Liveness:  tcp-socket :http delay=0s timeout=1s period=10s #success=1 #failure=3
+    Environment Variables from:
+      app-env      ConfigMap with prefix 'APP_'  Optional: false
+      app-secrets  Secret                        Optional: true
+    Environment:
+      LOG_DIR:         /var/log/app
+      BANNER:          two
+                       lines
+      POD_NAME:        native-sidecar (v1:metadata.name)
+      TIER:            native-sidecar (v1:metadata.labels['app'])
+      API_TOKEN:       <set to the key 'token' in secret 'api'>            Optional: false
+      MODE:            <set to the key 'mode' of config map 'app-config'>  Optional: true
+      CPU_LIMIT:       node allocatable (limits.cpu)
+      MEM_REQUEST_MI:  48 (requests.memory)
     Mounts:
       /etc/app from config (ro,path="app.conf")
       /var/log/app from logs (rw)
@@ -105,9 +123,13 @@ Volumes:
     Name:      app-config
     Optional:  false
   kube-api-access-gdslw:
-    Type:        Projected (a volume that contains injected data from multiple sources)
-QoS Class:       Burstable
-Node-Selectors:  kubernetes.io/os=linux
-Tolerations:     node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                 node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
-Events:          <none>
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   Burstable
+Node-Selectors:              kubernetes.io/os=linux
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:                      <none>

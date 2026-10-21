@@ -17,8 +17,11 @@ Pod Template:
     Port:       80/TCP
     Host Port:  0/TCP
     Limits:
-      cpu:         100m
-      memory:      64Mi
+      cpu:      100m
+      memory:   64Mi
+    Readiness:  http-get http://:80/ delay=2s timeout=1s period=5s #success=1 #failure=3
+    Environment:
+      POD_IP:       (v1:status.podIP)
     Mounts:        <none>
   Volumes:         <none>
   Node-Selectors:  <none>

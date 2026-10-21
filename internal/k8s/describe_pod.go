@@ -22,9 +22,9 @@ func (c *Client) describePod(ctx context.Context, namespace, name string, now ti
 	return tabbed(func(w describeWriter) {
 		writePodHeader(w, pod, now)
 		if len(pod.Spec.InitContainers) > 0 {
-			writeContainers(w, "Init Containers", "", pod.Spec.InitContainers, pod.Status.InitContainerStatuses)
+			writeContainers(w, "Init Containers", "", pod, pod.Spec.InitContainers, pod.Status.InitContainerStatuses)
 		}
-		writeContainers(w, "Containers", "", pod.Spec.Containers, pod.Status.ContainerStatuses)
+		writeContainers(w, "Containers", "", pod, pod.Spec.Containers, pod.Status.ContainerStatuses)
 		writePodConditions(w, pod.Status.Conditions)
 		writeVolumes(w, "", pod.Spec.Volumes)
 		w.write(0, "QoS Class:\t%s\n", pod.Status.QOSClass)
