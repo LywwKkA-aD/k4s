@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
@@ -168,28 +169,47 @@ func TestWatchToggleAndContract(t *testing.T) {
 	}
 }
 
+// TestMetricsServerMissingHint: a cluster without a metrics API gets the
+// hint for its distribution: k3s and rke2 bundle metrics-server, so it
+// was switched off; elsewhere it has to be installed.
 func TestMetricsServerMissingHint(t *testing.T) {
 	t.Parallel()
 
+	install := "metrics unavailable: install metrics-server: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml"
 	cases := []struct {
 		name     string
 		status   int
+		distro   cluster.Distro
 		want     string
 		wantHint bool
 	}{
-		{name: "metrics-server missing", status: http.StatusNotFound, want: "metrics unavailable: metrics-server is not installed", wantHint: true},
-		{name: "metrics-server down", status: http.StatusServiceUnavailable, want: "metrics unavailable: metrics-server is not ready (503)"},
+		{name: "metrics-server missing", status: http.StatusNotFound, want: install, wantHint: true},
+		{name: "missing on an unknown distribution", status: http.StatusNotFound, distro: cluster.Other, want: install, wantHint: true},
+		{
+			name: "missing on k3s", status: http.StatusNotFound, distro: cluster.K3s,
+			want: "metrics unavailable: metrics-server is bundled with k3s; disabled with --disable=metrics-server?",
+		},
+		{
+			name: "missing on rke2", status: http.StatusNotFound, distro: cluster.RKE2,
+			want: "metrics unavailable: metrics-server is bundled with rke2; disabled with --disable=rke2-metrics-server?",
+		},
+		{name: "metrics-server down", status: http.StatusServiceUnavailable, distro: cluster.K3s, want: "metrics unavailable: metrics-server is not ready (503)"},
 		{name: "forbidden", status: http.StatusForbidden, want: "kubectl auth can-i list pods.metrics.k8s.io -A"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			screen := tuitest.Screen(mounted(t, tuitest.NewFakeClient(t, tuitest.WithMetricsStatus(tc.status)), ""))
+			c := tuitest.NewFakeClient(t, tuitest.WithMetricsStatus(tc.status))
+			m, out := tuitest.Mount(t, top.New(c, "", top.WithDistro(tc.distro)), width, height)
+			screen := tuitest.Screen(m)
 			if !strings.Contains(strings.Join(strings.Fields(screen), " "), tc.want) {
 				t.Errorf("screen lacks %q:\n%s", tc.want, screen)
 			}
 			if got := strings.Contains(screen, "install metrics-server"); got != tc.wantHint {
 				t.Errorf("install hint shown = %v, want %v:\n%s", got, tc.wantHint, screen)
+			}
+			if s, ok := tuitest.Find[views.StatusMsg](out); !ok || !strings.Contains(s.Text, tc.want) {
+				t.Errorf("status = %+v, want it to say %q", s, tc.want)
 			}
 		})
 	}

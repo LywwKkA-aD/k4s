@@ -4,8 +4,9 @@
 // node mode, 's' between sorting by CPU and by memory.
 //
 // When metrics-server is missing, unreachable or forbidden the view says
-// so in the status row and the body, with an install hint where that is
-// the cause, so the user can keep the rest of the TUI running.
+// so in the status row and the body, with a hint for the cluster's
+// distribution (WithDistro) where a missing metrics-server is the cause,
+// so the user can keep the rest of the TUI running.
 package top
 
 import (
@@ -16,6 +17,7 @@ import (
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
@@ -55,6 +57,8 @@ type Model struct {
 	namespace string
 	mode      mode
 	sort      sortKey
+	// distro words the hint for a missing metrics API.
+	distro cluster.Distro
 
 	// mint hands out the Token of each mode epoch; poll runs under the
 	// current one, so a reply or tick from before an 'n' is dropped.
@@ -87,7 +91,8 @@ type Model struct {
 type Option func(options) options
 
 type options struct {
-	clock async.Clock
+	clock  async.Clock
+	distro cluster.Distro
 }
 
 // WithClock arms the refresh ticks on clock instead of real timers; tests
@@ -95,6 +100,16 @@ type options struct {
 func WithClock(clock async.Clock) Option {
 	return func(o options) options {
 		o.clock = clock
+		return o
+	}
+}
+
+// WithDistro names the cluster's distribution, so a missing metrics API
+// gets its hint (cluster.MetricsHint): k3s bundles metrics-server, so
+// there it was switched off rather than never installed.
+func WithDistro(d cluster.Distro) Option {
+	return func(o options) options {
+		o.distro = d
 		return o
 	}
 }
@@ -116,6 +131,7 @@ func New(client *k8s.Client, namespace string, opts ...Option) Model {
 		namespace:  namespace,
 		mode:       modePods,
 		sort:       sortCPU,
+		distro:     o.distro,
 		mint:       mint,
 		poll:       poll,
 		table:      newTable(modePods, namespace == ""),

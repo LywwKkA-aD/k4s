@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
@@ -139,12 +140,9 @@ func (m Model) usages() []usage {
 	return out
 }
 
-// installHint is how a cluster without metrics-server gets one.
-const installHint = "hint: install metrics-server (kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml)"
-
 // View renders the table or a placeholder. Metrics-server can be missing
-// (common in fresh k3s without --metrics-server enabled), so when the
-// fetch fails we hint at the cause rather than show a raw error.
+// (a k3s server started with --disable=metrics-server, a bare cluster), so
+// when the fetch fails we hint at the cause rather than show a raw error.
 func (m Model) View() string {
 	if m.client == nil {
 		return styles.Warn.Render("no kubeconfig")
@@ -153,11 +151,7 @@ func (m Model) View() string {
 		return styles.Hint.Render("loading metrics…")
 	}
 	if m.health.Failed() {
-		f := failureOf(m.health.Err())
-		if f.missing {
-			return styles.Warn.Render(f.text) + "\n\n" + styles.Hint.Render(installHint)
-		}
-		return styles.Warn.Render(f.text)
+		return styles.Warn.Render(failureOf(m.health.Err(), m.distro).text)
 	}
 	if len(m.table.Rows()) == 0 {
 		return styles.Hint.Render("no metrics yet (give metrics-server a few seconds)")
@@ -186,7 +180,7 @@ func (m Model) report(err error) tea.Cmd {
 	if last := m.health.Err(); !m.asked && last != nil && last.Error() == err.Error() {
 		return nil
 	}
-	f := failureOf(err)
+	f := failureOf(err, m.distro)
 	msg := views.StatusMsg{Level: f.level, Text: f.text}
 	return func() tea.Msg { return msg }
 }
@@ -195,15 +189,13 @@ func (m Model) report(err error) tea.Cmd {
 type failure struct {
 	text  string
 	level status.Level
-	// missing is a cluster without metrics-server, which the body follows
-	// with the install hint.
-	missing bool
 }
 
-// failureOf words err. RBAC refusing metrics is an error with its can-i;
-// a metrics API that is absent or not ready, or any other failure, is a
-// warning: the rest of k4s works without metrics.
-func failureOf(err error) failure {
+// failureOf words err on a cluster of distribution d. RBAC refusing
+// metrics is an error with its can-i; a metrics API that is absent or not
+// ready, or any other failure, is a warning: the rest of k4s works
+// without metrics. An absent one says what to do about it on d.
+func failureOf(err error, d cluster.Distro) failure {
 	switch {
 	case k8s.Classify(err).Kind == k8s.KindForbidden:
 		return failure{text: stale.Describe(err), level: status.Error}
@@ -212,5 +204,5 @@ func failureOf(err error) failure {
 	case apierrors.IsServiceUnavailable(err):
 		return failure{text: "metrics unavailable: metrics-server is not ready (503)", level: status.Warn}
 	}
-	return failure{text: "metrics unavailable: metrics-server is not installed", level: status.Warn, missing: true}
+	return failure{text: "metrics unavailable: " + cluster.MetricsHint(d), level: status.Warn}
 }

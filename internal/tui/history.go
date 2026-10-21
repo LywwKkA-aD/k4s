@@ -176,7 +176,7 @@ func (m Model) newView(name string) views.View {
 	case viewContexts:
 		return contexts.New(currentContextName(m.client), m.kubeconfigSource())
 	case viewTop:
-		return top.New(m.client, m.namespace)
+		return top.New(m.client, m.namespace, top.WithDistro(m.startup.Distro))
 	case viewForwards:
 		return forwardsview.New(m.forwardMgr)
 	}

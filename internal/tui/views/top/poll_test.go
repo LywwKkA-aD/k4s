@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/k8stest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
@@ -151,7 +152,7 @@ func TestMetricsFailuresAnswerWithAStatus(t *testing.T) {
 	}{
 		{
 			name: "metrics-server missing", status: http.StatusNotFound,
-			want: views.StatusMsg{Level: status.Warn, Text: "metrics unavailable: metrics-server is not installed"},
+			want: views.StatusMsg{Level: status.Warn, Text: "metrics unavailable: " + cluster.MetricsHint("")},
 		},
 		{
 			name: "forbidden", status: http.StatusForbidden,
