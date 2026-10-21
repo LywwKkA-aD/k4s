@@ -4,7 +4,7 @@ metadata:
   name: heartbeat
   namespace: k4s-demo
 spec:
-  schedule: "*/2 * * * *"
+  schedule: "*/5 * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
   concurrencyPolicy: Forbid

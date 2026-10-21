@@ -249,7 +249,7 @@ In the logs view `/` searches and `w` toggles wrap:
 - `init-crashloop` — a failing init container, stuck in `Init:CrashLoopBackOff`
 - `native-sidecar` — a sidecar declared as an init container with `restartPolicy: Always`
 - `nginx-lb` — a LoadBalancer Service served by ServiceLB (`<pending>` on `minimal` or kind)
-- a Secret and a CronJob (every 2 minutes) for read-only browsing
+- a Secret and a CronJob (every 5 minutes) for read-only browsing
 - `k4s-viewer` and `k4s-narrow` ServiceAccounts for the restricted kubeconfigs
 
 ## Quality gate

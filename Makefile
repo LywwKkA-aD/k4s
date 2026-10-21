@@ -211,7 +211,7 @@ kind-down: ## delete the kind cluster
 
 # Idle CPU and RSS of bin/k4s on the dashboard with watch on (the E6 budget),
 # measured by tools/idlecpu on a 120x40 pty: 3 s warm-up, then a 40 s window.
-# Run it on `make demo` without per-minute CronJob seeds: the report counts the
+# Run it on `make demo` without frequent CronJob seeds (the heartbeat runs every 5 minutes): the report counts the
 # pods that changed in the window, and --require-idle fails a busy run. E6 gate:
 #   make idle-cpu IDLE_CPU_ARGS='--max-cpu 2 --max-rss 40MB --require-idle'
 # For a Pi, cross-build both and run them on the node:
