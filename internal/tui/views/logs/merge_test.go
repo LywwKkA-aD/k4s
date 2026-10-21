@@ -6,12 +6,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
+
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 )
 
 type fakeStreamer map[string]string
 
-func (f fakeStreamer) StreamPodLogsWithTimestamps(ctx context.Context, namespace, podName string, tailLines int64, container string) (io.ReadCloser, error) {
+func (f fakeStreamer) StreamLogs(_ context.Context, _, podName string, _ k8s.LogOptions) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(f[podName])), nil
 }
 
@@ -28,9 +29,9 @@ type recordingStreamer struct {
 	used       map[string]string
 }
 
-func (r *recordingStreamer) StreamPodLogsWithTimestamps(ctx context.Context, namespace, podName string, tailLines int64, container string) (io.ReadCloser, error) {
+func (r *recordingStreamer) StreamLogs(_ context.Context, _, podName string, opts k8s.LogOptions) (io.ReadCloser, error) {
 	r.mu.Lock()
-	r.used[podName] = container
+	r.used[podName] = opts.Container
 	r.mu.Unlock()
 	return io.NopCloser(strings.NewReader(r.logs[podName])), nil
 }
@@ -67,30 +68,6 @@ func TestRunMergedStreamsFallsBackToPodContainer(t *testing.T) {
 	}
 	if client.used["pod-b"] != "worker" {
 		t.Errorf("pod-b should fall back to its own container, got %q", client.used["pod-b"])
-	}
-}
-
-func TestParseLogTimestamp(t *testing.T) {
-	t.Parallel()
-
-	ts, body, err := parseLogTimestamp("2026-08-24T12:00:00.123456789Z hello world")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if body != "hello world" {
-		t.Errorf("body = %q, want %q", body, "hello world")
-	}
-	want := time.Date(2026, 8, 24, 12, 0, 0, 123456789, time.UTC)
-	if !ts.Equal(want) {
-		t.Errorf("timestamp = %v, want %v", ts, want)
-	}
-}
-
-func TestParseLogTimestampMissingPrefix(t *testing.T) {
-	t.Parallel()
-	_, _, err := parseLogTimestamp("hello world")
-	if err == nil {
-		t.Error("expected error for line without timestamp prefix")
 	}
 }
 

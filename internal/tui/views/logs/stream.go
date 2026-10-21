@@ -1,34 +1,42 @@
 package logs
 
 import (
-	"bufio"
 	"context"
+	"errors"
+	"io"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
-func streamOnePod(ctx context.Context, client *k8s.Client, ns, pod string, tail int64, container string, ch chan<- logEvent) {
-	stream, err := client.StreamPodLogs(ctx, ns, pod, tail, container)
+// streamOnePod follows one pod's log into ch: every line made inert on the
+// way in, then a closing event.
+func streamOnePod(ctx context.Context, src streamer, ns, pod string, opts k8s.LogOptions, ch chan<- logEvent) {
+	stream, err := src.StreamLogs(ctx, ns, pod, opts)
 	if err != nil {
 		send(ctx, ch, logEvent{Pod: pod, Err: err, Done: true})
 		return
 	}
 	defer func() { _ = stream.Close() }()
 
-	scanner := bufio.NewScanner(stream)
-	scanner.Buffer(make([]byte, 64*1024), scannerBufferSize)
-
-	for scanner.Scan() {
-		if !send(ctx, ch, logEvent{Pod: pod, Line: scanner.Text()}) {
+	lines := newLineReader(stream)
+	for {
+		line, err := lines.next()
+		if line.ok && !send(ctx, ch, logEvent{Pod: pod, Line: line.text()}) {
 			return
 		}
-	}
-	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		send(ctx, ch, logEvent{Pod: pod, Err: err, Done: true})
-		return
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				send(ctx, ch, logEvent{Pod: pod, Err: err, Done: true})
+			}
+			return
+		}
 	}
 	send(ctx, ch, logEvent{Pod: pod, Done: true})
 }
@@ -93,7 +101,7 @@ func (m Model) onLogEventsBatch(msg logEventsBatch) (views.View, tea.Cmd) {
 	for _, ev := range msg.events {
 		switch {
 		case ev.Err != nil:
-			m.appendOne(ev.Pod, ev.Err.Error(), lineStreamErr)
+			m.appendOne(ev.Pod, sanitize.Line(ev.Err.Error()), lineStreamErr)
 		case ev.Done:
 			m.appendOne(ev.Pod, "", lineStreamDone)
 		default:

@@ -1,12 +1,10 @@
 package logs
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"io"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +34,7 @@ const (
 // streamer is the subset of *k8s.Client needed by the merge coordinator. It
 // keeps tests free of a real Kubernetes clientset.
 type streamer interface {
-	StreamPodLogsWithTimestamps(ctx context.Context, namespace, podName string, tailLines int64, container string) (io.ReadCloser, error)
+	StreamLogs(ctx context.Context, namespace, pod string, opts k8s.LogOptions) (io.ReadCloser, error)
 	ContainersForPod(ctx context.Context, namespace, name string) ([]string, error)
 }
 
@@ -222,32 +220,34 @@ func sendLogEvent(ctx context.Context, events chan<- logEvent, ev logEvent) bool
 func streamOnePodMerged(ctx context.Context, client streamer, ns, pod string, tail int64, container string, out chan<- parsedEvent) {
 	container = resolveStreamContainer(ctx, client, ns, pod, container)
 	openTime := time.Now()
-	stream, err := client.StreamPodLogsWithTimestamps(ctx, ns, pod, tail, container)
+	stream, err := client.StreamLogs(ctx, ns, pod, k8s.LogOptions{Container: container, Tail: tail, Timestamps: true})
 	if err != nil {
 		sendParsed(ctx, out, parsedEvent{pod: pod, kind: lineStreamErr, text: err.Error()})
 		return
 	}
 	defer func() { _ = stream.Close() }()
 
-	scanner := bufio.NewScanner(stream)
-	scanner.Buffer(make([]byte, 64*1024), scannerBufferSize)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		ts, body, err := parseLogTimestamp(line)
-		if err != nil {
-			// Unparseable lines (should be rare with Timestamps=true) are treated
-			// as live and keep the raw text so nothing is lost.
-			ts, body = time.Time{}, line
+	lines := newLineReader(stream)
+	for {
+		line, err := lines.next()
+		if line.ok {
+			ts, body := line.withoutTimestamp()
+			// A line without a stamp (rare with Timestamps) is live, so
+			// nothing is held back or lost.
+			live := ts.IsZero() || !ts.Before(openTime.Add(-historyTimeTolerance))
+			if !sendParsed(ctx, out, parsedEvent{pod: pod, text: body.text(), ts: ts, kind: lineLog, live: live}) {
+				return
+			}
 		}
-		live := ts.IsZero() || !ts.Before(openTime.Add(-historyTimeTolerance))
-		if !sendParsed(ctx, out, parsedEvent{pod: pod, text: body, ts: ts, kind: lineLog, live: live}) {
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				sendParsed(ctx, out, parsedEvent{pod: pod, kind: lineStreamErr, text: err.Error()})
+			}
 			return
 		}
-	}
-	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		sendParsed(ctx, out, parsedEvent{pod: pod, kind: lineStreamErr, text: err.Error()})
-		return
 	}
 	sendParsed(ctx, out, parsedEvent{pod: pod, kind: lineStreamDone})
 }
@@ -281,20 +281,6 @@ func sendParsed(ctx context.Context, ch chan<- parsedEvent, ev parsedEvent) bool
 	case ch <- ev:
 		return true
 	}
-}
-
-// parseLogTimestamp strips the RFC3339Nano timestamp that Kubernetes prepends
-// when Timestamps=true. It returns the timestamp and the remainder of the line.
-func parseLogTimestamp(line string) (time.Time, string, error) {
-	i := strings.IndexByte(line, ' ')
-	if i <= 0 {
-		return time.Time{}, "", errors.New("no timestamp prefix")
-	}
-	ts, err := time.Parse(time.RFC3339Nano, line[:i])
-	if err != nil {
-		return time.Time{}, "", err
-	}
-	return ts, line[i+1:], nil
 }
 
 // compile-time assertion: *k8s.Client satisfies the streamer interface.

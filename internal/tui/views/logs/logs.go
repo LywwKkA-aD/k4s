@@ -36,7 +36,6 @@ const (
 	minViewportHeight = 5
 	maxBufferedLines  = 5000
 	defaultTailLines  = int64(100)
-	scannerBufferSize = 1024 * 1024
 	eventBufferSize   = 256
 	searchInputPrompt = "/"
 	statusRowsClosed  = 1
@@ -174,7 +173,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			streamOnePod(ctx, client, namespace, pods[0], tail, container, events)
+			streamOnePod(ctx, client, namespace, pods[0], k8s.LogOptions{Container: container, Tail: tail}, events)
 		}()
 		go func() {
 			wg.Wait()
