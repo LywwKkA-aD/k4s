@@ -1,4 +1,4 @@
-›█ ▄ █ █ ▄▀▀   ◆ ns shop (cluster-wide list forbidden)  ● 41 pods ok  ● 9/9 deploy ready  ○ no metrics                                                                           ◆ changed 14:02:00 · watch 5s 
+›█ ▄ █ █ ▄▀▀   ◆ ns shop (cluster-wide list forbidden)  ● 41 pods ok  ● 9/9 deploy ready  ○ no metrics                                                                         ◆ changed 14:02:00 · watch 5s ⣽ 
  █▀▄ ▀▀█ ▄▄▀   ▸ next 1/2  kubectl auth can-i --list -n shop   what am I allowed to see here?                                                                                                                  
 ╭─┤ 1 cluster ├───────────────────────────────────────────── ◆ eks ─╮╭─┤ 2 nodes ├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── — ─╮
 │ ● api        ready                                                ││ — nodes: list forbidden for shop-dev                                                                                                   │

@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"math"
 	"strings"
 	"time"
 
@@ -35,8 +36,15 @@ type frame struct {
 	// changed is the wall time of the last snapshot that showed something
 	// new.
 	changed time.Time
-	// prog is how far the bars have sprung up, 0 to 1.
+	// prog is how far the bars and counts have sprung up, 0 to 1.
 	prog float64
+	// beat is the heartbeat glyph, or the spinner's while it runs.
+	beat string
+	// fresh holds the problem rows that appeared since the last poll at
+	// least freshFor ago, by rowName.
+	fresh map[string]time.Time
+	// glow is the gradient sweeps in progress.
+	glow glow
 	// topByMemory sorts panel 7 by memory instead of CPU.
 	topByMemory bool
 	// kind is the layout drawn: the narrow ones say less per line.
@@ -212,3 +220,30 @@ func spread(left, right string, w int) string {
 
 // ago is a coarsened duration as the panels print it: "<1m", "3h".
 func ago(d time.Duration) string { return dash.FormatAgo(d) }
+
+// glow is the frames left of each gradient sweep: the focused border of
+// panel, the verdict word and the wordmark. Zero is at rest.
+type glow struct {
+	panel                     dash.Panel
+	border, verdict, wordmark int
+}
+
+// roll is n as far as the counts have rolled up.
+func (f frame) roll(n int) int {
+	return int(math.Round(float64(n) * f.prog))
+}
+
+// isNew reports a problem row for k that appeared since the last poll at
+// least freshFor ago.
+func (f frame) isNew(k dash.ObjectKey) bool {
+	_, ok := f.fresh[rowName(k)]
+	return ok
+}
+
+// newTag is the muted mark a new problem row carries, "" for the others.
+func (f frame) newTag(k dash.ObjectKey) string {
+	if !f.isNew(k) {
+		return ""
+	}
+	return "  " + f.muted("new")
+}

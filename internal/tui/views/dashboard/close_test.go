@@ -30,8 +30,16 @@ func TestCloseCancelsTheRefreshInFlight(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Init sent no refresh")
 	}
-	replied := make(chan tea.Msg, 1)
-	go func() { replied <- cmd() }()
+	// Init sends the refresh with the spinner's delay; run both as the
+	// program would.
+	cmds := []tea.Cmd{cmd}
+	if batch, ok := cmd().(tea.BatchMsg); ok {
+		cmds = batch
+	}
+	replied := make(chan tea.Msg, len(cmds))
+	for _, c := range cmds {
+		go func() { replied <- c() }()
+	}
 	<-started
 	if err := m.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -41,7 +49,9 @@ func TestCloseCancelsTheRefreshInFlight(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close left the refresh running")
 	}
-	<-replied
+	for range cmds {
+		<-replied
+	}
 }
 
 func TestCloseWithoutAClient(t *testing.T) {

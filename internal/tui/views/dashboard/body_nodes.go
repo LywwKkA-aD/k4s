@@ -45,7 +45,7 @@ const narrowFrom = 2
 // nodesBody draws panel 2: a table of nodes over the cluster history.
 func nodesBody(f frame, w, h int) panelBody {
 	n := f.snap.Nodes
-	body := panelBody{info: fmt.Sprintf("%d/%d Ready", n.Ready, n.Total), footer: kubeletNote(n.Rows)}
+	body := panelBody{info: fmt.Sprintf("%d/%d Ready", f.roll(n.Ready), n.Total), footer: kubeletNote(n.Rows)}
 	switch {
 	case n.Avail.State == dash.StateForbidden:
 		body.info, body.footer = markGlyphs[markUnknown], ""

@@ -189,10 +189,10 @@ func TestBannerRightNote(t *testing.T) {
 		keys      []string
 		want, not string
 	}{
-		{name: "wide", w: wideW, h: wideH, want: "◆ changed 14:02:00 · watch 5s "},
-		{name: "medium", w: 120, h: 34, want: "◆ 14:02:00 · watch 5s ", not: "changed"},
-		{name: "compact", w: 80, h: 18, want: "◆ 14:02:00 ", not: "watch"},
-		{name: "paused", w: wideW, h: wideH, keys: []string{"w"}, want: "◆ changed 14:02:00 · ‖ paused 14:02 ", not: "watch 5s"},
+		{name: "wide", w: wideW, h: wideH, want: "◆ changed 14:02:00 · watch 5s ⣽ "},
+		{name: "medium", w: 120, h: 34, want: "◆ 14:02:00 · watch 5s ⣽ ", not: "changed"},
+		{name: "compact", w: 80, h: 18, want: "◆ 14:02:00 ⣽ ", not: "watch"},
+		{name: "paused", w: wideW, h: wideH, keys: []string{"w"}, want: "◆ changed 14:02:00 · ‖ paused 14:02 ⣽ ", not: "watch 5s"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

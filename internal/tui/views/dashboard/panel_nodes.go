@@ -52,7 +52,7 @@ func meterCell(f frame, m dash.Meter, w int) string {
 	if !m.Known {
 		return padRight(f.paint(markUnknown), w)
 	}
-	return viz.Meter(f.th, w, float64(m.Percent), 1)
+	return viz.Meter(f.th, w, float64(m.Percent), f.prog)
 }
 
 // nodesSummary is panel 2 on one line: the Ready nodes, the cluster meters

@@ -3,6 +3,7 @@ package dashboard
 import (
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -24,6 +25,8 @@ const summaryLabelW = 11
 // View renders the body: exactly as wide and as tall as the last
 // WindowSizeMsg said, every line padded or cut to the width.
 func (m Model) View() string {
+	start := time.Now()
+	defer func() { m.perf.record(time.Since(start)) }()
 	if m.client == nil {
 		return disconnectedView(m.loadErr, m.home)
 	}
@@ -56,7 +59,13 @@ func (m Model) frame() frame {
 		paused:   !m.poll.Enabled(),
 		pausedAt: m.mem.pausedAt,
 		changed:  m.mem.changed,
-		prog:     1,
+		prog:     min(max(m.mo.spring.Pos, 0), 1),
+		beat:     m.beat(),
+		fresh:    m.mem.fresh,
+		glow: glow{
+			panel: m.mo.sweepPanel, border: m.mo.sweepLeft,
+			verdict: m.mo.verdict, wordmark: m.mo.wordmark,
+		},
 
 		topByMemory: m.mem.topByMemory,
 		th:          themeOf(ds),
@@ -129,7 +138,11 @@ func drawBox(f frame, pl place) string {
 		body = panelOf(f, pl.panel, inW, inH)
 	}
 	box := viz.Box{Title: panelLabel(pl.panel), Info: body.info, Footer: body.footer, Focused: f.focus.panel == pl.panel}
-	return box.Render(f.th, pl.w, pl.h, strings.Join(body.lines, "\n"))
+	out := box.Render(f.th, pl.w, pl.h, strings.Join(body.lines, "\n"))
+	if box.Focused && f.glow.border > 0 && f.glow.panel == pl.panel {
+		out = sweepEdges(out, box.Title, f.ds, f.glow.border*pl.w/sweepFrames)
+	}
+	return out
 }
 
 // panelOf is panel p's body, dimmed and marked "stale 2m" in its top edge
@@ -203,4 +216,13 @@ func summaryOf(f frame, p dash.Panel) string {
 		return topPodsSummary(f)
 	}
 	return ""
+}
+
+// beat is the banner's heartbeat glyph: the spinner's frame while it
+// runs, nothing before the first answer.
+func (m Model) beat() string {
+	if !m.mem.loaded && !m.mo.spinning {
+		return ""
+	}
+	return m.mo.beatGlyph(m.mem.beat)
 }

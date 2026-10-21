@@ -1,8 +1,12 @@
 package tui_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
@@ -111,4 +115,37 @@ func TestHelpShowsTheDashboardMap(t *testing.T) {
 	// off screen, it is left out.
 	short, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), tuitest.Press("?"))
 	requireScreen(t, short, "view: dashboard", ":forwards")
+}
+
+// TestColorProfileReachesTheNextDashboard: the program reports the colour
+// profile once, to the view on screen; the root keeps it for every
+// dashboard built later, which on ASCII holds still: r there arms no
+// spinner delay. Without the report it does.
+func TestColorProfileReachesTheNextDashboard(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name  string
+		msgs  []tea.Msg
+		spins bool
+	}{
+		{name: "colour", spins: true},
+		{name: "ascii", msgs: []tea.Msg{tea.ColorProfileMsg{Profile: colorprofile.ASCII}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), tt.msgs...)
+			m, _ = tuitest.Drive(t, m, colon("pods")...)
+			m, _ = tuitest.Drive(t, m, tuitest.Press("q"))
+			requireView(t, m, "dashboard")
+			_, out := tuitest.Step(t, m, tuitest.Press("r"))
+			spins := false
+			for _, msg := range out {
+				spins = spins || strings.HasSuffix(fmt.Sprintf("%T", msg), "spinDueMsg")
+			}
+			if spins != tt.spins {
+				t.Fatalf("going home armed the spinner: %v, want %v\n%s", spins, tt.spins, tuitest.Describe(out))
+			}
+		})
+	}
 }
