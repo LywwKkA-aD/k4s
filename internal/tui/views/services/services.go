@@ -81,18 +81,17 @@ func WithClock(c async.Clock) Option {
 // way, and Init sends it.
 func New(client *k8s.Client, namespace string, opts ...Option) Model {
 	m := Model{
-		client:    client,
-		namespace: namespace,
-		clock:     async.RealClock{},
-		table:     newTable(namespace == ""),
-		filter:    filter.New(),
-		tok:       async.New(),
-		selectKey: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "describe")),
-		logsKey:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "tail all pods")),
-		forwardKey: key.NewBinding(
-			key.WithKeys("f"), key.WithHelp("f", "port-forward"),
-		),
+		client:     client,
+		namespace:  namespace,
+		clock:      async.RealClock{},
+		table:      newTable(namespace == ""),
+		filter:     filter.New(),
+		tok:        async.New(),
+		selectKey:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "describe")),
+		logsKey:    key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "tail all pods")),
+		forwardKey: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "port-forward")),
 		filterKey:  key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+		// Help labels w with the poller's cadence.
 		watchKey:   key.NewBinding(key.WithKeys("w")),
 		refreshKey: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 	}

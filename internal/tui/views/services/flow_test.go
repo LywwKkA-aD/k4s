@@ -80,8 +80,8 @@ func TestKeysThatCannotActSaySo(t *testing.T) {
 			want: repeatStatus(3, status.Info, "services are still loading"),
 		},
 		{
-			name: "no kubeconfig", m: services.New(nil, ""), keys: tuitest.Keys("enter", "l", "f", "r"),
-			want: repeatStatus(4, status.Warn, "no kubeconfig"),
+			name: "no kubeconfig", m: services.New(nil, ""), keys: tuitest.Keys("enter", "l", "f", "r", "w"),
+			want: repeatStatus(5, status.Warn, "no kubeconfig"),
 		},
 		{
 			name: "no row under the cursor", m: mounted(t, tuitest.NewFakeClient(t), tuitest.NamespaceDemo),
