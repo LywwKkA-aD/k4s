@@ -64,7 +64,7 @@ func bannerNotes(f frame) []string {
 		if !f.snap.Ledger[dash.Pods].Answered {
 			word = "no answer since "
 		}
-		out = append(out, f.paint(markOff)+" "+word+f.staleSince.Format("15:04")+" · retry "+seconds(f.retry))
+		out = append(out, f.paint(markOff)+" "+word+f.staleSince.Format("15:04")+" · "+retryNote(f))
 	}
 	switch s := f.snap; {
 	case s.Scope.Fallback:
@@ -73,6 +73,15 @@ func bannerNotes(f frame) []string {
 		out = append(out, f.paint(markUnknown)+" cluster-wide lists forbidden · :ns <name>")
 	}
 	return out
+}
+
+// retryNote says when k4s asks the cluster again: at the next tick, or,
+// with watch off, only when r is pressed.
+func retryNote(f frame) string {
+	if f.paused || f.retry <= 0 {
+		return "paused, r retries"
+	}
+	return "retry " + seconds(f.retry)
 }
 
 // scopeFacts stand in for chips when there are none but the picture is
