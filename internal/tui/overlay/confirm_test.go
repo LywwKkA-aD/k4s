@@ -17,8 +17,8 @@ func TestRestoreConfirmKeys(t *testing.T) {
 		key  string
 		want *overlay.RestoreDecisionMsg // nil: the key is ignored
 	}{
-		{key: "y", want: &revive},
-		{key: "Y", want: &revive},
+		{key: "y"},
+		{key: "Y"},
 		{key: "enter", want: &revive},
 		{key: "n", want: &skip},
 		{key: "N", want: &skip},
@@ -66,7 +66,7 @@ func TestConfirmGracePeriod(t *testing.T) {
 			clk := newClock()
 			o := overlay.NewRestore(1, clk.Now)
 			clk.Advance(tc.after)
-			next, cmd := o.Update(tuitest.Press("y"))
+			next, cmd := o.Update(tuitest.Enter())
 			if !tc.answer {
 				if next == nil || cmd != nil {
 					t.Fatalf("a key %v after opening answered", tc.after)
@@ -92,7 +92,7 @@ func TestRestoreConfirmView(t *testing.T) {
 		{count: 3, want: "Found 3 saved forwards from a previous session."},
 	}
 	for _, tc := range cases {
-		requireShows(t, overlay.NewRestore(tc.count, now), "restore port-forwards", tc.want, "y / Enter revive all · n / Esc skip")
+		requireShows(t, overlay.NewRestore(tc.count, now), "restore port-forwards", tc.want, "Enter revive all · n / Esc skip")
 	}
 	o := overlay.NewRestore(3, now)
 	for width := 1; width <= 80; width++ {

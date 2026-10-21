@@ -81,7 +81,7 @@ func TestRestorePromptCountsSavedForwards(t *testing.T) {
 			if tc.withFake {
 				m = started(t, tuitest.NewFakeClient(t))
 			}
-			requireScreen(t, m, "restore port-forwards", tc.want, "y / Enter revive all · n / Esc skip")
+			requireScreen(t, m, "restore port-forwards", tc.want, "Enter revive all · n / Esc skip")
 		})
 	}
 }
@@ -100,8 +100,8 @@ func TestRestorePromptKeys(t *testing.T) {
 		key    string
 		closes bool
 	}{
-		{key: "y", closes: true},
-		{key: "Y", closes: true},
+		{key: "y"},
+		{key: "Y"},
 		{key: "enter", closes: true},
 		{key: "n", closes: true},
 		{key: "N", closes: true},
@@ -147,7 +147,7 @@ func TestRestorePromptIgnoresTypeAhead(t *testing.T) {
 func TestRevivedForwardsShowInTheForwardsView(t *testing.T) {
 	isolatedState(t)
 	saveForwards(t, "", "")
-	m, _ := tuitest.Drive(t, startedPastTheGrace(t, newClock()), tuitest.Press("y"))
+	m, _ := tuitest.Drive(t, startedPastTheGrace(t, newClock()), tuitest.Enter())
 	m, _ = tuitest.Drive(t, m, colon("pf")...)
 	requireView(t, m, "forwards")
 	requireScreen(t, m, "19000 → 80", "19001 → 80")

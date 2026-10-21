@@ -1,2 +1,2 @@
- q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  enter switch  ·  r refresh
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  enter switch  ·  r refresh
  kubectl config get-contexts

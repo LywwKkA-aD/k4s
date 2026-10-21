@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
+	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/describe"
@@ -118,6 +119,10 @@ func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	m.status = m.status.KeyPressed()
 	if m.overlay != nil {
+		// y copies over any overlay without a text input; the overlay stays.
+		if key.Matches(msg, m.keys.Copy) && !overlay.TakesText(m.overlay) {
+			return m.copyCommand()
+		}
 		return m.onOverlayInput(msg)
 	}
 	// Views that own the keyboard (focused textinput, list-popup, etc.) get
@@ -142,6 +147,8 @@ func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return next, next.relayoutCmd()
 		}
 		return m, nil
+	case key.Matches(msg, m.keys.Copy):
+		return m.copyCommand()
 	}
 	return m.forwardToView(msg)
 }

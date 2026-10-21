@@ -128,7 +128,7 @@ func (m Model) footerBindings() []string {
 	if m.current.Title() != viewDashboard {
 		quitLabel = "q home"
 	}
-	bindings := []string{quitLabel, "^c quit", "esc back", ": command", "? help"}
+	bindings := []string{quitLabel, "^c quit", "esc back", ": command", "? help", "y copy"}
 	for _, b := range m.current.Help() {
 		h := b.Help()
 		if h.Key != "" && h.Desc != "" {

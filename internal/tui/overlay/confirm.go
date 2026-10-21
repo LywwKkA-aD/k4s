@@ -10,8 +10,9 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
-// Confirm is a yes/no question. Yes is sent on y or Enter, No on n, q or
-// Esc; a nil message just closes.
+// Confirm is a yes/no question. Yes is sent on Enter, No on n, q or Esc; a
+// nil message just closes. y is not an answer: over a confirm it copies
+// the command, as everywhere outside a text prompt.
 type Confirm struct {
 	Title    string
 	Question string
@@ -42,13 +43,13 @@ func NewRestore(count int, now func() time.Time) Overlay {
 	return NewConfirm(Confirm{
 		Title:    "restore port-forwards",
 		Question: fmt.Sprintf("Found %d saved %s from a previous session.", count, noun),
-		Hint:     "y / Enter revive all · n / Esc skip · :pf to manage later",
+		Hint:     "Enter revive all · n / Esc skip · :pf to manage later",
 		Yes:      RestoreDecisionMsg{Revive: true},
 		No:       RestoreDecisionMsg{Revive: false},
 	}, now)
 }
 
-// Update answers on y/n keys once the grace period is over.
+// Update answers on Enter, n, q or Esc once the grace period is over.
 func (c confirm) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	k, ok := msg.(tea.KeyPressMsg)
 	if !ok || c.now().Sub(c.opened) < Grace {
@@ -61,8 +62,6 @@ func (c confirm) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		return c.answer(c.spec.No)
 	}
 	switch k.String() {
-	case "y", "Y":
-		return c.answer(c.spec.Yes)
 	case "n", "N", "q":
 		return c.answer(c.spec.No)
 	}

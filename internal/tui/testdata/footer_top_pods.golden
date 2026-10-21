@@ -1,2 +1,2 @@
- q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  n nodes/pods  ·  w watch  ·  r refresh
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  n nodes/pods  ·  w watch  ·  r refresh
  kubectl top pods -A
