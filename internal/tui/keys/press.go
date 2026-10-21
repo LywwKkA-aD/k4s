@@ -28,3 +28,26 @@ func IsArrow(msg tea.KeyPressMsg, code rune) bool {
 func IsForceQuit(msg tea.KeyPressMsg) bool {
 	return msg.Code == 'c' && msg.Mod.Contains(tea.ModCtrl)
 }
+
+// Normalize turns shift- or ctrl-modified Enter and Esc into the bare keys.
+// Terminals with the kitty keyboard protocol report those combinations as
+// distinct keys, while v1 terminals sent a plain carriage return or escape,
+// so every binding written for "enter" or "esc" keeps working. alt+enter
+// stays distinct, as it always was. Any other message passes through.
+func Normalize(msg tea.Msg) tea.Msg {
+	k, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return msg
+	}
+	if k.Code != tea.KeyEnter && k.Code != tea.KeyKpEnter && k.Code != tea.KeyEscape {
+		return msg
+	}
+	if k.Mod&^(lockMods|tea.ModShift|tea.ModCtrl) != 0 {
+		return msg
+	}
+	code := k.Code
+	if code == tea.KeyKpEnter {
+		code = tea.KeyEnter
+	}
+	return tea.KeyPressMsg{Code: code}
+}
