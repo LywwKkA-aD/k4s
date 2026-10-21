@@ -208,6 +208,33 @@ kind-down: ## delete the kind cluster
 	kind delete cluster --name '$(KIND_CLUSTER)'
 	@rm -f '$(KIND_KUBECONFIG)'
 
+# Idle CPU and RSS of bin/k4s on the dashboard with watch on (the E6 budget),
+# measured by tools/idlecpu on a 120x40 pty: 3 s warm-up, then a 40 s window.
+# Run it on `make demo` without per-minute CronJob seeds: the report counts the
+# pods that changed in the window, and --require-idle fails a busy run. E6 gate:
+#   make idle-cpu IDLE_CPU_ARGS='--max-cpu 2 --max-rss 40MB --require-idle'
+# For a Pi, cross-build both and run them on the node:
+#   GOOS=linux GOARCH=arm64 make build idle-cpu-bin BIN=bin/arm64/k4s IDLE_CPU_BIN=bin/arm64/idlecpu
+#   bin/arm64/idlecpu --bin bin/arm64/k4s --kubeconfig <file> --max-cpu 2 --max-rss 40MB
+IDLE_CPU_BIN  ?= bin/idlecpu
+IDLE_CPU_ARGS ?=
+
+.PHONY: idle-cpu idle-cpu-bin idle-cpu-test
+
+# The release is built on the go.mod toolchain, so the measured k4s is too
+# (target-specific exports reach the build prerequisite).
+idle-cpu idle-cpu-bin idle-cpu-test: export GOTOOLCHAIN ?= $(GO_TOOLCHAIN)
+
+idle-cpu: build idle-cpu-bin ## idle CPU and RSS of bin/k4s on make demo (IDLE_CPU_ARGS='--max-cpu 2 --max-rss 40MB')
+	$(IDLE_CPU_BIN) --bin $(BIN) --kubeconfig $(KUBECONFIG_PATH) $(IDLE_CPU_ARGS)
+
+idle-cpu-bin: ## build the idle-cpu harness (tools/idlecpu); GOOS/GOARCH cross-build it
+	@mkdir -p $(dir $(IDLE_CPU_BIN))
+	cd tools && $(GO) build -o $(abspath $(IDLE_CPU_BIN)) ./idlecpu
+
+idle-cpu-test: ## unit-test the idle-cpu harness (tools module, race detector)
+	cd tools && $(GO) test -race -cover ./idlecpu/...
+
 gif: build ## record docs/demo.gif via VHS (requires: brew install vhs ttyd ffmpeg)
 	@command -v vhs >/dev/null || { echo "vhs not on PATH — brew install vhs ttyd ffmpeg"; exit 1; }
 	KUBECONFIG=$(KUBECONFIG_PATH) vhs docs/demo.tape
