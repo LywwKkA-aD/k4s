@@ -19,32 +19,38 @@ import (
 // Use it from TestMain: os.Exit(tuitest.Isolate(m)). Tests that need
 // another file use t.Setenv and do not run in parallel.
 func Isolate(m *testing.M, contexts ...string) int {
-	code, err := isolated(m, contexts)
+	cleanup, err := prepare(contexts)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "tuitest.Isolate:", err)
 		return 1
 	}
-	return code
+	defer cleanup()
+	return m.Run()
 }
 
-func isolated(m *testing.M, contexts []string) (int, error) {
+// prepare points the environment at a fresh directory and returns what
+// removes it.
+func prepare(contexts []string) (func(), error) {
 	if len(contexts) == 0 {
 		contexts = []string{FakeContext}
 	}
 	dir, err := os.MkdirTemp("", "k4s-test-*")
 	if err != nil {
-		return 0, fmt.Errorf("temp dir: %w", err)
+		return nil, fmt.Errorf("temp dir: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	cleanup := func() { _ = os.RemoveAll(dir) }
 	if err := os.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state")); err != nil {
-		return 0, fmt.Errorf("set XDG_STATE_HOME: %w", err)
+		cleanup()
+		return nil, fmt.Errorf("set XDG_STATE_HOME: %w", err)
 	}
 	kubeconfig, err := WriteKubeconfig(dir, contexts[0], contexts...)
 	if err != nil {
-		return 0, fmt.Errorf("write kubeconfig: %w", err)
+		cleanup()
+		return nil, fmt.Errorf("write kubeconfig: %w", err)
 	}
 	if err := os.Setenv("KUBECONFIG", kubeconfig); err != nil {
-		return 0, fmt.Errorf("set KUBECONFIG: %w", err)
+		cleanup()
+		return nil, fmt.Errorf("set KUBECONFIG: %w", err)
 	}
-	return m.Run(), nil
+	return cleanup, nil
 }
