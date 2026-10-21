@@ -1,0 +1,2 @@
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  n nodes/pods  ·  s sort memory  ·  w paused  ·  r refresh
+ kubectl top nodes --sort-by=memory

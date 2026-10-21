@@ -1,18 +1,15 @@
-// Package top is the kubectl-top equivalent: per-pod CPU/memory pulled from
-// the metrics-server REST endpoint, refreshed on the same 5s ticker as the
-// other list views. 'n' switches between pod and node mode; both share the
-// same ticker / table machinery.
+// Package top is the kubectl-top equivalent: per-pod or per-node CPU and
+// memory pulled from the metrics-server REST endpoint and refreshed by an
+// async.Poller like the other list views. 'n' switches between pod and
+// node mode, 's' between sorting by CPU and by memory.
 //
-// When metrics-server is missing or unreachable the view renders a hint
-// (instead of a stack trace) so the user knows to install it and can keep
-// the rest of the TUI running.
+// When metrics-server is missing, unreachable or forbidden the view says
+// so in the status row and the body, with an install hint where that is
+// the cause, so the user can keep the rest of the TUI running.
 package top
 
 import (
 	"context"
-	"sort"
-	"strings"
-	"sync/atomic"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -21,326 +18,233 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
-	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
-	fetchTimeout  = 5 * time.Second
-	minTableRows  = 5
-	watchInterval = 5 * time.Second
+	listTimeout = 5 * time.Second
+	// allNamespacesTimeout bounds pods across all namespaces, whose answer
+	// grows with the cluster.
+	allNamespacesTimeout = 15 * time.Second
+	minTableRows         = 5
 )
 
-// viewGen numbers Model instances. Ticks and fetch replies carry the gen
-// they were scheduled under, and Update drops any from another instance.
-// The message type cannot do this: when the view is rebuilt (Esc back or a
-// repeated command) the old instance's pending tick reaches the new one,
-// where it would start a second refresh chain, and its fetch reply could
-// overwrite fresh rows.
-// Metric replies also carry the mode, so a reply for the mode the user
-// toggled away from is dropped as well.
-var viewGen atomic.Int64
-
-func nextGen() int64 { return viewGen.Add(1) }
-
-// resourceMode tells the view what to fetch on every tick.
-type resourceMode int
+// mode is what the view lists, as views.State.Mode names it.
+type mode string
 
 const (
-	modePods resourceMode = iota
-	modeNodes
+	modePods  mode = "pods"
+	modeNodes mode = "nodes"
 )
 
-// tickMsg is the watch tick of the instance whose gen it carries.
-type tickMsg struct {
-	gen int64
-	t   time.Time
-}
+// sortKey is the column rows are sorted by, busiest first, as
+// views.State.Sort names it.
+type sortKey string
+
+const (
+	sortCPU    sortKey = "cpu"
+	sortMemory sortKey = "memory"
+)
 
 // Model is the top view.
 type Model struct {
 	client    *k8s.Client
 	namespace string
-	mode      resourceMode
+	mode      mode
+	sort      sortKey
 
-	table  table.Model
+	// mint hands out the Token of each mode epoch; poll runs under the
+	// current one, so a reply or tick from before an 'n' is dropped.
+	mint async.Token
+	poll async.Poller
+
+	table table.Model
+	pods  []k8s.PodMetric
+	nodes []k8s.NodeMetric
+	// keys holds views.RowKey of each table row, in row order.
+	keys   []string
 	err    error
 	loaded bool
-	// busy suppresses overlapping fetches: fetchTimeout == watchInterval,
-	// so without the guard requests stack up every tick against a dead API.
-	// Shared by both pod and node metrics fetches.
-	busy bool
-	gen  int64
-
-	watchEnabled bool
+	// asked marks a fetch the user started (r, n): its failure is reported
+	// even when it repeats the last one.
+	asked bool
+	// pending is the row a Restore asked for, held until the first list.
+	pending pendingRow
 
 	toggleKey  key.Binding
+	sortKey    key.Binding
 	watchKey   key.Binding
 	refreshKey key.Binding
 }
 
-type podMetricsMsg struct {
-	gen   int64
-	mode  resourceMode
-	items []k8s.PodMetric
-	err   error
+// Option configures New.
+type Option func(options) options
+
+type options struct {
+	clock async.Clock
 }
 
-type nodeMetricsMsg struct {
-	gen   int64
-	mode  resourceMode
-	items []k8s.NodeMetric
-	err   error
+// WithClock arms the refresh ticks on clock instead of real timers; tests
+// pass an asynctest.Clock and fire the ticks themselves.
+func WithClock(clock async.Clock) Option {
+	return func(o options) options {
+		o.clock = clock
+		return o
+	}
 }
 
-// New constructs a top view scoped to the given namespace ("" = all).
-func New(client *k8s.Client, namespace string) Model {
+// New constructs a top view scoped to the given namespace ("" = all). With
+// a client its first fetch is already under way: Init sends it.
+func New(client *k8s.Client, namespace string, opts ...Option) Model {
+	var o options
+	for _, opt := range opts {
+		o = opt(o)
+	}
+	mint := async.New()
+	poll := async.NewPoller(mint, async.Config{Enabled: client != nil, Clock: o.clock})
+	if client != nil {
+		poll, _ = poll.Begin()
+	}
 	return Model{
-		client:       client,
-		namespace:    namespace,
-		mode:         modePods,
-		table:        newTable(modePods, namespace == ""),
-		watchEnabled: true,
-		gen:          nextGen(),
-		toggleKey: key.NewBinding(
-			key.WithKeys("n"),
-			key.WithHelp("n", "nodes/pods"),
-		),
-		watchKey: key.NewBinding(
-			key.WithKeys("w"),
-			key.WithHelp("w", "watch"),
-		),
-		refreshKey: key.NewBinding(
-			key.WithKeys("r"),
-			key.WithHelp("r", "refresh"),
-		),
+		client:     client,
+		namespace:  namespace,
+		mode:       modePods,
+		sort:       sortCPU,
+		mint:       mint,
+		poll:       poll,
+		table:      newTable(modePods, namespace == ""),
+		toggleKey:  key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "nodes/pods")),
+		sortKey:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort")),
+		watchKey:   key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "watch")),
+		refreshKey: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 	}
 }
 
-// newTable builds the right column set for the current mode. Recreated on
-// every mode switch so the header reflects "PODS" vs "NODES" naturally.
-func newTable(mode resourceMode, showNamespace bool) table.Model {
-	cols := tableColumns(mode, showNamespace)
-	t := table.New(
-		table.WithColumns(cols),
-		table.WithFocused(true),
-		table.WithHeight(20),
-	)
-	t.SetStyles(styles.Table())
-	styles.FitTable(&t)
-	return t
-}
-
-func tableColumns(mode resourceMode, showNamespace bool) []table.Column {
-	if mode == modeNodes {
-		return []table.Column{
-			{Title: "NAME", Width: 36},
-			{Title: "CPU", Width: 10},
-			{Title: "MEMORY", Width: 12},
-		}
-	}
-	cols := make([]table.Column, 0, 4)
-	if showNamespace {
-		cols = append(cols, table.Column{Title: "NAMESPACE", Width: 18})
-	}
-	cols = append(cols,
-		table.Column{Title: "NAME", Width: 36},
-		table.Column{Title: "CPU", Width: 10},
-		table.Column{Title: "MEMORY", Width: 12},
-	)
-	return cols
-}
-
-// Init kicks off the first fetch for the current mode.
+// Init sends the first fetch for the current mode.
 func (m Model) Init() tea.Cmd {
-	if m.client == nil {
-		return tickCmd(m.gen)
+	if !m.poll.Busy() {
+		return nil
 	}
-	return tea.Batch(fetchCmd(m), tickCmd(m.gen))
+	return m.fetch()
 }
 
-func tickCmd(gen int64) tea.Cmd {
-	return tea.Tick(watchInterval, func(t time.Time) tea.Msg { return tickMsg{gen: gen, t: t} })
-}
-
-// fetchCmd dispatches the right metrics call for the current mode.
-func fetchCmd(m Model) tea.Cmd {
+// fetch asks for the current mode's metrics under the poller's Token.
+// Ticks and r send the same request: metrics-server answers from its
+// latest scrape and has no watch cache, so ResourceVersion means nothing
+// to it.
+func (m Model) fetch() tea.Cmd {
+	c, tok, timeout := m.client, m.poll.Token(), m.timeout()
 	if m.mode == modeNodes {
-		return fetchNodesCmd(m.gen, m.mode, m.client)
+		return async.Run(tok, timeout, c.ListNodeMetrics)
 	}
-	return fetchPodsCmd(m.gen, m.mode, m.client, m.namespace)
+	ns := m.namespace
+	return async.Run(tok, timeout, func(ctx context.Context) ([]k8s.PodMetric, error) {
+		return c.ListPodMetrics(ctx, ns)
+	})
 }
 
-func fetchPodsCmd(gen int64, mode resourceMode, c *k8s.Client, namespace string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
-		items, err := c.ListPodMetrics(ctx, namespace)
-		return podMetricsMsg{gen: gen, mode: mode, items: items, err: err}
+func (m Model) timeout() time.Duration {
+	if m.mode == modePods && m.namespace == "" {
+		return allNamespacesTimeout
 	}
+	return listTimeout
 }
 
-func fetchNodesCmd(gen int64, mode resourceMode, c *k8s.Client) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
-		items, err := c.ListNodeMetrics(ctx)
-		return nodeMetricsMsg{gen: gen, mode: mode, items: items, err: err}
-	}
-}
-
-// Update handles size, watch tick, key bindings, and metrics deliveries.
+// Update handles size, ticks, key bindings and metrics replies.
 func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.table.SetHeight(max(msg.Height, minTableRows))
-	case tickMsg:
-		if msg.gen != m.gen {
-			return m, nil
+	case async.TickMsg:
+		var due bool
+		if m.poll, due = m.poll.Due(msg); due {
+			return m, m.fetch()
 		}
-		cmds := []tea.Cmd{tickCmd(m.gen)}
-		if m.watchEnabled && m.client != nil && !m.busy {
-			m.busy = true
-			cmds = append(cmds, fetchCmd(m))
-		}
-		return m, tea.Batch(cmds...)
+		return m, nil
 	case tea.KeyPressMsg:
-		next, cmd, handled := m.handleKey(msg)
-		if handled {
+		if next, cmd, handled := m.handleKey(msg); handled {
 			return next, cmd
 		}
-	case podMetricsMsg:
-		if msg.gen != m.gen || msg.mode != m.mode {
-			return m, nil
-		}
-		m.busy = false
-		m.applyPodMetrics(msg)
-		return m, nil
-	case nodeMetricsMsg:
-		if msg.gen != m.gen || msg.mode != m.mode {
-			return m, nil
-		}
-		m.busy = false
-		m.applyNodeMetrics(msg)
-		return m, nil
+	case async.Result[[]k8s.PodMetric]:
+		return m.onReply(msg.Token, msg.Err, func(m Model) Model { m.pods = msg.Value; return m })
+	case async.Result[[]k8s.NodeMetric]:
+		return m.onReply(msg.Token, msg.Err, func(m Model) Model { m.nodes = msg.Value; return m })
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
 }
 
-func (m *Model) applyPodMetrics(msg podMetricsMsg) {
-	m.loaded = true
-	m.err = msg.err
-	if msg.err == nil {
-		m.table.SetRows(podRows(msg.items, m.namespace == ""))
+// onReply takes a fetch reply meant for this view and mode; keep stores a
+// successful answer. Done arms the next tick, so its Cmd must reach Bubble
+// Tea even when the fetch failed.
+func (m Model) onReply(tok async.Token, err error, keep func(Model) Model) (views.View, tea.Cmd) {
+	if !m.poll.Accept(tok) {
+		return m, nil
 	}
+	var next tea.Cmd
+	m.poll, next = m.poll.Done(tok, err)
+	report := m.report(err)
+	m.loaded, m.err, m.asked = true, err, false
+	if err != nil {
+		return m, tea.Batch(next, report)
+	}
+	m, gone := keep(m).withRows().landPending()
+	return m, tea.Batch(next, gone)
 }
 
-func (m *Model) applyNodeMetrics(msg nodeMetricsMsg) {
-	m.loaded = true
-	m.err = msg.err
-	if msg.err == nil {
-		m.table.SetRows(nodeRows(msg.items))
-	}
-}
-
-// handleKey returns (next-model, cmd, true) when the key matched a binding.
-// The model is returned by value because the toggle path mutates several
-// fields and we want the call site to keep using the result.
+// handleKey reports handled when the key matched a binding.
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.toggleKey):
-		if m.mode == modePods {
-			m.mode = modeNodes
-		} else {
-			m.mode = modePods
-		}
-		m.table = newTable(m.mode, m.namespace == "")
-		m.loaded = false
-		m.err = nil
-		if m.client != nil {
-			return m, fetchCmd(m), true
-		}
-		return m, nil, true
+		next, cmd := m.toggle()
+		return next, cmd, true
+	case key.Matches(msg, m.sortKey):
+		return m.withSort(otherSort(m.sort)).withRows(), nil, true
 	case key.Matches(msg, m.watchKey):
-		m.watchEnabled = !m.watchEnabled
-		return m, nil, true
-	case key.Matches(msg, m.refreshKey) && m.client != nil && !m.busy:
-		m.busy = true
-		return m, fetchCmd(m), true
+		var cmd tea.Cmd
+		m.poll, cmd = m.poll.WithEnabled(!m.poll.Enabled() && m.client != nil)
+		return m, cmd, true
+	case key.Matches(msg, m.refreshKey) && m.client != nil:
+		var ok bool
+		if m.poll, ok = m.poll.Begin(); !ok {
+			return m, nil, true
+		}
+		m.asked = true
+		return m, m.fetch(), true
 	}
 	return m, nil, false
 }
 
-// podRows sorts pods by descending CPU so the busiest ones are on top —
-// the cluster operator's most common ask is "what's hot right now".
-func podRows(items []k8s.PodMetric, showNamespace bool) []table.Row {
-	sorted := make([]k8s.PodMetric, len(items))
-	copy(sorted, items)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].CPUMilli > sorted[j].CPUMilli })
-
-	rows := make([]table.Row, 0, len(sorted))
-	for _, p := range sorted {
-		row := make(table.Row, 0, 4)
-		if showNamespace {
-			row = append(row, p.Namespace)
-		}
-		row = append(row, p.Name, k8s.FormatCPU(p.CPUMilli), k8s.FormatMemory(p.MemBytes))
-		rows = append(rows, row)
-	}
-	return rows
-}
-
-func nodeRows(items []k8s.NodeMetric) []table.Row {
-	sorted := make([]k8s.NodeMetric, len(items))
-	copy(sorted, items)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].CPUMilli > sorted[j].CPUMilli })
-
-	rows := make([]table.Row, 0, len(sorted))
-	for _, n := range sorted {
-		rows = append(rows, table.Row{n.Name, k8s.FormatCPU(n.CPUMilli), k8s.FormatMemory(n.MemBytes)})
-	}
-	return rows
-}
-
-// View renders the table or a placeholder. Metrics-server can be missing
-// (common in fresh k3s without --metrics-server enabled), so when the
-// fetch fails we hint at the cause rather than show a raw error.
-func (m Model) View() string {
+// toggle switches pods and nodes and fetches the new mode at once, under a
+// fresh Token so the other mode's reply and tick are dropped.
+func (m Model) toggle() (Model, tea.Cmd) {
+	m = m.withMode(otherMode(m.mode))
 	if m.client == nil {
-		return styles.Warn.Render("no kubeconfig")
+		return m, nil
 	}
-	if !m.loaded {
-		return styles.Hint.Render("loading metrics…")
-	}
-	if m.err != nil {
-		hint := "metrics unavailable: " + m.err.Error()
-		if isMetricsServerMissing(m.err) {
-			hint += "\n\n" + styles.Hint.Render(
-				"hint: install metrics-server (kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml)",
-			)
-		}
-		return styles.Warn.Render(hint)
-	}
-	if len(m.table.Rows()) == 0 {
-		return styles.Hint.Render("no metrics yet (give metrics-server a few seconds)")
-	}
-	return m.table.View()
+	m.mint = m.mint.Next()
+	m.poll = m.poll.Restart(m.mint)
+	m.asked = true
+	return m, m.fetch()
 }
 
-// isMetricsServerMissing returns true when the error reads like the API
-// group simply isn't registered. We cannot type-assert here because the
-// error is wrapped via fmt.Errorf("metrics request: %w", ...), so a string
-// match is the pragmatic choice.
-func isMetricsServerMissing(err error) bool {
-	if err == nil {
-		return false
+// withMode shows mode with an empty table until its first answer.
+func (m Model) withMode(md mode) Model {
+	m.mode = md
+	m.table = newTable(md, m.namespace == "")
+	m.pods, m.nodes, m.keys = nil, nil, nil
+	m.loaded, m.err = false, nil
+	m.pending = pendingRow{}
+	return m
+}
+
+func otherMode(md mode) mode {
+	if md == modeNodes {
+		return modePods
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "could not find the requested resource") ||
-		strings.Contains(msg, "the server could not find") ||
-		strings.Contains(msg, "no matches for kind")
+	return modeNodes
 }
 
 // Title implements views.View. Stable "top" so the navigation history
@@ -348,20 +252,30 @@ func isMetricsServerMissing(err error) bool {
 // Command only.
 func (m Model) Title() string { return "top" }
 
-// Command implements views.View.
+// Command implements views.View. The default CPU order is left implicit;
+// a memory sort is spelled out with --sort-by.
 func (m Model) Command() kubectl.Cmd {
-	if m.mode == modeNodes {
-		return kubectl.New("top", "nodes")
+	args := []string{"top", "nodes"}
+	if m.mode == modePods {
+		args = []string{"top", "pods", "-A"}
+		if m.namespace != "" {
+			args = []string{"top", "pods", "-n", m.namespace}
+		}
 	}
-	if m.namespace == "" {
-		return kubectl.New("top", "pods", "-A")
+	if m.sort == sortMemory {
+		args = append(args, "--sort-by=memory")
 	}
-	return kubectl.New("top", "pods", "-n", m.namespace)
+	return kubectl.New(args...)
 }
 
-// Help implements views.View.
+// Help implements views.View. The s and w hints show the current sort and
+// the refresh cadence.
 func (m Model) Help() []key.Binding {
-	return []key.Binding{m.toggleKey, m.watchKey, m.refreshKey}
+	sortBy := m.sortKey
+	sortBy.SetHelp("s", "sort "+string(m.sort))
+	watch := m.watchKey
+	watch.SetHelp("w", m.poll.Hint())
+	return []key.Binding{m.toggleKey, sortBy, watch, m.refreshKey}
 }
 
 // CapturesKeys implements views.View.

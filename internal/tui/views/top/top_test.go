@@ -4,8 +4,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/top"
 )
@@ -15,9 +17,23 @@ const (
 	height = 30
 )
 
+// fresh builds the view on a manual clock, so no test waits on a tick.
+func fresh(c *k8s.Client, namespace string) (top.Model, *asynctest.Clock) {
+	clk := asynctest.NewClock(time.Time{})
+	return top.New(c, namespace, top.WithClock(clk)), clk
+}
+
+// clocked is fresh, sized and started.
+func clocked(t *testing.T, c *k8s.Client, namespace string) (top.Model, *asynctest.Clock) {
+	t.Helper()
+	m, clk := fresh(c, namespace)
+	m, _ = tuitest.Mount(t, m, width, height)
+	return m, clk
+}
+
 func mounted(t *testing.T, c *k8s.Client, namespace string) top.Model {
 	t.Helper()
-	m, _ := tuitest.Mount(t, top.New(c, namespace), width, height)
+	m, _ := clocked(t, c, namespace)
 	return m
 }
 
@@ -71,32 +87,6 @@ func TestToggleNodes(t *testing.T) {
 	}
 }
 
-func TestMetricsFailures(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name     string
-		status   int
-		want     string
-		wantHint bool
-	}{
-		{name: "metrics-server missing", status: http.StatusNotFound, want: "metrics unavailable", wantHint: true},
-		{name: "metrics-server down", status: http.StatusServiceUnavailable, want: "metrics unavailable"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			screen := tuitest.Screen(mounted(t, tuitest.NewFakeClient(t, tuitest.WithMetricsStatus(tc.status)), ""))
-			if !strings.Contains(screen, tc.want) {
-				t.Errorf("screen lacks %q:\n%s", tc.want, screen)
-			}
-			if got := strings.Contains(screen, "install metrics-server"); got != tc.wantHint {
-				t.Errorf("install hint shown = %v, want %v:\n%s", got, tc.wantHint, screen)
-			}
-		})
-	}
-}
-
 func TestPlaceholders(t *testing.T) {
 	t.Parallel()
 
@@ -141,15 +131,18 @@ func TestStaleRepliesAreDropped(t *testing.T) {
 	t.Parallel()
 
 	c := tuitest.NewFakeClient(t)
-	_, oldReplies := tuitest.Init(t, top.New(c, ""))
-	fresh, _ := tuitest.Drive(t, top.New(c, ""), tuitest.Resize(width, height))
-	fresh, _ = tuitest.Drive(t, fresh, oldReplies...)
-	if !strings.Contains(tuitest.Screen(fresh), "loading metrics") {
-		t.Errorf("a reply addressed to an older view was applied:\n%s", tuitest.Screen(fresh))
+	old, _ := fresh(c, "")
+	_, oldReplies := tuitest.Init(t, old)
+	newer, _ := fresh(c, "")
+	newer, _ = tuitest.Drive(t, newer, tuitest.Resize(width, height))
+	newer, _ = tuitest.Drive(t, newer, oldReplies...)
+	if !strings.Contains(tuitest.Screen(newer), "loading metrics") {
+		t.Errorf("a reply addressed to an older view was applied:\n%s", tuitest.Screen(newer))
 	}
 
 	// A pods reply that lands after the switch to nodes mode is dropped too.
-	m, podReply := tuitest.Step(t, top.New(c, ""), tuitest.Press("r"))
+	m, _ := fresh(c, "")
+	podReply := tuitest.Collect(t, m.Init())
 	m, _ = tuitest.Step(t, m, tuitest.Press("n"))
 	m, _ = tuitest.Drive(t, m, podReply...)
 	if screen := tuitest.Screen(m); strings.Contains(screen, tuitest.PodWeb1) {
@@ -161,11 +154,39 @@ func TestWatchToggleAndContract(t *testing.T) {
 	t.Parallel()
 
 	m := top.New(nil, "")
-	m, out := tuitest.Drive(t, m, tuitest.Press("w"), tuitest.Press("n"))
+	m, out := tuitest.Drive(t, m, tuitest.Press("w"), tuitest.Press("n"), tuitest.Press("s"), tuitest.Press("r"))
 	if len(out) != 0 {
-		t.Errorf("toggles without a client emitted:\n%s", tuitest.Describe(out))
+		t.Errorf("keys without a client emitted:\n%s", tuitest.Describe(out))
 	}
-	if m.Title() != "top" || m.CapturesKeys() || m.Close() != nil || len(m.Help()) != 3 {
-		t.Errorf("contract: title=%q help=%d", m.Title(), len(m.Help()))
+	if m.Title() != "top" || m.CapturesKeys() || m.Close() != nil {
+		t.Errorf("contract: title=%q", m.Title())
+	}
+	if got, want := tuitest.HelpKeys(m), []string{"n", "s", "w", "r"}; strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("help keys = %v, want %v", got, want)
+	}
+}
+
+func TestMetricsServerMissingHint(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		status   int
+		wantHint bool
+	}{
+		{name: "metrics-server missing", status: http.StatusNotFound, wantHint: true},
+		{name: "metrics-server down", status: http.StatusServiceUnavailable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			screen := tuitest.Screen(mounted(t, tuitest.NewFakeClient(t, tuitest.WithMetricsStatus(tc.status)), ""))
+			if !strings.Contains(screen, "metrics unavailable") {
+				t.Errorf("screen lacks the failure:\n%s", screen)
+			}
+			if got := strings.Contains(screen, "install metrics-server"); got != tc.wantHint {
+				t.Errorf("install hint shown = %v, want %v:\n%s", got, tc.wantHint, screen)
+			}
+		})
 	}
 }
