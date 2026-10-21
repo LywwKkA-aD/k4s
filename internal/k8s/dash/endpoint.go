@@ -82,6 +82,22 @@ func (e Endpoint) Namespaced() bool {
 	}
 }
 
+// resource is the RBAC resource a denial names, for `kubectl auth can-i`.
+func (e Endpoint) resource() string {
+	switch e {
+	case NodeMetrics:
+		return "nodes.metrics.k8s.io"
+	case PodMetrics:
+		return "pods.metrics.k8s.io"
+	case LoadBalancers, ServiceCount:
+		return "services"
+	case Whoami:
+		return "selfsubjectreviews"
+	default:
+		return endpointNames[e]
+	}
+}
+
 // Endpoints lists every endpoint in request-table order.
 func Endpoints() []Endpoint {
 	out := make([]Endpoint, 0, numEndpoints)

@@ -1,0 +1,69 @@
+scope: "" fallback=false
+verdict: [failing] 4 CrashLoopBackOff  [failing] 1 ImagePullBackOff  [failing] 1 Init:CrashLoopBackOff  [failing] 6 workloads not ready  [failing] 1 job failed  [waiting] k3s-agent-1 mem 87%  [waiting] 2 not ready  [waiting] 1 pvc not bound  [waiting] 1 warning in 10m
+next:
+  kubectl logs loki-backend-0 -n monitoring -c ingester --previous    # why does it keep crashing?
+  kubectl logs payments-worker-6c9f7d8b5-xk2lp -n shop -c worker --previous    # why does it keep crashing?
+  kubectl logs payments-worker-6c9f7d8b5-r8vqn -n shop -c worker --previous    # why does it keep crashing?
+  kubectl logs migrate-7d9f8b6c5-q2w3e -n ci -c migrate-db --previous    # why does it keep crashing?
+  kubectl logs postgres-0 -n staging -c postgres --previous    # why does it keep crashing?
+cluster: kubectl get '--raw=/readyz?verbose'
+  api ok ready=true 8/8 etcd=ok sev=ok
+  version ok v1.36.3+k3s1 distro="k3s" etcd=true control-planes=1
+  you ok "devops-friend"
+  age ok 212d known=true
+  ns ok 8 terminating=1
+  storage ok 2/3 bound pending=1 lost=0 | kubectl get pvc -A
+  network ok svc=4 known=true lb=2 pending=1 [service/shop/payments-lb] | kubectl get svc -A --field-selector spec.type=LoadBalancer
+nodes: ok metrics=ok 3/3 ready cpu=34% mem=67%
+  [waiting] k3s-agent-1 [] Ready cpu=52% mem=87% pods=7/110 age=212d | kubectl describe node k3s-agent-1
+  [ok] k3s-agent-2 [] Ready cpu=14% mem=39% pods=6/110 age=98d | kubectl describe node k3s-agent-2
+  [ok] k3s-cp-1 [control-plane etcd master] Ready cpu=38% mem=71% pods=8/250 age=212d | kubectl describe node k3s-cp-1
+pods: ok total=22 running=12 completed=1 waiting=2 failing=6 evicted=1 other=0 notok=9 | kubectl get pods -A
+  failing [{CrashLoopBackOff 4} {ImagePullBackOff 1} {Init:CrashLoopBackOff 1}]
+  per node [{k3s-agent-1 7} {k3s-agent-2 6} {k3s-cp-1 8}]
+  [failing] pod/monitoring/loki-backend-0 1/2 CrashLoopBackOff r=12 last=<1m age=5d node="k3s-cp-1" c="ingester" init=false starting=false | kubectl describe pod loki-backend-0 -n monitoring
+  [failing] pod/shop/payments-worker-6c9f7d8b5-xk2lp 0/1 CrashLoopBackOff r=41 last=2m age=3h node="k3s-agent-1" c="worker" init=false starting=false | kubectl describe pod payments-worker-6c9f7d8b5-xk2lp -n shop
+  [failing] pod/shop/payments-worker-6c9f7d8b5-r8vqn 0/1 CrashLoopBackOff r=39 last=3m age=3h node="k3s-agent-2" c="worker" init=false starting=false | kubectl describe pod payments-worker-6c9f7d8b5-r8vqn -n shop
+  [failing] pod/ci/migrate-7d9f8b6c5-q2w3e 0/1 Init:CrashLoopBackOff r=5 last=4m age=40m node="k3s-agent-2" c="migrate-db" init=true starting=false | kubectl describe pod migrate-7d9f8b6c5-q2w3e -n ci
+  [failing] pod/staging/postgres-0 0/1 CrashLoopBackOff r=4 last=5m age=1d node="k3s-agent-2" c="postgres" init=false starting=false | kubectl describe pod postgres-0 -n staging
+  [failing] pod/staging/api-7f6d9c4b8-2mzqt 0/1 ImagePullBackOff r=0 last=<1m age=22m node="k3s-agent-1" c="api" init=false starting=false | kubectl describe pod api-7f6d9c4b8-2mzqt -n staging
+  [waiting] pod/ci/runner-build-8812-k7x2p 0/1 Pending r=0 last=<1m age=6m node="" c="app" init=false starting=false | kubectl describe pod runner-build-8812-k7x2p -n ci
+  [waiting] pod/monitoring/grafana-5d8f7c6b9-wq2lx 0/1 Running r=0 last=<1m age=9m node="k3s-cp-1" c="app" init=false starting=false | kubectl describe pod grafana-5d8f7c6b9-wq2lx -n monitoring
+  [minor] pod/growlytics/report-28741230-9q8wd 0/1 Evicted r=0 last=<1m age=48m node="k3s-agent-1" c="app" init=false starting=false | kubectl describe pod report-28741230-9q8wd -n growlytics
+  [info] pod/growlytics/ingest-6d8c7b5f9-m2kzp 1/1 Running r=3 last=5h age=2d node="k3s-agent-2" c="app" init=false starting=false | kubectl describe pod ingest-6d8c7b5f9-m2kzp -n growlytics
+  [info] pod/kube-system/traefik-6f5f87584-x7k2p 1/1 Running r=7 last=20h age=12d node="k3s-cp-1" c="app" init=false starting=false | kubectl describe pod traefik-6f5f87584-x7k2p -n kube-system
+workloads: deploy 7/11 sts 2/4 ds 1/1 | kubectl get deploy,sts,ds -A
+  jobs ok failed=1 active=1 | kubectl get jobs -A --field-selector status.successful=0
+  cron ok total=2 suspended=1 last=3m | kubectl get cronjobs -A
+  [failing] deployment/ci/migrate 0/1 failed=false suspended=false | kubectl describe deployment migrate -n ci
+  [failing] deployment/monitoring/grafana 0/1 failed=false suspended=false | kubectl describe deployment grafana -n monitoring
+  [failing] deployment/shop/payments-worker 0/2 failed=false suspended=false | kubectl describe deployment payments-worker -n shop
+  [failing] deployment/staging/api 0/1 failed=false suspended=false | kubectl describe deployment api -n staging
+  [failing] statefulset/monitoring/loki-backend 0/1 failed=false suspended=false | kubectl describe statefulset loki-backend -n monitoring
+  [failing] statefulset/staging/postgres 0/1 failed=false suspended=false | kubectl describe statefulset postgres -n staging
+  [failing] job/ci/nightly-e2e-28741000 0/0 failed=true suspended=false | kubectl describe job nightly-e2e-28741000 -n ci
+  [minor] cronjob/growlytics/report-weekly 0/0 failed=false suspended=true | kubectl describe cronjob report-weekly -n growlytics
+events: ok total=9 truncated=false reasons=7 objects=9 counted=1 | kubectl events -A --types=Warning
+  <1m BackOff pod/monitoring/loki-backend-0 c="ingester" x112 counted=false | kubectl describe pod loki-backend-0 -n monitoring
+  1m Unhealthy pod/monitoring/grafana-5d8f7c6b9-wq2lx c="grafana" x27 counted=false | kubectl describe pod grafana-5d8f7c6b9-wq2lx -n monitoring
+  2m BackOff pod/shop/payments-worker-6c9f7d8b5-xk2lp c="worker" x41 counted=false | kubectl describe pod payments-worker-6c9f7d8b5-xk2lp -n shop
+  3m Unhealthy pod/shop/payments-api-5f7b8c9d4-tq8vn c="api" x2 counted=false | kubectl describe pod payments-api-5f7b8c9d4-tq8vn -n shop
+  5m FailedMount pod/growlytics/ingest-6d8c7b5f9-m2kzp c="" x3 counted=true | kubectl describe pod ingest-6d8c7b5f9-m2kzp -n growlytics
+  6m FailedScheduling pod/ci/runner-build-8812-k7x2p c="" x4 counted=false | kubectl describe pod runner-build-8812-k7x2p -n ci
+  22m Failed pod/staging/api-7f6d9c4b8-2mzqt c="api" x9 counted=false | kubectl describe pod api-7f6d9c4b8-2mzqt -n staging
+  41m BackoffLimitExceeded job/ci/nightly-e2e-28741000 c="" x1 counted=false | kubectl describe job nightly-e2e-28741000 -n ci
+  48m Evicted pod/growlytics/report-28741230-9q8wd c="" x1 counted=false | kubectl describe pod report-28741230-9q8wd -n growlytics
+k3s: shown=true hidden="" | kubectl get deploy,ds -n kube-system
+  [ok] deployment/kube-system/coredns present=true 1/1 | kubectl describe deployment coredns -n kube-system
+  [ok] deployment/kube-system/traefik present=true 1/1 | kubectl describe deployment traefik -n kube-system
+  [ok] deployment/kube-system/metrics-server present=true 1/1 | kubectl describe deployment metrics-server -n kube-system
+  [ok] deployment/kube-system/local-path-provisioner present=true 1/1 | kubectl describe deployment local-path-provisioner -n kube-system
+  servicelb ok 1/1 pending=1 | kubectl get svc -A --field-selector spec.type=LoadBalancer
+  helm ok [traefik traefik-crd] failed=0 | kubectl get helmcharts -A
+  etcd shown=true reconciled=false known=true 4h on "k3s-cp-1" | kubectl get etcdsnapshotfiles
+top pods: ok reporting=5
+  pod/monitoring/prometheus-k8s-0 1420m 3172Mi
+  pod/shop/payments-api-5f7b8c9d4-tq8vn 910m 612Mi
+  pod/growlytics/ingest-6d8c7b5f9-m2kzp 770m 1434Mi
+  pod/kube-system/traefik-6f5f87584-x7k2p 310m 98Mi
+  pod/kube-system/coredns-ccb96694c-8xq2z 20m 41Mi

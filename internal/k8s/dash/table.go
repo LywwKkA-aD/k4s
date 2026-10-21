@@ -167,6 +167,23 @@ func getTable(ctx context.Context, rc rest.Interface, path string, o listOpts) (
 	return t, len(body), err
 }
 
+// getRaw GETs a non-resource path such as /readyz and returns the body even
+// when the status is an error, since /readyz explains a failure in it.
+func getRaw(ctx context.Context, rc rest.Interface, path string, params map[string]string) ([]byte, error) {
+	if !usable(rc) {
+		return nil, errNoREST
+	}
+	req := rc.Get().AbsPath(path).SetHeader("Accept", "application/json, */*")
+	for k, v := range params {
+		req = req.Param(k, v)
+	}
+	body, err := req.Do(ctx).Raw()
+	if err != nil {
+		return body, fmt.Errorf("get %s: %w", path, err)
+	}
+	return body, nil
+}
+
 // usable rejects a nil interface and a typed nil *rest.RESTClient, which a
 // fake clientset hands out.
 func usable(rc rest.Interface) bool {

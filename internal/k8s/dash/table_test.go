@@ -178,9 +178,11 @@ func BenchmarkDecodePodsTable(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(body)))
 			for b.Loop() {
-				if _, err := decodeTable(body); err != nil {
+				tb, err := decodeTable(body)
+				if err != nil {
 					b.Fatal(err)
 				}
+				_ = podRowsFrom(tb, "", fixedNow)
 			}
 		})
 	}

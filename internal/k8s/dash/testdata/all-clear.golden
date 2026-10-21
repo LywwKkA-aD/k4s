@@ -1,0 +1,38 @@
+scope: "" fallback=false
+verdict: all clear
+next:
+  daily: kubectl get networkpolicy -A    # which traffic is restricted?
+cluster: kubectl get '--raw=/readyz?verbose'
+  api ok ready=true 8/8 etcd=ok sev=ok
+  version ok v1.36.3+k3s1 distro="k3s" etcd=true control-planes=1
+  you ok "devops-friend"
+  age ok 212d known=true
+  ns ok 7 terminating=0
+  storage ok 1/1 bound pending=0 lost=0 | kubectl get pvc -A
+  network ok svc=2 known=true lb=1 pending=0 [] | kubectl get svc -A --field-selector spec.type=LoadBalancer
+nodes: ok metrics=ok 3/3 ready cpu=34% mem=56%
+  [ok] k3s-agent-1 [] Ready cpu=52% mem=43% pods=2/110 age=212d | kubectl describe node k3s-agent-1
+  [ok] k3s-agent-2 [] Ready cpu=14% mem=39% pods=3/110 age=98d | kubectl describe node k3s-agent-2
+  [ok] k3s-cp-1 [control-plane etcd master] Ready cpu=38% mem=71% pods=6/250 age=212d | kubectl describe node k3s-cp-1
+pods: ok total=11 running=10 completed=1 waiting=0 failing=0 evicted=0 other=0 notok=0 | kubectl get pods -A
+  failing []
+  per node [{k3s-agent-1 2} {k3s-agent-2 3} {k3s-cp-1 6}]
+workloads: deploy 7/7 sts 0/0 ds 1/1 | kubectl get deploy,sts,ds -A
+  jobs ok failed=0 active=0 | kubectl get jobs -A --field-selector status.successful=0
+  cron ok total=0 suspended=0 last=<1m | kubectl get cronjobs -A
+events: ok total=6 truncated=false reasons=3 objects=6 counted=0 | kubectl events -A --types=Warning
+  1m DNSConfigForming pod/kube-system/svclb-traefik-4a1b2c3d-abcde c="" x20 counted=false | kubectl describe pod svclb-traefik-4a1b2c3d-abcde -n kube-system
+  2m Unhealthy pod/kube-system/coredns-ccb96694c-8xq2z c="coredns" x1 counted=false | kubectl describe pod coredns-ccb96694c-8xq2z -n kube-system
+  4m Unhealthy pod/kube-system/traefik-6f5f87584-x7k2p c="traefik" x2 counted=false | kubectl describe pod traefik-6f5f87584-x7k2p -n kube-system
+  6m Unhealthy pod/kube-system/local-path-provisioner-5cf85fd84d-old01 c="local-path-provisioner" x2 counted=false | kubectl describe pod local-path-provisioner-5cf85fd84d-old01 -n kube-system
+  38m BackOff pod/kube-system/helm-install-traefik-crd-8x2kq c="helm" x4 counted=false | kubectl describe pod helm-install-traefik-crd-8x2kq -n kube-system
+  52m Unhealthy pod/kube-system/metrics-server-5985cbc9d7-9w4kq c="metrics-server" x3 counted=false | kubectl describe pod metrics-server-5985cbc9d7-9w4kq -n kube-system
+k3s: shown=true hidden="" | kubectl get deploy,ds -n kube-system
+  [ok] deployment/kube-system/coredns present=true 1/1 | kubectl describe deployment coredns -n kube-system
+  [ok] deployment/kube-system/traefik present=true 1/1 | kubectl describe deployment traefik -n kube-system
+  [ok] deployment/kube-system/metrics-server present=true 1/1 | kubectl describe deployment metrics-server -n kube-system
+  [ok] deployment/kube-system/local-path-provisioner present=true 1/1 | kubectl describe deployment local-path-provisioner -n kube-system
+  servicelb ok 1/1 pending=0 | kubectl get svc -A --field-selector spec.type=LoadBalancer
+  helm ok [traefik traefik-crd] failed=0 | kubectl get helmcharts -A
+  etcd shown=true reconciled=false known=true 4h on "k3s-cp-1" | kubectl get etcdsnapshotfiles
+top pods: ok reporting=0

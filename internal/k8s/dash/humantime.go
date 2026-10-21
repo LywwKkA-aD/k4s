@@ -103,3 +103,11 @@ func FormatAgo(d time.Duration) string {
 		return strconv.Itoa(int(d/day)) + "d"
 	}
 }
+
+// since is now-t coarsened, or zero for a zero t.
+func since(now, t time.Time) time.Duration {
+	if t.IsZero() {
+		return 0
+	}
+	return Coarsen(now.Sub(t))
+}
