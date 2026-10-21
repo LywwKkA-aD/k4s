@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"strings"
 
 	"github.com/LywwKkA-aD/k4s/internal/version"
 )
@@ -121,11 +122,36 @@ func parseInterspersed(fs *flag.FlagSet, args []string) error {
 		}
 		rest := fs.Args()
 		consumed := len(args) - len(rest)
-		if len(rest) == 0 || (consumed > 0 && args[consumed-1] == "--") {
+		if len(rest) == 0 || endsWithTerminator(fs, args[:consumed]) {
 			return nil
 		}
 		args = rest[1:]
 	}
+}
+
+// endsWithTerminator reports whether consumed, the arguments the flag package
+// took, ends in a real "--". A "--" that is the value of a flag, as in
+// `--kubeconfig --`, is not one.
+func endsWithTerminator(fs *flag.FlagSet, consumed []string) bool {
+	for i := 0; i < len(consumed); i++ {
+		arg := consumed[i]
+		if arg == "--" {
+			return i == len(consumed)-1
+		}
+		name, _, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		if hasValue {
+			continue
+		}
+		if f := fs.Lookup(name); f != nil && !isBoolFlag(f) {
+			i++
+		}
+	}
+	return false
+}
+
+func isBoolFlag(f *flag.Flag) bool {
+	b, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return ok && b.IsBoolFlag()
 }
 
 func versionLine() string {
