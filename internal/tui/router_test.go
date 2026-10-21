@@ -156,7 +156,7 @@ func TestLeafViewsAreSkippedByHistory(t *testing.T) {
 
 	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), colon("pods")...)
 	m, _ = tuitest.Drive(t, m, views.DescribeRequestMsg{Kind: "pod", Namespace: tuitest.NamespaceDemo, Name: tuitest.PodWeb1})
-	requireView(t, m, "pod · web-1")
+	requireView(t, m, "pod · web-1 · built-in")
 	requireScreen(t, m, "Name:", tuitest.PodWeb1)
 	if !strings.Contains(footer(m), "kubectl describe pod web-1 -n demo") {
 		t.Errorf("describe footer = %q", footer(m))

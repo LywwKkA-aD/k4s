@@ -51,7 +51,7 @@ func TestDescribeRendersEachKind(t *testing.T) {
 			if got := m.Command().String(); got != tc.kubectl {
 				t.Errorf("Command = %q, want %q", got, tc.kubectl)
 			}
-			if got := m.Title(); got != string(tc.kind)+" · "+tc.name {
+			if got := m.Title(); got != string(tc.kind)+" · "+tc.name+" · built-in" {
 				t.Errorf("Title = %q for content that fits", got)
 			}
 		})
@@ -128,7 +128,7 @@ func TestDescribeStaticContract(t *testing.T) {
 	if m.CapturesKeys() || m.Close() != nil {
 		t.Error("describe is read-only and owns nothing")
 	}
-	if n := len(m.Help()); n != 2 {
-		t.Errorf("help bindings = %d, want scroll and refresh", n)
+	if got := strings.Join(tuitest.HelpKeys(m), " "); got != "↑↓/pgup/pgdn / n/N r" {
+		t.Errorf("help keys = %q, want scroll, search, next/prev and refresh", got)
 	}
 }

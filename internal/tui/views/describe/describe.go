@@ -1,4 +1,7 @@
-// Package describe is the scrollable describe view (kubectl describe-style).
+// Package describe is the describe view: `kubectl describe <kind> <name>`
+// run through the session's kubectl, exactly as the footer shows it, with
+// the built-in describer as the fallback when kubectl is missing, fails or
+// times out. The title says which one wrote the text.
 package describe
 
 import (
@@ -7,24 +10,28 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
+	"github.com/LywwKkA-aD/k4s/internal/tui/pager"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
-	// fetchTimeout covers both calls of a describe, the object and its
-	// events, the second of which can be slow in a busy namespace.
+	// fetchTimeout covers both calls of the built-in describer, the object
+	// and its events, the second of which can be slow in a busy namespace.
 	fetchTimeout      = 10 * time.Second
 	minViewportHeight = 5
 	// actDescribe is the one action in flight: the fetch.
 	actDescribe = "describe"
+
+	sourceBuiltIn = "built-in"
+	sourceKubectl = "via kubectl"
 )
 
 // Kind enumerates the resources the describe view supports.
@@ -37,9 +44,10 @@ const (
 	KindService    Kind = "service"
 )
 
-// Model is the describe view (scrollable text).
+// Model is the describe view.
 type Model struct {
 	client    *k8s.Client
+	kubectl   Kubectl
 	kind      Kind
 	namespace string
 	name      string
@@ -50,47 +58,51 @@ type Model struct {
 	tok      async.Token
 	inFlight async.InFlight
 
-	viewport     viewport.Model
-	rawContent   string // last-fetched content, kept so we can re-wrap on resize
-	contentWidth int    // width the viewport was last sized to
-	err          error
-	loaded       bool
+	pager  pager.Model
+	err    error
+	loaded bool
+	// builtin is set when the text shown is the built-in describer's;
+	// source names who wrote it, for the title.
+	builtin bool
+	source  string
 
-	scrollKey  key.Binding
 	refreshKey key.Binding
+}
+
+// Option changes how New builds the view.
+type Option func(Model) Model
+
+// WithKubectl makes the view run `kubectl describe` through k before it
+// falls back to the built-in describer.
+func WithKubectl(k Kubectl) Option {
+	return func(m Model) Model {
+		m.kubectl = k
+		return m
+	}
 }
 
 // New constructs a describe view for the given resource. With a client its
 // first fetch is already in flight: Init sends it.
-func New(client *k8s.Client, kind Kind, namespace, name string) Model {
-	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
-	// Content is wrapped to the width, so there is nothing to pan to, and
-	// h/l must not pan the text off its first columns.
-	vp.SetHorizontalStep(0)
+func New(client *k8s.Client, kind Kind, namespace, name string, opts ...Option) Model {
 	tok := async.New()
 	var inFlight async.InFlight
 	if client != nil {
 		inFlight, _ = inFlight.Begin(actDescribe, tok)
 	}
-	return Model{
-		client:    client,
-		kind:      kind,
-		namespace: namespace,
-		name:      name,
-		tok:       tok,
-		inFlight:  inFlight,
-		viewport:  vp,
-		// Display-only binding so the footer surfaces scroll affordance —
-		// the actual j/k/pgup/pgdn handling lives inside viewport.Update.
-		scrollKey: key.NewBinding(
-			key.WithKeys("up", "down", "j", "k", "pgup", "pgdown"),
-			key.WithHelp("↑↓/pgup/pgdn", "scroll"),
-		),
-		refreshKey: key.NewBinding(
-			key.WithKeys("r"),
-			key.WithHelp("r", "refresh"),
-		),
+	m := Model{
+		client:     client,
+		kind:       kind,
+		namespace:  namespace,
+		name:       name,
+		tok:        tok,
+		inFlight:   inFlight,
+		pager:      pager.New(),
+		refreshKey: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 	}
+	for _, opt := range opts {
+		m = opt(m)
+	}
+	return m
 }
 
 // Init sends the first describe fetch.
@@ -101,46 +113,62 @@ func (m Model) Init() tea.Cmd {
 	return m.fetch()
 }
 
-// fetch describes the object under the current Token.
+// output is what a fetch wrote, and why kubectl did not write it.
+type output struct {
+	text    string
+	version string
+	builtin bool
+	// kubectlErr is why kubectl did not describe; nil when it did or was
+	// not asked to.
+	kubectlErr error
+}
+
+// fetch describes the object under the current Token: kubectl first, the
+// built-in describer when kubectl cannot.
 func (m Model) fetch() tea.Cmd {
-	c, kind, ns, name := m.client, m.kind, m.namespace, m.name
-	return async.Run(m.tok, fetchTimeout, func(ctx context.Context) (string, error) {
-		switch kind {
-		case KindPod:
-			return c.DescribePod(ctx, ns, name)
-		case KindDeployment:
-			return c.DescribeDeployment(ctx, ns, name)
-		case KindService:
-			return c.DescribeService(ctx, ns, name)
+	k, c, kind, ns, name, cmd := m.kubectl, m.client, m.kind, m.namespace, m.name, m.command()
+	return async.Run(m.tok, kubectlTimeout+fetchTimeout, func(ctx context.Context) (output, error) {
+		var kubectlErr error
+		if k.enabled() {
+			text, version, err := k.describe(ctx, cmd)
+			if err == nil {
+				return output{text: text, version: version}, nil
+			}
+			kubectlErr = err
 		}
-		return "", fmt.Errorf("unsupported kind: %s", kind)
+		text, err := builtIn(ctx, c, kind, ns, name)
+		return output{text: text, builtin: true, kubectlErr: kubectlErr}, err
 	})
 }
 
-// Update handles size/refresh/content and forwards scroll keys to the viewport.
-//
-// The incoming WindowSizeMsg.Height has already been adjusted by the root
-// model to be the body area only — no chrome math here.
+func builtIn(ctx context.Context, c *k8s.Client, kind Kind, ns, name string) (string, error) {
+	switch kind {
+	case KindPod:
+		return c.DescribePod(ctx, ns, name)
+	case KindDeployment:
+		return c.DescribeDeployment(ctx, ns, name)
+	case KindService:
+		return c.DescribeService(ctx, ns, name)
+	}
+	return "", fmt.Errorf("unsupported kind: %s", kind)
+}
+
+// Update handles size, refresh and content; scroll and search keys go to
+// the pager. The incoming WindowSizeMsg is already the body's size.
 func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.viewport.SetWidth(msg.Width)
-		m.viewport.SetHeight(max(msg.Height, minViewportHeight))
-		m.contentWidth = msg.Width
-		// Reflow the cached content for the new width — without this the
-		// viewport keeps the original wrapping and lines clip on shrink.
-		if m.rawContent != "" {
-			m.viewport.SetContent(wrap(m.rawContent, m.contentWidth))
-		}
+		m.pager = m.pager.SetSize(msg.Width, max(msg.Height, minViewportHeight))
+		return m, nil
 	case tea.KeyPressMsg:
-		if key.Matches(msg, m.refreshKey) && m.client != nil {
+		if !m.pager.CapturesKeys() && key.Matches(msg, m.refreshKey) && m.client != nil {
 			return m.refresh()
 		}
-	case async.Result[string]:
-		return m.onContent(msg), nil
+	case async.Result[output]:
+		return m.onContent(msg)
 	}
 	var cmd tea.Cmd
-	m.viewport, cmd = m.viewport.Update(msg)
+	m.pager, cmd = m.pager.Update(msg)
 	return m, cmd
 }
 
@@ -158,33 +186,48 @@ func (m Model) refresh() (views.View, tea.Cmd) {
 
 // onContent takes the answer to the fetch in flight and drops any other:
 // one from another describe view, or from a fetch this one has moved past.
-func (m Model) onContent(msg async.Result[string]) Model {
+// The text is made inert before it is laid out: kubectl prints what the
+// cluster holds.
+func (m Model) onContent(msg async.Result[output]) (Model, tea.Cmd) {
 	var ok bool
 	if m.inFlight, ok = m.inFlight.End(actDescribe, msg.Token); !ok {
-		return m
+		return m, nil
 	}
-	m.err = msg.Err
-	m.loaded = true
+	out := msg.Value
+	m.err, m.loaded = msg.Err, true
+	m.builtin = out.builtin
+	m.source = sourceOf(out)
 	if msg.Err == nil {
-		m.rawContent = msg.Value
-		m.viewport.SetContent(wrap(msg.Value, m.contentWidth))
-		m.viewport.GotoTop()
+		m.pager = m.pager.SetContent(sanitize.Text(out.text))
 	}
-	return m
+	return m, fallbackStatus(out.kubectlErr)
 }
 
-// wrap reflows long lines to the given width. lipgloss.Width().Render() does
-// NOT word-wrap reliably (it pads short lines and clips long ones) — use the
-// ANSI-aware wrapper from charmbracelet/x/ansi instead. width <= 0 means
-// "don't wrap" (we have not been sized yet).
-func wrap(content string, width int) string {
-	if width <= 0 {
-		return content
+func sourceOf(out output) string {
+	switch {
+	case out.builtin:
+		return sourceBuiltIn
+	case out.version == "":
+		return sourceKubectl
 	}
-	return ansi.Wrap(content, width, "")
+	return sourceKubectl + " " + out.version
 }
 
-// View renders the viewport or a placeholder.
+// fallbackStatus says why kubectl did not describe; nothing when it did.
+func fallbackStatus(err error) tea.Cmd {
+	if err == nil {
+		return nil
+	}
+	text, missing := fallbackNote(err)
+	level := status.Warn
+	if missing {
+		level = status.Info
+	}
+	msg := views.StatusMsg{Level: level, Text: text}
+	return func() tea.Msg { return msg }
+}
+
+// View renders the text or a placeholder.
 func (m Model) View() string {
 	if m.client == nil {
 		return styles.Warn.Render("no kubeconfig")
@@ -193,43 +236,52 @@ func (m Model) View() string {
 		return styles.Hint.Render("loading describe…")
 	}
 	if m.err != nil {
-		return styles.Warn.Render("describe failed: " + m.err.Error())
+		return styles.Warn.Render("describe failed: " + sanitize.Line(m.err.Error()))
 	}
-	return m.viewport.View()
+	return m.pager.View()
 }
 
-// Title implements views.View. Appends a scroll indicator so the user knows
-// (a) there is more content below and (b) where they are in it.
+// Title implements views.View: the object, who described it and where
+// the view is in the text.
 func (m Model) Title() string {
 	base := string(m.kind) + " · " + m.name
 	if !m.loaded || m.err != nil {
 		return base
 	}
-	pct := int(m.viewport.ScrollPercent() * 100)
-	switch {
-	case m.viewport.AtTop() && m.viewport.AtBottom():
-		// Content fits — nothing to scroll.
-		return base
-	case m.viewport.AtBottom():
-		return base + " · end"
-	case m.viewport.AtTop():
-		return base + " · top · ↓ more"
-	default:
-		return fmt.Sprintf("%s · %d%%", base, pct)
+	base += " · " + m.source
+	if pos := m.pager.Position(); pos != "" {
+		return base + " · " + pos
 	}
+	return base
 }
 
-// Command implements views.View.
+// Command implements views.View: the command the view runs. It is
+// approximate once the built-in describer has written the text, which
+// leaves out what kubectl would show.
 func (m Model) Command() kubectl.Cmd {
+	c := m.command()
+	c.Approx = m.loaded && m.err == nil && m.builtin
+	return c
+}
+
+func (m Model) command() kubectl.Cmd {
 	return kubectl.New("describe", string(m.kind), m.name, "-n", m.namespace)
 }
 
 // Help implements views.View.
-func (m Model) Help() []key.Binding { return []key.Binding{m.scrollKey, m.refreshKey} }
+func (m Model) Help() []key.Binding { return append(m.pager.Help(), m.refreshKey) }
 
-// CapturesKeys implements views.View. Describe is read-only — global keys
-// pass through.
-func (m Model) CapturesKeys() bool { return false }
+// CapturesKeys implements views.View: the search prompt takes every key.
+func (m Model) CapturesKeys() bool { return m.pager.CapturesKeys() }
+
+// Back implements views.BackHandler: Esc clears a search before it leaves.
+func (m Model) Back() (views.View, tea.Cmd, bool) {
+	if !m.pager.Searching() {
+		return m, nil, false
+	}
+	m.pager = m.pager.ClearSearch()
+	return m, nil, true
+}
 
 // Close implements views.View. No long-lived resources held.
 func (m Model) Close() error { return nil }

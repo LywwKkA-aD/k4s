@@ -88,11 +88,21 @@ type DescribeRequestMsg struct {
 }
 
 // ResourceRef names the object a request was made for: the row the user
-// acted on, which may stand for several pods.
+// acted on, which may stand for several pods. Kind is the name kubectl
+// takes ("pod", "deployment", "service", "namespace"); Namespace is ""
+// for a cluster-scoped object.
 type ResourceRef struct {
-	Kind      string // "pod", "deployment" or "service"
+	Kind      string
 	Namespace string
 	Name      string
+}
+
+// Selection is implemented by views that show one object or have a row
+// under the cursor, for the root to act on. ok is false while the list is
+// empty or still loading, or on a row that is no object (the namespaces
+// view's <all>); the root then says so in the status row.
+type Selection interface {
+	Selected() (ref ResourceRef, ok bool)
 }
 
 // TailPromptRequestMsg asks the root model to open the tail-lines prompt for

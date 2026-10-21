@@ -12,6 +12,8 @@
 //     to a freshly built view with Restore, and drops them all on :ctx.
 //   - BackHandler: Esc is the view's first, so a committed filter clears
 //     before Esc leaves the view.
+//   - Selection: the object the view shows or the row under its cursor,
+//     for the root to act on.
 //
 // Views never import each other; they ask the root for what lies outside
 // them with the messages in this package (DescribeRequestMsg,
