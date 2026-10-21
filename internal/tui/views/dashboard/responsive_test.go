@@ -235,6 +235,48 @@ func boxText(screen, head string) string {
 	return strings.Join(out, "\n")
 }
 
+// TestSparkClosedMinutesStayPut: in the medium layout the history is one
+// cell a minute, and a metrics sample redraws only the minute still open.
+// The strip used to bin backwards from the newest sample, so every cell
+// moved on every sample and the panel repainted all of it every 15s.
+func TestSparkClosedMinutesStayPut(t *testing.T) {
+	t.Parallel()
+
+	// CPU repeats 5%, 5%, 95% sample by sample: four samples in a row
+	// average 27% or 50% depending on where they start.
+	f := newFeed(busyK3s)
+	f.set(func() dash.Snapshot {
+		s := busyK3s()
+		slot := int(f.clock.Now().Sub(start) / (15 * time.Second))
+		capacity := s.Nodes.CPU.Capacity
+		s.Nodes.CPU = meter(capacity*[]int64{5, 5, 95}[slot%3]/100, capacity, dash.SevOK)
+		return s
+	})
+	m := mount(t, f, 120, 34)
+	m = advance(t, m, f, 5*time.Minute) // to 14:07:00, a sample that opens a minute
+	first := sparkCells(t, tuitest.Screen(m))
+	m = advance(t, m, f, 45*time.Second) // three more samples in that minute
+	last := sparkCells(t, tuitest.Screen(m))
+	if len(first) != len(last) || len([]rune(first)) < 3 {
+		t.Fatalf("spark cells %q then %q, want the same width", first, last)
+	}
+	keep := func(s string) string { r := []rune(s); return string(r[:len(r)-1]) }
+	if keep(first) != keep(last) {
+		t.Fatalf("closed minutes moved within one minute:\n%q\n%q", first, last)
+	}
+}
+
+// sparkCells is the cpu spark row of the medium nodes panel, without the
+// label and the total.
+func sparkCells(t *testing.T, screen string) string {
+	t.Helper()
+	m := regexp.MustCompile(`cpu ≈\d+m +([ ▁▂▃▄▅▆▇█]+?)  \d+% of`).FindStringSubmatch(screen)
+	if m == nil {
+		t.Fatalf("no cpu spark row:\n%s", screen)
+	}
+	return m[1]
+}
+
 // TestPanelNumbersNeverChange renders every layout and checks that each
 // panel drawn carries its own number.
 func TestPanelNumbersNeverChange(t *testing.T) {

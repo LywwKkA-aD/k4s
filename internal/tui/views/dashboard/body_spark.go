@@ -30,14 +30,14 @@ func sparkLines(f frame, w, size int) []string {
 	right := max(ansi.StringWidth(cpu), ansi.StringWidth(mem))
 	cells := max(w-sparkLeadW-2-right, 1)
 	span := f.ds.Approx.Render(padRight(styles.GlyphApprox+minutesLabel(cells), sparkLeadW-len("cpu  ")))
-	row := func(name string, s series, total string) string {
-		return name + " " + span + " " + viz.Spark(f.th, cells, perMinute(s.values()), 100) + "  " + padRight(total, right)
+	row := func(name string, m clockMinutes, total string) string {
+		return name + " " + span + " " + viz.Spark(f.th, cells, m.values(), 100) + "  " + padRight(total, right)
 	}
 	sel := f.focus.panel == dash.PanelNodes && f.focus.row == chartKey
 	out := []string{
 		"",
-		f.listLine(chartIndent+row("cpu", f.hist.cpu, cpu), sel),
-		" " + chartIndent + row("mem", f.hist.mem, mem),
+		f.listLine(chartIndent+row("cpu", f.hist.cpuMin, cpu), sel),
+		" " + chartIndent + row("mem", f.hist.memMin, mem),
 	}
 	if size >= 4 {
 		foot := f.ds.Approx.Render(styles.GlyphApprox) + f.muted(" history from kubectl top nodes · "+viz.HotGlyph+" ≥ 85%")
@@ -62,30 +62,4 @@ func minutesLabel(cells int) string {
 		m = math.Round(m/5) * 5
 	}
 	return fmt.Sprintf("%dm", int(m))
-}
-
-// perMinute averages the samples a minute at a time, the newest minute
-// last; a minute without samples is NaN, as time away shows blank.
-func perMinute(vals []float64) []float64 {
-	per := int(time.Minute / metricsStep)
-	n := (len(vals) + per - 1) / per
-	out := make([]float64, n)
-	for i := range n {
-		end := len(vals) - (n-1-i)*per
-		out[i] = meanOf(vals[max(end-per, 0):end])
-	}
-	return out
-}
-
-func meanOf(vals []float64) float64 {
-	sum, k := 0.0, 0
-	for _, v := range vals {
-		if !math.IsNaN(v) {
-			sum, k = sum+v, k+1
-		}
-	}
-	if k == 0 {
-		return math.NaN()
-	}
-	return sum / float64(k)
 }

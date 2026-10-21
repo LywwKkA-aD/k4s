@@ -186,3 +186,50 @@ func TestHistoryRescopeDropsOnlyThePodSeries(t *testing.T) {
 		t.Fatalf("cluster cpu = %v, want the cluster-wide sample kept", h.cpu.values())
 	}
 }
+
+// TestHistoryMinutesBinOnTheClock: the spark rows bin samples by the
+// wall-clock minute they were taken in, so a new sample changes only the
+// minute still open, and a closed minute never moves.
+func TestHistoryMinutesBinOnTheClock(t *testing.T) {
+	t.Parallel()
+
+	h := history{}
+	for i, cpu := range []int64{10, 20, 30, 40} { // 14:02:00 to 14:02:45
+		h = h.fold(metricsSnap(time.Duration(i)*15*time.Second, cpu, 50, 0))
+	}
+	if got := fmt.Sprint(h.cpuMin.values()); got != "[25]" {
+		t.Fatalf("one open minute: cpu = %s, want [25]", got)
+	}
+	h = h.fold(metricsSnap(time.Minute+10*time.Second, 80, 50, 0))
+	if got := fmt.Sprint(h.cpuMin.values()); got != "[25 80]" {
+		t.Fatalf("minute closed: cpu = %s, want [25 80]", got)
+	}
+	h = h.fold(metricsSnap(time.Minute+25*time.Second, 60, 50, 0))
+	if got := fmt.Sprint(h.cpuMin.values()); got != "[25 70]" {
+		t.Fatalf("only the open minute moves: cpu = %s, want [25 70]", got)
+	}
+	if got := fmt.Sprint(h.memMin.values()); got != "[50 50]" {
+		t.Fatalf("mem = %s, want [50 50]", got)
+	}
+}
+
+// TestHistoryMinutesMarkTimeAway: minutes without a sample are blank.
+func TestHistoryMinutesMarkTimeAway(t *testing.T) {
+	t.Parallel()
+
+	h := history{}.fold(metricsSnap(10*time.Second, 30, 60, 0))
+	h = h.fold(metricsSnap(4*time.Minute+10*time.Second, 40, 70, 0))
+	vals := h.cpuMin.values()
+	if len(vals) != 5 || vals[0] != 30 || vals[4] != 40 {
+		t.Fatalf("cpu = %v, want 30, three blank minutes, 40", vals)
+	}
+	for _, v := range vals[1:4] {
+		if !math.IsNaN(v) {
+			t.Fatalf("cpu = %v, want NaN for the minutes away", vals)
+		}
+	}
+	far := h.fold(metricsSnap(5*time.Hour, 40, 70, 0))
+	if n := len(far.cpuMin.values()); n != minuteLimit {
+		t.Fatalf("after hours away %d minutes kept, want the ring's %d", n, minuteLimit)
+	}
+}
