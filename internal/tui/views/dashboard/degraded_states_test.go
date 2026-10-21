@@ -164,10 +164,14 @@ func TestStaleBanner(t *testing.T) {
 	tests := []struct {
 		name     string
 		answered bool
+		keys     []string
 		want     string
 	}{
 		{name: "after an answer", answered: true, want: "○ stale since 14:02 · retry 5s"},
 		{name: "before any answer", want: "○ no answer since 14:02 · retry 5s"},
+		// With watch off nothing retries on its own: only r asks again.
+		{name: "watch off", answered: true, keys: []string{"w"}, want: "○ stale since 14:02 · paused, r retries"},
+		{name: "watch off after r", answered: true, keys: []string{"w", "r"}, want: "○ stale since 14:02 · paused, r retries"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -178,8 +182,9 @@ func TestStaleBanner(t *testing.T) {
 				s.Pods.Avail = dash.Avail{State: dash.StateStale, Stale: time.Minute, Unanswered: !tt.answered}
 				return s
 			}
-			screen := tuitest.Screen(mount(t, newFeed(base), wideW, wideH))
-			requireAll(t, screen, []string{tt.want, "▲ 3 CrashLoopBackOff"}, nil)
+			m, _ := press(t, mount(t, newFeed(base), wideW, wideH), tt.keys...)
+			screen := tuitest.Screen(m)
+			requireAll(t, screen, []string{tt.want, "▲ 3 CrashLoopBackOff"}, []string{"retry 0s"})
 		})
 	}
 }

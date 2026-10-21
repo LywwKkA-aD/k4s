@@ -53,6 +53,7 @@ func (m Model) frame() frame {
 		session: m.session,
 		hint:    hint,
 		retry:   m.next,
+		paused:  !m.poll.Enabled(),
 		th:      themeOf(ds),
 		ds:      ds,
 	}

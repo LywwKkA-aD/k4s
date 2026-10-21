@@ -28,6 +28,8 @@ type frame struct {
 	// answers; retry is when the poller asks again.
 	staleSince time.Time
 	retry      time.Duration
+	// paused is watch off: nothing is retried until r.
+	paused bool
 	// kind is the layout drawn: the narrow ones say less per line.
 	kind layoutKind
 	th   viz.Theme
