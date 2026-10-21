@@ -93,9 +93,8 @@ func (m Model) onKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		next, cmd := m.openFilter()
 		return next, cmd, true
 	case key.Matches(msg, m.watchKey):
-		var cmd tea.Cmd
-		m.poll, cmd = m.poll.WithEnabled(!m.poll.Enabled() && m.client != nil)
-		return m, cmd, true
+		next, cmd := m.toggleWatch()
+		return next, cmd, true
 	case key.Matches(msg, m.refreshKey):
 		next, cmd := m.refresh()
 		return next, cmd, true
@@ -108,6 +107,17 @@ func (m Model) onKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		return m, m.forward(), true
 	}
 	return m, nil, false
+}
+
+// toggleWatch is 'w': auto-refresh on or off. Without a client there is
+// nothing to refresh.
+func (m Model) toggleWatch() (Model, tea.Cmd) {
+	if m.client == nil {
+		return m, statusCmd(status.Warn, "no kubeconfig")
+	}
+	var cmd tea.Cmd
+	m.poll, cmd = m.poll.WithEnabled(!m.poll.Enabled())
+	return m, cmd
 }
 
 // refresh is 'r': a consistent read now, unless a list is in flight.
