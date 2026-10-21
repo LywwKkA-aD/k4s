@@ -29,11 +29,7 @@ func workloadsBody(f frame, w, h int) panelBody {
 	body := panelBody{info: workloadsInfo(f.snap.Workloads)}
 	bars := kindLines(f, w)
 	short := []string{" " + workloadsShort(f)}
-	need := 1
-	if len(items) > 0 {
-		need = min(len(items), minListRows) + 1 // rows plus their header
-	}
-	head := fitHead(h, need, slices.Concat(bars, []string{""}), bars, slices.Concat(short, []string{""}), short)
+	head := fitHead(h, workloadsNeed(len(items)), slices.Concat(bars, []string{""}), bars, slices.Concat(short, []string{""}), short)
 	if len(items) == 0 {
 		body.lines = append(slices.Clip(head), allReadyLine(f))
 		return body
@@ -44,12 +40,16 @@ func workloadsBody(f frame, w, h int) panelBody {
 	if n := needAttention(items); n > 0 {
 		attention = fmt.Sprintf("%d need attention", n)
 	}
-	body.footer = f.listFooter(dash.PanelWorkloads, len(items), hidden, attention)
+	rows := len(items)
+	if len(head) >= kindLineCount {
+		rows += 2 // the jobs and cron lines are rows too
+	}
+	body.footer = f.listFooter(dash.PanelWorkloads, rows, hidden, attention)
 	return body
 }
 
 // kindLines are the ready bars of deploy, sts and ds, all as wide, then
-// the jobs and cron lines.
+// the jobs and cron lines, which the cursor can stand on.
 func kindLines(f frame, w int) []string {
 	kinds := readyKinds(f.snap.Workloads)
 	countW := 0
@@ -57,15 +57,18 @@ func kindLines(f frame, w int) []string {
 		countW = max(countW, len(readyCount(k.sum)))
 	}
 	barW := max(w-1-kindW-2-2-countW-1, 1)
-	out := make([]string, 0, len(kinds)+2)
+	out := make([]string, 0, kindLineCount)
 	for _, k := range kinds {
-		out = append(out, labelled(k.label, kindBar(f, k, barW, countW)))
+		out = append(out, f.labelled(k.label, kindBar(f, k, barW, countW), ""))
 	}
-	return append(out, labelled("jobs", jobsText(f)), labelled("cron", cronText(f)))
+	return append(out, f.labelled("jobs", jobsText(f), jobsKey), f.labelled("cron", cronText(f), cronKey))
 }
 
-func labelled(label, text string) string {
-	return " " + padRight(label, kindW) + "  " + text
+// labelled is a line of panel 4 under its kind label; key names the row
+// it is, "" for a line the cursor skips.
+func (f frame) labelled(label, text, key string) string {
+	sel := key != "" && f.focus.panel == dash.PanelWorkloads && f.focus.row == key
+	return f.listLine(padRight(label, kindW)+"  "+text, sel)
 }
 
 func readyCount(k dash.KindSummary) string {

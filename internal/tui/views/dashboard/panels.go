@@ -70,12 +70,7 @@ func rowsOf(p dash.Panel, s dash.Snapshot, l layout) []row {
 		}
 		return out
 	case dash.PanelWorkloads:
-		items := workloadItems(s)
-		out := make([]row, 0, len(items))
-		for _, it := range items {
-			out = append(out, it.row)
-		}
-		return out
+		return workloadRows(s, l.drawsKindLines(s))
 	case dash.PanelEvents:
 		items := eventItems(s)
 		out := make([]row, 0, len(items))
