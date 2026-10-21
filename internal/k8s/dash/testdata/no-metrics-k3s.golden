@@ -1,0 +1,32 @@
+scope: "" fallback=false
+verdict: all clear
+next:
+  kubectl api-resources --api-group=metrics.k8s.io    # is the metrics API served?
+cluster: kubectl get '--raw=/readyz?verbose'
+  api ok ready=true 8/8 etcd=ok sev=ok
+  version ok v1.36.3+k3s1 distro="k3s" etcd=false control-planes=1
+  you ok "devops-friend"
+  age ok 212d known=true
+  ns ok 7 terminating=0
+  storage ok 1/1 bound pending=0 lost=0 | kubectl get pvc -A
+  network ok svc=2 known=true lb=1 pending=0 [] | kubectl get svc -A --field-selector spec.type=LoadBalancer
+nodes: ok metrics=absent 3/3 ready cpu=0% mem=0%
+  [ok] k3s-agent-1 [] Ready cpu=0% mem=0% pods=2/110 age=212d | kubectl describe node k3s-agent-1
+  [ok] k3s-agent-2 [] Ready cpu=0% mem=0% pods=3/110 age=98d | kubectl describe node k3s-agent-2
+  [ok] k3s-cp-1 [control-plane master] Ready cpu=0% mem=0% pods=6/250 age=212d | kubectl describe node k3s-cp-1
+pods: ok total=11 running=10 completed=1 waiting=0 failing=0 evicted=0 other=0 notok=0 | kubectl get pods -A
+  failing []
+  per node [{k3s-agent-1 2} {k3s-agent-2 3} {k3s-cp-1 6}]
+workloads: deploy 3/3 sts 0/0 ds 1/1 | kubectl get deploy,sts,ds -A
+  jobs ok failed=0 active=0 | kubectl get jobs -A --field-selector status.successful=0
+  cron ok total=0 suspended=0 last=<1m | kubectl get cronjobs -A
+events: ok total=0 truncated=false reasons=0 objects=0 counted=0 | kubectl events -A --types=Warning
+k3s: shown=true hidden="" | kubectl get deploy,ds -n kube-system
+  [ok] deployment/kube-system/coredns present=true 1/1 | kubectl describe deployment coredns -n kube-system
+  [ok] deployment/kube-system/traefik present=true 1/1 | kubectl describe deployment traefik -n kube-system
+  [ok] deployment/kube-system/metrics-server present=false 0/0 | kubectl describe deployment metrics-server -n kube-system
+  [ok] deployment/kube-system/local-path-provisioner present=true 1/1 | kubectl describe deployment local-path-provisioner -n kube-system
+  servicelb ok 1/1 pending=0 | kubectl get svc -A --field-selector spec.type=LoadBalancer
+  helm ok [traefik traefik-crd] failed=0 | kubectl get helmcharts -A
+  etcd shown=false reconciled=false known=false <1m on "" | kubectl
+top pods: absent reporting=0

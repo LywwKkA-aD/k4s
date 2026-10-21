@@ -84,6 +84,13 @@ func canIList(resource, ns string, namespaced bool) Cmd {
 	return withScope(ns, "auth", "can-i", "list", resource)
 }
 
+func describe(kind, name, ns string) Cmd {
+	if ns == "" {
+		return kubectl("describe", kind, name)
+	}
+	return kubectl("describe", kind, name, "-n", ns)
+}
+
 // shellQuote leaves words made only of safe characters bare and
 // single-quotes the rest, closing and reopening around embedded quotes.
 func shellQuote(s string) string {

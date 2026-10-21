@@ -40,6 +40,11 @@ func (s State) String() string {
 	return stateNames[s]
 }
 
+// keepsData reports whether a state leaves the previous payload in place.
+func (s State) keepsData() bool {
+	return s == StateStale || s == StateThrottled || s == StateFailed || s == StateUnauthorized
+}
+
 // classify maps a request error to a State. It is a local stand-in for the
 // M4.3 classifier and only needs the class, not the user-facing text.
 func classify(err error) State {

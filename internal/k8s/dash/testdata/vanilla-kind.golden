@@ -1,0 +1,24 @@
+scope: "" fallback=false
+verdict: all clear
+next:
+  kubectl api-resources --api-group=metrics.k8s.io    # is the metrics API served?
+  kubectl describe svc web-lb -n default    # why is the LoadBalancer pending?
+cluster: kubectl get '--raw=/readyz?verbose'
+  api ok ready=true 8/8 etcd=ok sev=ok
+  version ok v1.33.1 distro="" etcd=false control-planes=1
+  you ok "kubernetes-admin"
+  age ok 2d known=true
+  ns ok 2 terminating=0
+  storage ok 0/0 bound pending=0 lost=0 | kubectl get pvc -A
+  network ok svc=2 known=true lb=1 pending=1 [service/default/web-lb] | kubectl get svc -A --field-selector spec.type=LoadBalancer
+nodes: ok metrics=absent 1/1 ready cpu=0% mem=0%
+  [ok] kind-control-plane [control-plane] Ready cpu=0% mem=0% pods=2/110 age=2d | kubectl describe node kind-control-plane
+pods: ok total=2 running=2 completed=0 waiting=0 failing=0 evicted=0 other=0 notok=0 | kubectl get pods -A
+  failing []
+  per node [{kind-control-plane 2}]
+workloads: deploy 2/2 sts 0/0 ds 0/0 | kubectl get deploy,sts,ds -A
+  jobs ok failed=0 active=0 | kubectl get jobs -A --field-selector status.successful=0
+  cron ok total=0 suspended=0 last=<1m | kubectl get cronjobs -A
+events: ok total=0 truncated=false reasons=0 objects=0 counted=0 | kubectl events -A --types=Warning
+k3s: shown=false hidden="not k3s" | kubectl get deploy,ds -n kube-system
+top pods: absent reporting=0

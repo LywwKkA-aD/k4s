@@ -1,0 +1,23 @@
+scope: "shop" fallback=true
+verdict: partial
+next:
+  kubectl auth can-i --list -n shop    # what am I allowed to see here?
+  kubectl api-resources --api-group=metrics.k8s.io    # is the metrics API served?
+cluster: kubectl get '--raw=/readyz?verbose'
+  api ok ready=true 8/8 etcd=ok sev=ok
+  version ok v1.35.4-eks-3025e55 distro="eks" etcd=false control-planes=0
+  you ok "shop-dev"
+  age forbidden (kubectl auth can-i list namespaces) <1m known=false
+  ns forbidden (kubectl auth can-i list namespaces) 0 terminating=0
+  storage ok 1/1 bound pending=0 lost=0 | kubectl get pvc -n shop
+  network ok svc=1 known=true lb=0 pending=0 [] | kubectl get svc -n shop --field-selector spec.type=LoadBalancer
+nodes: forbidden (kubectl auth can-i list nodes) metrics=absent 0/0 ready cpu=0% mem=0%
+pods: ok total=6 running=6 completed=0 waiting=0 failing=0 evicted=0 other=0 notok=0 | kubectl get pods -n shop
+  failing []
+  per node [{ip-10-0-1-23.ec2.internal 6}]
+workloads: deploy 2/2 sts 0/0 ds 0/0 | kubectl get deploy,sts,ds -n shop
+  jobs ok failed=0 active=0 | kubectl get jobs -n shop --field-selector status.successful=0
+  cron ok total=0 suspended=0 last=<1m | kubectl get cronjobs -n shop
+events: ok total=0 truncated=false reasons=0 objects=0 counted=0 | kubectl events -n shop --types=Warning
+k3s: shown=false hidden="not k3s" | kubectl get deploy,ds -n kube-system
+top pods: absent reporting=0
