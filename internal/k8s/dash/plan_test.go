@@ -312,3 +312,30 @@ func TestMakePlanOldServersListTheServicesTable(t *testing.T) {
 		}
 	}
 }
+
+func TestMakePlanRetriesOnceTierAfterTransientFailure(t *testing.T) {
+	t.Parallel()
+
+	for _, st := range []State{StateStale, StateFailed, StateThrottled, StateNotReady, StateUnauthorized} {
+		t.Run(st.String(), func(t *testing.T) {
+			t.Parallel()
+			l := allFetched()
+			l[Version] = Usage{Fetched: true, At: 0, State: st}
+			p := MakePlan(PlanInput{Now: 5 * sec, Watch: true, Focus: active(), Ledger: l, Caps: Caps{Metrics: true}})
+			if !slices.Contains(dueSet(p), Version) {
+				t.Fatalf("Version not retried after %v: %v", st, dueSet(p))
+			}
+		})
+	}
+	for _, st := range []State{StateOK, StateForbidden, StateAbsent, StateUnsupported} {
+		t.Run("final "+st.String(), func(t *testing.T) {
+			t.Parallel()
+			l := allFetched()
+			l[Whoami] = Usage{Fetched: true, At: 0, State: st}
+			p := MakePlan(PlanInput{Now: 30 * sec, Watch: true, Focus: active(), Ledger: l, Caps: Caps{Metrics: true}})
+			if slices.Contains(dueSet(p), Whoami) {
+				t.Fatalf("Whoami retried after %v", st)
+			}
+		})
+	}
+}

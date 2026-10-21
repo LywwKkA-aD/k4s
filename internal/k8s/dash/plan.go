@@ -129,13 +129,27 @@ func remaining(e Endpoint, in PlanInput) time.Duration {
 	}
 	iv := intervalOf(e, in)
 	if iv < 0 {
-		return never
+		if onceDone(u.State) {
+			return never
+		}
+		iv = fastInterval(in) // a transient failure must not pin the answer to empty
 	}
 	left := u.At + iv - in.Now
 	if left <= base/2 {
 		return 0
 	}
 	return left
+}
+
+// onceDone reports whether a once-per-context endpoint has its final answer.
+// A timeout, 429, 5xx or expired credential is retried like a fast endpoint.
+func onceDone(s State) bool {
+	switch s {
+	case StateOK, StateForbidden, StateAbsent, StateUnsupported:
+		return true
+	default:
+		return false
+	}
 }
 
 // parked reports a 403 or 404 that is waiting out parkFor. The key is the
