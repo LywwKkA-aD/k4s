@@ -42,10 +42,17 @@ A fast, opinionated TUI for Kubernetes (k8s & k3s) — written in Go on top of
   deployments and services lists
 - **Context switcher** — `:ctx` to jump between kubeconfig contexts
 - **Watch by default** — `w` toggles 5s auto-refresh on the dashboard,
-  in `:top` and in the lists; the footer shows `--watch`
+  in `:top` and in the lists. k4s polls rather than holding a watch open,
+  so footer commands carry no `--watch`
 - **Readable on any theme** — dark / light background detection,
   `K4S_THEME` and `NO_COLOR` *(v1.1.5)*
-- **Footer hints** — every shortcut prints the equivalent `kubectl` command
+- **Footer commands you can paste** — the footer shows the `kubectl`
+  command behind the current screen, with `--context` and `--kubeconfig`
+  whenever a plain `kubectl` in your shell would reach another cluster;
+  `y` copies it. `≈` marks the few commands that do a little more or less
+  than k4s
+- **Status row** — an action that cannot run says why in the footer
+  instead of doing nothing
 - **Centred help popup** — `?` shows global + view-specific bindings
 
 ## Install
@@ -91,10 +98,43 @@ Requires Go 1.26+. `kubectl` on `PATH` is needed only for exec (`e`).
 ## Usage
 
 ```bash
-k4s              # kubeconfig from $KUBECONFIG, else ~/.kube/config
-k4s --version    # print the version and exit
-k4s --help       # list the flags and exit
+k4s                          # current context, starting in its namespace
+k4s --context staging -n web # another context and namespace
+k4s -A                       # all namespaces
+k4s --kubeconfig ./lab.yaml  # a kubeconfig of your choice
+k4s --version                # print the version and exit
+k4s --help                   # list the flags and exit
 ```
+
+| Flag                       | Meaning                                                              |
+| -------------------------- | -------------------------------------------------------------------- |
+| `--kubeconfig <file>`      | kubeconfig to use instead of the lookup below                        |
+| `--context <name>`         | context to use instead of the kubeconfig's current-context           |
+| `-n`, `--namespace <name>` | namespace to start in                                                |
+| `-A`, `--all-namespaces`   | start in all namespaces                                              |
+| `--theme <mode>`           | `auto`, `dark`, `light` or `mono`; wins over `K4S_THEME` and `NO_COLOR` |
+| `--no-preflight`           | do not run the credential plugin before the TUI starts; also `K4S_NO_PREFLIGHT=1` |
+
+A `--kubeconfig` or `--context` that cannot be loaded stops k4s before the
+TUI starts. Without `--kubeconfig`, k4s looks in this order:
+
+1. `$KUBECONFIG` (a list, as kubectl reads it);
+2. `~/.kube/config`;
+3. on Linux, the k3s server's own `/etc/rancher/k3s/k3s.yaml`, so k4s works
+   on a k3s node without setup. k3s writes that file for root only; when it
+   is not readable k4s prints how to make a copy for your user.
+
+k4s starts in the namespace the context sets, as kubectl does, and in all
+namespaces when it sets none; `-n` and `-A` override it. In the TUI,
+`:ns <name>` switches namespace and `:ns -A` shows all of them (`all` is a
+valid namespace name, so it means that namespace).
+
+Footer commands always reach the cluster k4s shows when pasted into the
+shell k4s was started from: `--context` is added after `:ctx` or when you
+passed `--context`, and `--kubeconfig` when k4s reads a file a plain
+`kubectl` would not (an explicit `--kubeconfig`, the k3s fallback). `y`
+copies the command through the terminal (OSC 52), which also works over
+SSH; inside tmux it needs `set -g set-clipboard on`.
 
 k4s never prints over the TUI. client-go errors and Kubernetes API warnings
 go to `$XDG_STATE_HOME/k4s/k4s.log` (default `~/.local/state/k4s/k4s.log`);
@@ -182,6 +222,8 @@ outside `k4s-demo`, so `kubectl get pods -A` is Forbidden.
 | -------- | ---------------------------------------------------------- |
 | `?`      | help popup (global + current view)                         |
 | `:`      | command bar (`:pods`, `:ns`, `:ctx`, `:top`, `:pf`, ...)   |
+| `:ns <name>` | switch namespace (`:ns -A` for all)                    |
+| `y`      | copy the footer's kubectl command (a letter in text prompts) |
 | `q`      | go home, then quit on the dashboard                        |
 | `Esc`    | back                                                       |
 | `Ctrl+C` | force quit                                                 |
@@ -295,15 +337,20 @@ network access.
 ```
 cmd/k4s/                entry point
 internal/
+  cli/                  command-line flags
+  startup/              kubeconfig lookup, starting namespace, preflight
+  cluster/              distribution detection (k3s, rke2, EKS, GKE, ...)
+  kubectl/              the kubectl command behind every action: argv,
+                        shell quoting, --context/--kubeconfig, runner
   tui/                  Bubble Tea root, views, styles, keymap, command bar
     views/{dashboard,pods,namespaces,deployments,services,
            contexts,top,describe,logs,forwards}/
-    {filter,command,help,...}
+    {overlay,status,async,filter,command,keys,...}
   k8s/                  client-go wrapper (pods/deployments/services/logs/
                         metrics/portforward/...)
   forwards/             port-forward state file + Manager (intents persist
                         across launches; SPDY sessions are in-process)
-  actions/              Action abstraction with kubectl-equivalent strings
+  logsink/              client-go and plugin output kept off the TUI
   version/              build version (ldflags stamp, else module version)
 deploy/seed/            demo manifests
 docker-compose.yml      single-node k3s for local development

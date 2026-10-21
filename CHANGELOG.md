@@ -7,9 +7,60 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
 
 ## [Unreleased]
 
+### Behaviour changes
+
+- k4s starts in the namespace the kubeconfig context sets, as kubectl does,
+  and `:ctx` lands in the new context's namespace. A context without a
+  namespace still starts in all namespaces; `-A` or `:ns -A` shows all
+  namespaces.
+- The question about saved port-forwards answers yes on Enter only: `y`
+  now copies the command.
+
+### Added
+
+- Flags `--kubeconfig`, `--context`, `-n`/`--namespace`,
+  `-A`/`--all-namespaces`, `--theme` and `--no-preflight` (also
+  `K4S_NO_PREFLIGHT`). A `--kubeconfig` or `--context` that cannot be
+  loaded stops k4s before the TUI starts.
+- On a k3s server without `$KUBECONFIG` or `~/.kube/config`, k4s reads
+  `/etc/rancher/k3s/k3s.yaml`. When that file is not readable, k4s prints
+  how to make a readable copy.
+- `y` copies the footer's kubectl command to the clipboard through the
+  terminal (OSC 52); inside tmux this needs `set -g set-clipboard on`.
+- `:ns <name>` and `:ns -A` switch the namespace of the current list.
+- A status row in the footer. Actions that cannot run say why, and a failed
+  credential preflight is shown there when the TUI starts.
+
 ### Changed
 
-- Built on Bubble Tea, Lip Gloss and Bubbles v2. Screens and keys are unchanged; small differences:
+- The footer is always two rows: key hints or a status message, then the
+  kubectl command.
+- Footer commands can be pasted as they are: they carry `--context` after
+  `:ctx` or when k4s was started with `--context`, and `--kubeconfig` when
+  k4s reads a kubeconfig that plain `kubectl` would not (`--kubeconfig`,
+  the k3s fallback). `≈` now marks only commands that differ from what k4s
+  does.
+- Footer commands no longer end in `--watch`: k4s refreshes by polling,
+  which `kubectl get --watch` does not do.
+- The multi-pod logs footer is a runnable command instead of a list of pods
+  in braces.
+- The pod list's READY, STATUS and RESTARTS columns count the way
+  `kubectl get pods` does, including init containers, native sidecars,
+  `Terminating` and `Evicted`.
+- The tail prompt names what the logs are for (`deployment/web · ns demo`),
+  and the footer shows the logs command it will open.
+- A port-forward prompt with a bad or busy port stays open and shows the
+  error.
+- Help closes on `?`, Esc or `q`; any other key closes it and does what it
+  does without help open.
+- The question about saved port-forwards ignores keys pressed in its first
+  400 ms.
+- Exec runs exactly the footer's command, without a shell, and uses
+  `k3s kubectl` when `kubectl` is not on `PATH`.
+- `:ctx` lists and loads contexts from the kubeconfig k4s started with.
+- The credential plugin login before the TUI starts gives up after 30 s;
+  `--no-preflight` skips it.
+- Built on Bubble Tea, Lip Gloss and Bubbles v2, with these visible effects:
   - Truecolor terminals get the exact palette colours (v1 was one step off in some channels), and inside tmux `COLORTERM=truecolor` is honoured.
   - Pasting into the command bar, filters and the logs search works through bracketed paste.
   - With the kitty keyboard protocol (Alacritty, kitty, WezTerm, ghostty), shift+Enter and ctrl+Enter still act as Enter.
