@@ -53,11 +53,11 @@ func TestForbiddenWithoutAFallback(t *testing.T) {
 	}{
 		{
 			name: "cluster-wide, no context namespace",
-			want: "events forbidden cluster-wide · kubectl auth can-i list events -A · :ns <name> lists one namespace",
+			want: "forbidden: list events in all namespaces · :ns <name> picks one · kubectl auth can-i list events -A",
 		},
 		{
 			name: "another namespace", contextNS: demo, namespace: "other",
-			want: "events forbidden in other · kubectl auth can-i list events -n other",
+			want: "forbidden: list events in other · kubectl auth can-i list events -n other",
 		},
 	}
 	for _, tc := range cases {

@@ -6,11 +6,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/LywwKkA-aD/k4s/internal/sanitize"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 )
 
 // listError is a failed list as the view words it: Error is the text the
-// status row, the stale banner and the body show, made inert; Unwrap is
-// the API's error, which the poller classifies.
+// status row and the body show, as stale.Describe words it; Unwrap is the
+// API's error, which the poller and the classifier read.
 type listError struct {
 	err  error
 	text string
@@ -20,24 +21,18 @@ func (e listError) Error() string { return e.text }
 
 func (e listError) Unwrap() error { return e.err }
 
-// explain words err for the list of namespace ("" = all). A forbidden list
-// names the scope and the `kubectl auth can-i` that checks it; any other
-// error is its own text made inert. It stands in for the M4.3 classifier
-// (Classify in internal/k8s), which replaces it once it lands.
-func explain(err error, namespace string) error {
-	switch {
-	case err == nil:
+// explain words err as the status row does: k8s.Classify's text, with the
+// way to one namespace when -A was refused and there is no context
+// namespace to fall back to.
+func explain(err error) error {
+	if err == nil {
 		return nil
-	case !apierrors.IsForbidden(err):
-		return listError{err: err, text: sanitize.Line(err.Error())}
-	case namespace == "":
-		return listError{err: err, text: "events forbidden cluster-wide · " + canI("") + " · :ns <name> lists one namespace"}
 	}
-	return listError{err: err, text: "events forbidden in " + namespace + " · " + canI(namespace)}
+	return listError{err: err, text: stale.Describe(err)}
 }
 
-// detail is the API's own text behind err, made inert, for the body under
-// the explanation; "" when explain said it all.
+// detail is the API's own text behind a forbidden list, made inert, for
+// the body under the explanation; "" otherwise.
 func detail(err error) string {
 	var le listError
 	if !errors.As(err, &le) || !apierrors.IsForbidden(le.err) {

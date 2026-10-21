@@ -28,6 +28,8 @@ type denial struct {
 	namespace   string
 	// all is set for a namespaced resource asked across every namespace;
 	// cluster for a request at cluster scope whose resource may be either.
+	// Neither is set for a known cluster-scoped resource (isClusterScoped),
+	// which has no namespaces to span.
 	all     bool
 	cluster bool
 	path    string
@@ -56,7 +58,7 @@ func fromCall(err error) (denial, bool) {
 		verb:      sanitize.Line(call.Verb),
 		resource:  sanitize.Line(call.Resource),
 		namespace: sanitize.Line(call.Namespace),
-		all:       call.Namespace == "" && !call.ClusterScoped,
+		all:       call.Namespace == "" && !call.ClusterScoped && !isClusterScoped(call.Resource),
 	}, true
 }
 
@@ -71,7 +73,7 @@ func fromMessage(msg string) (denial, bool) {
 			resource:    sanitize.Line(resource),
 			subresource: sanitize.Line(sub),
 			namespace:   sanitize.Line(m[4]),
-			cluster:     m[5] != "",
+			cluster:     m[5] != "" && !isClusterScoped(resource),
 		}, true
 	}
 	if m := deniedPath.FindStringSubmatch(msg); m != nil {

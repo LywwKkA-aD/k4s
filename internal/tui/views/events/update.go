@@ -76,7 +76,7 @@ func (m Model) onList(msg async.Result[k8s.EventList]) (Model, tea.Cmd) {
 	}
 	var cmd, said tea.Cmd
 	m.poll, cmd = m.poll.Done(msg.Token, msg.Err)
-	m.health, said = m.health.Fold(explain(msg.Err, m.namespace))
+	m.health, said = m.health.Fold(explain(msg.Err))
 	m.loaded = true
 	if msg.Err != nil {
 		m.table.SetHeight(max(m.tableHeight(), minTableRows))

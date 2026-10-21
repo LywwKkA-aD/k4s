@@ -78,10 +78,17 @@ func TestClassify(t *testing.T) {
 		},
 		{
 			name:  "forbidden at cluster scope without the call",
-			err:   forbidden("nodes", "", `list resource "nodes" in API group "" at the cluster scope`),
+			err:   forbidden("widgets", "example.com", `list resource "widgets" in API group "example.com" at the cluster scope`),
 			kind:  k8s.KindForbidden,
-			short: "forbidden: list nodes at cluster scope",
-			hint:  "kubectl auth can-i list nodes -A",
+			short: "forbidden: list widgets.example.com at cluster scope",
+			hint:  "kubectl auth can-i list widgets.example.com -A",
+		},
+		{
+			name:  "forbidden cluster-scoped resource without the call",
+			err:   fmt.Errorf("list nodes: %w", forbidden("nodes", "", `list resource "nodes" in API group "" at the cluster scope`)),
+			kind:  k8s.KindForbidden,
+			short: "forbidden: list nodes",
+			hint:  "kubectl auth can-i list nodes",
 		},
 		{
 			name:  "forbidden subresource",

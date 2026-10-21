@@ -3,7 +3,6 @@ package k8s
 import (
 	"cmp"
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -69,7 +68,7 @@ func (c *Client) ListEvents(ctx context.Context, namespace string, opts ...ListO
 	for {
 		list, err := c.Clientset.CoreV1().Events(namespace).List(ctx, o)
 		if err != nil {
-			return EventList{}, fmt.Errorf("list events: %w", err)
+			return EventList{}, listError("events", namespace, err)
 		}
 		raw = append(raw, list.Items...)
 		if list.Continue == "" || len(raw) >= MaxEvents {

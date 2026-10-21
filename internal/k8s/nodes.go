@@ -2,7 +2,6 @@ package k8s
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -40,7 +39,7 @@ type Node struct {
 func (c *Client) ListNodes(ctx context.Context, opts ...ListOption) ([]Node, error) {
 	list, err := c.Clientset.CoreV1().Nodes().List(ctx, listOptions(opts))
 	if err != nil {
-		return nil, fmt.Errorf("list nodes: %w", err)
+		return nil, &CallError{Verb: "list", Resource: "nodes", ClusterScoped: true, Err: err}
 	}
 	now := time.Now()
 	out := make([]Node, 0, len(list.Items))

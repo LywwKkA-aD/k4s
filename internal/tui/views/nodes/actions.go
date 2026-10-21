@@ -7,6 +7,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/LywwKkA-aD/k4s/internal/sanitize"
+	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -51,8 +52,8 @@ func (m Model) Selected() (views.ResourceRef, bool) {
 }
 
 // listError is a failed list as the view words it: Error is the text the
-// status row, the stale banner and the body show, made inert; Unwrap is
-// the API's error, which the poller classifies.
+// status row and the body show, as stale.Describe words it; Unwrap is the
+// API's error, which the poller and the classifier read.
 type listError struct {
 	err  error
 	text string
@@ -62,18 +63,13 @@ func (e listError) Error() string { return e.text }
 
 func (e listError) Unwrap() error { return e.err }
 
-// explain words err: a forbidden list names the `kubectl auth can-i` that
-// checks it, any other error is its own text made inert. It stands in for
-// the M4.3 classifier (Classify in internal/k8s), which replaces it once
-// it lands.
+// explain words err as the status row does: k8s.Classify's text, which
+// asks `kubectl auth can-i list nodes` of a refused list.
 func explain(err error) error {
-	switch {
-	case err == nil:
+	if err == nil {
 		return nil
-	case apierrors.IsForbidden(err):
-		return listError{err: err, text: "nodes forbidden · kubectl auth can-i list nodes"}
 	}
-	return listError{err: err, text: sanitize.Line(err.Error())}
+	return listError{err: err, text: stale.Describe(err)}
 }
 
 // detail is the API's own text behind a forbidden list, made inert, for

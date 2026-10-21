@@ -34,7 +34,7 @@ func (m Model) body() string {
 	case !m.loaded:
 		return styles.Hint.Render("loading events…")
 	case m.health.Failed():
-		text := styles.Warn.Render("events unavailable: " + m.health.Err().Error())
+		text := styles.Warn.Render("events unavailable: " + m.health.Text())
 		if d := detail(m.health.Err()); d != "" {
 			text = lipgloss.JoinVertical(lipgloss.Left, text, styles.Hint.Render(d))
 		}

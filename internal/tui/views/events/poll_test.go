@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stesting "k8s.io/client-go/testing"
 
@@ -103,7 +104,7 @@ func TestFirstListFailing(t *testing.T) {
 		return true, nil, fmt.Errorf("slow: %w", context.DeadlineExceeded)
 	})
 	m, _ := mounted(t, client(t, failing), demo)
-	if screen := tuitest.Screen(m); !strings.Contains(screen, "events unavailable: list events: slow: context deadline exceeded") {
+	if screen := tuitest.Screen(m); !strings.Contains(screen, "events unavailable: API slow: list events timed out · r retries") {
 		t.Errorf("screen:\n%s", screen)
 	}
 	if got := helpLabel(t, m, "w"); got != "watch 10s (slow API)" {
@@ -111,4 +112,33 @@ func TestFirstListFailing(t *testing.T) {
 	}
 	_, out := tuitest.Drive(t, m, tuitest.Enter())
 	requireStatus(t, out, status.Warn, "events unavailable, press r")
+}
+
+// TestTheBodySaysWhatTheStatusRowSaid: a first list that fails shows the
+// status row's own text in the body, however the error is classified.
+func TestTheBodySaysWhatTheStatusRowSaid(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "timeout", err: context.DeadlineExceeded, want: "API slow: list events timed out · r retries"},
+		{name: "other", err: errors.New("etcd\x1b[2J down\nsecond line"), want: "list events: etcd down"},
+		{name: "unauthorized", err: apierrors.NewUnauthorized("Unauthorized"), want: "unauthorized: credentials expired or revoked · log in again, then press r"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			failing := tuitest.WithReactor("list", "events", func(k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, tc.err
+			})
+			m, out := mounted(t, client(t, failing), demo)
+			requireStatus(t, out, status.Error, tc.want)
+			if lines := screenLines(m); !slices.Contains(lines, "events unavailable: "+tc.want) {
+				t.Errorf("body:\n%s", strings.Join(lines, "\n"))
+			}
+		})
+	}
 }

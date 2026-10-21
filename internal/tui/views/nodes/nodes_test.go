@@ -9,6 +9,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/k8stest"
@@ -157,7 +159,7 @@ func TestForbiddenSaysHowToCheck(t *testing.T) {
 	c, cs := k8stest.NewFakeClient(fixture()...)
 	k8stest.RestrictToNamespace(cs, "demo")
 	m, out := mounted(t, c)
-	want := "nodes forbidden · kubectl auth can-i list nodes"
+	want := "forbidden: list nodes · kubectl auth can-i list nodes"
 	requireStatus(t, out, status.Error, want)
 	screen := tuitest.Screen(m)
 	if !strings.Contains(screen, "nodes unavailable: "+want) || !strings.Contains(screen, "is forbidden") {
@@ -232,6 +234,34 @@ func TestFailedRefreshKeepsTheRows(t *testing.T) {
 	tick, _ = clk.Fire()
 	if _, out = tuitest.Drive(t, m, tick); len(tuitest.All[views.StatusMsg](out)) != 0 {
 		t.Errorf("the same error was said twice:\n%s", tuitest.Describe(out))
+	}
+}
+
+// TestTheBodySaysWhatTheStatusRowSaid: a first list that fails shows the
+// status row's own text in the body, however the error is classified.
+func TestTheBodySaysWhatTheStatusRowSaid(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "timeout", err: context.DeadlineExceeded, want: "API slow: list nodes timed out · r retries"},
+		{name: "other", err: errors.New("etcd\x1b[2J down\nsecond line"), want: "list nodes: etcd down"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			failing := tuitest.WithReactor("list", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, tc.err
+			})
+			m, out := mounted(t, client(t, failing))
+			requireStatus(t, out, status.Error, tc.want)
+			if lines := screenLines(m); !slices.Contains(lines, "nodes unavailable: "+tc.want) {
+				t.Errorf("body:\n%s", strings.Join(lines, "\n"))
+			}
+		})
 	}
 }
 
