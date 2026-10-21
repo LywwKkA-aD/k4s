@@ -57,7 +57,7 @@ func TestForbiddenListOffersAPrompt(t *testing.T) {
 	m := manualView(t, "shop", tuitest.NamespaceDemo)
 	screen := tuitest.Screen(m)
 	for _, want := range []string{
-		"namespaces unavailable: forbidden: list namespaces · kubectl auth can-i list namespaces",
+		"forbidden: list namespaces · kubectl auth can-i list namespaces",
 		"namespace ›",
 		"<all>", tuitest.NamespaceDemo, "shop",
 	} {

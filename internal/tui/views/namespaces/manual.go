@@ -127,9 +127,11 @@ func (m Model) submit() (Model, tea.Cmd, bool) {
 }
 
 // promptView is the refusal, the prompt and the namespaces to pick from.
+// The refusal is the bare classified text, short enough for one line at
+// 80 columns: the table height counts on it.
 func (m Model) promptView() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
-		styles.Warn.Render("namespaces unavailable: "+stale.Describe(m.health.Err())),
+		styles.Warn.Render(stale.Describe(m.health.Err())),
 		m.prompt.input.View(),
 		m.table.View(),
 	)
