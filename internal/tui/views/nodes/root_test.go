@@ -11,6 +11,8 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
 
@@ -64,28 +66,36 @@ func TestColonOpensTheNodesView(t *testing.T) {
 // Enter and Esc; a node is described without a namespace. The fake client
 // names no kubeconfig file, so the root gives describe no kubectl, and
 // only kubectl describes a node: a warning says so while the command row
-// keeps the describe to copy. It is still showing after Esc, so the
-// command rows are compared, not the whole footer.
+// keeps the describe to copy. The warning outlives the describe view
+// until its TTL runs out; then the footer is the one the list was left
+// with, whole.
 func TestEscFromDescribeBringsNodesBack(t *testing.T) {
 	t.Parallel()
 
+	const warning = "describe node needs kubectl"
+	clk := asynctest.NewClock(epoch)
+	root, _ := tuitest.Mount(t, tui.New(client(t), nil, tui.WithClock(clk.Now)), rootW, rootH)
 	keys := slices.Concat(tuitest.Colon("no"), tuitest.FilterBy("pi"), tuitest.Keys("down"))
-	m, _ := tuitest.Drive(t, startedRoot(t, client(t)), keys...)
-	before := kubectlRow(m)
+	m, _ := tuitest.Drive(t, root, keys...)
+	before := tuitest.Footer(m)
 	m, _ = tuitest.Drive(t, m, tuitest.Enter())
 	if got := kubectlRow(m); !strings.HasSuffix(got, "kubectl describe node "+nodeOld) {
 		t.Errorf("Enter described %q", got)
 	}
-	if footer := tuitest.Footer(m); !strings.Contains(footer, "describe node needs kubectl") {
+	if footer := tuitest.Footer(m); !strings.Contains(footer, warning) {
 		t.Errorf("no warning that a node needs kubectl:\n%s", footer)
 	}
-	if screen := tuitest.Screen(m); !strings.Contains(screen, "describe node needs kubectl") || strings.Contains(screen, "unsupported kind") {
+	if screen := tuitest.Screen(m); !strings.Contains(screen, warning) || strings.Contains(screen, "unsupported kind") {
 		t.Errorf("body:\n%s", screen)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())
 	requireRootView(t, m, "nodes")
-	if after := kubectlRow(m); after != before {
-		t.Errorf("command row after Esc = %q, want as left %q", after, before)
+	if footer := tuitest.Footer(m); !strings.Contains(footer, warning) {
+		t.Errorf("the warning left with the describe view:\n%s", footer)
+	}
+	clk.Advance(status.TTL)
+	if after := tuitest.Footer(m); after != before {
+		t.Errorf("footer once the warning is gone:\n%s\nwant as left:\n%s", after, before)
 	}
 	if screen := tuitest.Screen(m); !strings.Contains(screen, "/ pi") || strings.Contains(screen, nodeServer) {
 		t.Errorf("filter lost:\n%s", screen)
