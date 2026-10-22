@@ -37,7 +37,8 @@ const (
 // eventList is the events about one object, or why they could not be
 // read. Events are best effort: a failed list never fails the describe.
 // items are the newest describeEventsShown of the total read; more is set
-// when the server held more than describeEventsRead, which are not read.
+// when the server held more than describeEventsRead, which are not read,
+// so the newest of those read need not be the newest there are.
 // subject names the object for the note that says what was left out.
 type eventList struct {
 	items   []corev1.Event
@@ -117,7 +118,9 @@ func writeEvents(w describeWriter, ev eventList, now time.Time) {
 	if ev.more || ev.total > len(ev.items) {
 		of := strconv.Itoa(ev.total)
 		if ev.more {
-			of = "more than " + strconv.Itoa(describeEventsRead)
+			// The server lists in key order: the events left unread may be
+			// newer than any shown.
+			of += " read; more exist"
 		}
 		w.flush()
 		w.write(1, "… showing the newest %d of %s: %s\n", len(ev.items), of, ev.subject.eventsCommand())

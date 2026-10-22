@@ -15,7 +15,9 @@ import (
 // object's events in pages up to describeEventsRead, keeps the newest
 // describeEventsShown of them, oldest first as kubectl prints them, and
 // says how many there were. The fixture's newest events come last in key
-// order, so keeping the first ones read would show the oldest.
+// order, so keeping the first ones read would show the oldest. Past
+// describeEventsRead the newest may not have been read, and the note
+// says only what was read and that there is more.
 func TestDescribeEventsKeepTheNewest(t *testing.T) {
 	t.Parallel()
 
@@ -29,7 +31,7 @@ func TestDescribeEventsKeepTheNewest(t *testing.T) {
 	}{
 		{name: "all listed", total: 3, wantReqs: 1, first: 0, last: 2},
 		{name: "more than shown", total: 742, wantReqs: 2, first: 242, last: 741, note: "… showing the newest 500 of 742: " + more},
-		{name: "more than read", total: 2600, wantReqs: 4, first: 1500, last: 1999, note: "… showing the newest 500 of more than 2000: " + more},
+		{name: "more than read", total: 2600, wantReqs: 4, first: 1500, last: 1999, note: "… showing the newest 500 of 2000 read; more exist: " + more},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
