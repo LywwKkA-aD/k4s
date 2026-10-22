@@ -85,15 +85,6 @@ linters:
         - name: indent-error-flow
         - name: superfluous-else
 
-  exclusions:
-    rules:
-      # Known debt: describe truncates values with ansi.Truncate. Drop this
-      # once the truncation moves out of internal/k8s.
-      - path: internal/k8s/describe\.go
-        linters:
-          - depguard
-        text: charmbracelet/x/ansi
-
 formatters:
   enable:
     - gofmt

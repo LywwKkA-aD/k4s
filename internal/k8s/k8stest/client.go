@@ -20,8 +20,10 @@ const ContextName = "k8stest"
 // together with that clientset, so a test can install reactors such as
 // RestrictToNamespace before handing the client to the code under test.
 //
-// A fake clientset has no REST client behind Discovery(), so raw REST calls
-// (ListPodMetrics, ListNodeMetrics) panic on it; use NewServerClient there.
+// A fake clientset has no REST client behind Discovery(), so the metrics
+// queries (ListPodMetrics, ListNodeMetrics) return k8s.ErrMetricsUnavailable
+// on it, as on a cluster without metrics-server; use NewServerClient to
+// serve metrics.
 func NewFakeClient(objs ...runtime.Object) (*k8s.Client, *fake.Clientset) {
 	cs := fake.NewSimpleClientset(objs...)
 	return &k8s.Client{Clientset: cs, Context: ContextName}, cs

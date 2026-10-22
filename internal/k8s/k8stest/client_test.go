@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/k8stest"
 )
 
@@ -28,6 +29,20 @@ func TestNewFakeClient(t *testing.T) {
 	k8stest.Unauthorized(cs)
 	if _, err := c.ListPods(context.Background(), "demo"); err == nil {
 		t.Fatal("reactor installed on the returned clientset did not reach the client")
+	}
+}
+
+// TestNewFakeClientHasNoMetricsAPI: the fake clientset has no REST client
+// behind Discovery(), so a metrics query says the API is unavailable.
+func TestNewFakeClientHasNoMetricsAPI(t *testing.T) {
+	t.Parallel()
+
+	c, _ := k8stest.NewFakeClient()
+	if _, err := c.ListPodMetrics(context.Background(), ""); !errors.Is(err, k8s.ErrMetricsUnavailable) {
+		t.Errorf("ListPodMetrics = %v, want ErrMetricsUnavailable", err)
+	}
+	if _, err := c.ListNodeMetrics(context.Background()); !errors.Is(err, k8s.ErrMetricsUnavailable) {
+		t.Errorf("ListNodeMetrics = %v, want ErrMetricsUnavailable", err)
 	}
 }
 
