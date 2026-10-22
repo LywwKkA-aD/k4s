@@ -23,7 +23,7 @@ func TestExecStatusNamesAreInert(t *testing.T) {
 	missing := errors.New(`exec: "sh": executable file not found in $PATH`)
 	cases := []struct {
 		name string
-		msg  execDoneMsg
+		msg  selfApplyingMsg
 		want string
 	}{
 		{

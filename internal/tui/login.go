@@ -27,7 +27,7 @@ const loginProbeTimeout = 15 * time.Second
 // probes again. A plugin that keeps no token it can hand on fails that
 // second probe too, and k4s says so instead of asking again.
 //
-// Each step is an execDoneMsg carrying the context it was for, so a step
+// Each step is a selfApplyingMsg carrying the context it was for, so a step
 // that arrives after another switch is dropped.
 
 // loginProbe is the probe for c, nil for a context without a credential

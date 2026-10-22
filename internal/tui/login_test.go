@@ -234,7 +234,7 @@ func TestLoginProbeAnswers(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			next, _ := pluginModel(t).Update(execDoneMsg(tc.msg))
+			next, _ := pluginModel(t).Update(selfApplyingMsg(tc.msg))
 			m := next.(Model)
 			if got := m.overlay != nil; got != tc.wantOverlay {
 				t.Errorf("overlay open = %v, want %v", got, tc.wantOverlay)
@@ -251,7 +251,7 @@ func TestLoginProbeOverAnotherOverlay(t *testing.T) {
 	t.Parallel()
 
 	m := pluginModel(t).openHelp()
-	next, _ := m.Update(execDoneMsg(loginProbeMsg{context: "eks", err: errPlugin}))
+	next, _ := m.Update(selfApplyingMsg(loginProbeMsg{context: "eks", err: errPlugin}))
 	m = next.(Model)
 	msg, ok := m.status.Current(time.Now())
 	if !ok || msg.Level != status.Warn || !strings.Contains(msg.Text, "context eks needs a login: run kubectl version in a terminal") {
@@ -264,7 +264,7 @@ func TestLoginAnswers(t *testing.T) {
 
 	cases := []struct {
 		name     string
-		msg      execDoneMsg
+		msg      selfApplyingMsg
 		look     func(string) (string, error)
 		wantExec bool
 		want     status.Message
@@ -311,7 +311,7 @@ func TestReloadAfterTheLogin(t *testing.T) {
 
 	m := pluginModel(t)
 	m = m.replaceView(viewPods)
-	next, cmd := m.Update(execDoneMsg(loginProbeMsg{context: "eks", afterLogin: true}))
+	next, cmd := m.Update(selfApplyingMsg(loginProbeMsg{context: "eks", afterLogin: true}))
 	if next.(Model).current.Title() != viewPods || cmd == nil {
 		t.Fatalf("view = %q, cmd = %v", next.(Model).current.Title(), cmd)
 	}

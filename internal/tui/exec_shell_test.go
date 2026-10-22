@@ -227,7 +227,7 @@ func TestShellDoneHintsAtKubectlDebug(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			next, _ := New(nil, nil).Update(execDoneMsg(tc.done))
+			next, _ := New(nil, nil).Update(selfApplyingMsg(tc.done))
 			line := next.(Model).status
 			msg, ok := line.Current(time.Now())
 			switch {
@@ -269,7 +269,7 @@ func TestDebugHintFitsEightyColumns(t *testing.T) {
 	}
 	want := "kubectl debug -it -n demo web-1 --image=busybox:1.36 --target=nginx"
 
-	m, _ = tuitest.Drive(t, m, execDoneMsg(done))
+	m, _ = tuitest.Drive(t, m, selfApplyingMsg(done))
 	top, command := commandRows(t, m)
 	if top != styles.GlyphErr+" no sh in demo/web-1 · y copies the kubectl debug command" || command != want {
 		t.Fatalf("footer at 80 columns:\n%s\n%s\nwant the command row %q", top, command, want)
@@ -317,7 +317,7 @@ func TestDebugCommandLeavesWithItsStatus(t *testing.T) {
 			m := New(nil, nil, WithClock(clk.now))
 			m.width, m.height = 80, 24
 			_, view := commandRows(t, m)
-			m, _ = tuitest.Drive(t, m, execDoneMsg(done))
+			m, _ = tuitest.Drive(t, m, selfApplyingMsg(done))
 			clk.at = clk.at.Add(tc.before)
 			m, _ = tuitest.Drive(t, m, tuitest.Press("x"))
 			clk.at = clk.at.Add(tc.after)
@@ -342,7 +342,7 @@ func TestDebugCommandReachesTheSameCluster(t *testing.T) {
 	m.kubectlSession = newKubectlSession(c, sessionFlags{}, func(string) string { return "" }, "/home/me")
 	done := shellDoneMsg{req: views.ExecRequestMsg{Namespace: "demo", Pod: "web-1", Container: "app"}, shell: "sh", err: exitErr(t, "127")}
 	want := "kubectl --context prod debug -it -n demo web-1 --image=busybox:1.36 --target=app"
-	_, out := tuitest.Drive(t, m, execDoneMsg(done), tuitest.Press("y"))
+	_, out := tuitest.Drive(t, m, selfApplyingMsg(done), tuitest.Press("y"))
 	if got, _ := tuitest.Clipboard(out); got != want {
 		t.Errorf("debug command = %q, want %q", got, want)
 	}

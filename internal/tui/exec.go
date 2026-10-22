@@ -40,21 +40,6 @@ const (
 	stderrTail = 4 << 10
 )
 
-// execDoneMsg is a step of a flow the root runs around the terminal: the
-// pod lookup before `kubectl exec`, the shell that came back, and the
-// login flow after :ctx (login.go). The router hands every one of them to
-// onExecDone, and each applies itself to the model. The header's /version
-// request and its retries (header_version.go) ride on it too, as the
-// other per-client request :ctx starts.
-type execDoneMsg interface {
-	apply(m Model) (tea.Model, tea.Cmd)
-}
-
-// onExecDone applies a step of a terminal flow.
-func (m Model) onExecDone(msg execDoneMsg) (tea.Model, tea.Cmd) {
-	return msg.apply(m)
-}
-
 // onExecRequest looks the pod up before handing the terminal to `kubectl
 // exec -it`: a Windows pod gets cmd.exe, every other one sh, as the
 // footer shows. Without a client there is nothing to look up.

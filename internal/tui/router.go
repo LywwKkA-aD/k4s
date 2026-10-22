@@ -27,8 +27,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onKey(msg)
 	case tea.PasteMsg, cursor.BlinkMsg:
 		return m.onInput(msg)
-	case execDoneMsg:
-		return m.onExecDone(msg)
+	case selfApplyingMsg:
+		return m.onSelfApplying(msg)
 	case views.StatusMsg:
 		return m.setStatus(msg.Level, msg.Text)
 	case status.ExpireMsg:
@@ -45,6 +45,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	}
 	return m.forwardToView(msg)
+}
+
+// selfApplyingMsg is the reply to work the root started itself, which
+// knows how to apply itself to the model: the steps of the flows it runs
+// around the terminal (the pod lookup before `kubectl exec` and the shell
+// that came back, exec.go; the login flow after :ctx, login.go) and the
+// header's /version request with its retries (header_version.go). Each
+// carries what it needs to tell a reply for another client or context and
+// drop it. The router keeps the Cmd a self-applying reply returns, so one
+// can arm a retry.
+type selfApplyingMsg interface {
+	apply(m Model) (tea.Model, tea.Cmd)
+}
+
+// onSelfApplying applies a reply to work the root started.
+func (m Model) onSelfApplying(msg selfApplyingMsg) (tea.Model, tea.Cmd) {
+	return msg.apply(m)
 }
 
 // onRequest handles what a view asks the root to do; ok is false for any

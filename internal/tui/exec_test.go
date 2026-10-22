@@ -241,7 +241,7 @@ func TestExecDoneReportsAFailedShell(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			upd, _ := New(nil, nil).Update(execDoneMsg(shellDoneMsg{shell: views.ExecShell, err: tc.err}))
+			upd, _ := New(nil, nil).Update(selfApplyingMsg(shellDoneMsg{shell: views.ExecShell, err: tc.err}))
 			msg, ok := upd.(Model).status.Current(time.Now())
 			if tc.want == "" {
 				if ok {

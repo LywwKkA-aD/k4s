@@ -23,7 +23,7 @@ var versionRetries = [...]time.Duration{15 * time.Second, 30 * time.Second, time
 // versionMsg is the reply to the header's /version request; attempt counts
 // the asks before it, 0 for the first.
 //
-// It applies itself (see execDoneMsg) because a failed reply arms a retry,
+// It applies itself (see selfApplyingMsg) because a failed reply arms a retry,
 // and the router keeps the Cmd of a self-applying message only.
 type versionMsg struct {
 	res     async.Result[*apiversion.Info]
