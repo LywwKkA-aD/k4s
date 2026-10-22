@@ -15,7 +15,9 @@ import (
 // leave its namespace out. A namespaced kind lives where the event does,
 // a cluster-scoped one is described without -n, and a kind k4s does not
 // know cannot be placed: the status says so instead of describing it in
-// the context's namespace.
+// the context's namespace, and names the kubectl describe that works if
+// the kind is cluster-scoped, as a custom resource such as cert-manager's
+// ClusterIssuer is.
 func TestEnterOnAnObjectWithoutANamespace(t *testing.T) {
 	t.Parallel()
 
@@ -33,8 +35,10 @@ func TestEnterOnAnObjectWithoutANamespace(t *testing.T) {
 		{name: "k3s helm chart", obj: ref("helm.cattle.io/v1", "HelmChart", "traefik"), want: views.DescribeRequestMsg{Kind: "helmchart.helm.cattle.io", Namespace: "kube-system", Name: "traefik"}},
 		{name: "node", obj: ref("v1", "Node", "k3s-server"), want: views.DescribeRequestMsg{Kind: "node", Name: "k3s-server"}},
 		{name: "storage class", obj: ref("storage.k8s.io/v1", "StorageClass", "local-path"), want: views.DescribeRequestMsg{Kind: "storageclass.storage.k8s.io", Name: "local-path"}},
-		{name: "custom resource", obj: ref("example.com/v1", "Widget", "w1"), status: "event odd.1 names Widget/w1 without a namespace"},
-		{name: "a built-in name in another group", obj: ref("example.com/v1", "Pod", "p1"), status: "event odd.1 names Pod/p1 without a namespace"},
+		{name: "custom resource", obj: ref("example.com/v1", "Widget", "w1"),
+			status: "event odd.1 names Widget/w1 without a namespace; if it is cluster-scoped: kubectl describe widget.example.com w1"},
+		{name: "a built-in name in another group", obj: ref("example.com/v1", "Pod", "p1"),
+			status: "event odd.1 names Pod/p1 without a namespace; if it is cluster-scoped: kubectl describe pod.example.com p1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
