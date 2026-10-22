@@ -56,6 +56,18 @@ func (a action) label() string {
 type podTarget struct {
 	namespace string
 	name      string
+	// windows is the listed pod's OS. A pod's OS never changes, so the
+	// list says it as well as the lookup's GET would.
+	windows bool
+}
+
+// shell is the shell a runs in the pod, as the picker's preview, the
+// footer and the root's exec name it; none for anything but exec.
+func (t podTarget) shell(a action) string {
+	if a != actExec {
+		return ""
+	}
+	return views.ShellFor(t.windows)
 }
 
 func (t podTarget) key() string { return views.RowKey(t.namespace, t.name) }
@@ -110,7 +122,7 @@ func (m Model) startAction(a action) (Model, tea.Cmd) {
 	if !ok {
 		return m, failed
 	}
-	target := podTarget{namespace: pod.Namespace, name: pod.Name}
+	target := podTarget{namespace: pod.Namespace, name: pod.Name, windows: pod.Windows}
 	tok := m.tok.Next()
 	acts, started := m.begin(a, target, tok)
 	if !started {
@@ -248,7 +260,7 @@ func (m Model) dispatch(a action, t podTarget, res async.Result[[]string]) tea.C
 	case len(containers) > 1:
 		return send(views.ContainerPromptRequestMsg{
 			Namespace: t.namespace, Pods: pods, Containers: containers, Init: init, NextKind: a.key(),
-			Target: t.ref(), Detached: detached,
+			Target: t.ref(), Detached: detached, Shell: t.shell(a),
 		})
 	case a == actLogs:
 		return send(views.TailPromptRequestMsg{
@@ -256,7 +268,7 @@ func (m Model) dispatch(a action, t podTarget, res async.Result[[]string]) tea.C
 			Target: t.ref(), Detached: detached,
 		})
 	}
-	return send(views.ExecRequestMsg{Namespace: t.namespace, Pod: t.name, Container: containers[0]})
+	return send(views.ExecRequestMsg{Namespace: t.namespace, Pod: t.name, Container: containers[0], Shell: t.shell(a)})
 }
 
 func lookupFailed(a action, t podTarget, err error) tea.Cmd {

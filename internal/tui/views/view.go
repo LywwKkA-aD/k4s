@@ -177,7 +177,7 @@ type LogsRequestMsg struct {
 // next msg according to NextKind:
 //
 //	"logs"  → views.TailPromptRequestMsg{Namespace, Pods, Container, Target, Logs}
-//	"exec"  → views.ExecRequestMsg{Namespace, Pod: Pods[0], Container}
+//	"exec"  → views.ExecRequestMsg{Namespace, Pod: Pods[0], Container, Shell}
 //
 // list views with only one container should bypass this message entirely
 // and emit the next-kind msg directly. Target names the row in the
@@ -188,6 +188,10 @@ type LogsRequestMsg struct {
 // Init names the entries of Containers that are init containers or native
 // sidecars (k8s.Containers.InitNames). The picker labels them init:<name>;
 // the label is display only, and the chosen container is the bare name.
+//
+// Shell is the shell an exec runs, ExecShell or WindowsShell, as the view
+// that looked the pod up found it: the picker previews it and carries it
+// on to the ExecRequestMsg.
 type ContainerPromptRequestMsg struct {
 	Namespace  string
 	Pods       []string
@@ -197,6 +201,7 @@ type ContainerPromptRequestMsg struct {
 	Target     ResourceRef
 	Logs       k8s.LogTarget
 	Detached   bool
+	Shell      string
 }
 
 // ExecRequestMsg drops the user into a kubectl-exec shell against the named
@@ -206,6 +211,10 @@ type ExecRequestMsg struct {
 	Namespace string
 	Pod       string
 	Container string // optional; "" = kubectl picks default
+	// Shell is the shell to run, ExecShell or WindowsShell, as the view
+	// that looked the pod up found it; ExecCommand previews it. Left
+	// empty, the root looks the pod up itself before it starts one.
+	Shell string
 }
 
 // ForwardRequestMsg is emitted by services/pods/deployments views when the

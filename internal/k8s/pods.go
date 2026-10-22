@@ -18,6 +18,9 @@ type Pod struct {
 	Age          time.Duration
 	IP           string
 	Node         string
+	// Windows is set for a pod that runs on Windows (OnWindows): exec runs
+	// cmd.exe there, as it has no sh.
+	Windows bool
 }
 
 // ListPods returns pods in the given namespace, or in all namespaces when
@@ -42,6 +45,7 @@ func (c *Client) ListPods(ctx context.Context, namespace string, opts ...ListOpt
 			Age:          now.Sub(p.CreationTimestamp.Time),
 			IP:           p.Status.PodIP,
 			Node:         p.Spec.NodeName,
+			Windows:      OnWindows(&p.Spec),
 		})
 	}
 	return out, nil

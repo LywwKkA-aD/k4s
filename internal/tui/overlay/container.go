@@ -91,7 +91,8 @@ func (c container) label(name string) string {
 }
 
 // Command is what picking the highlighted container leads to: the logs at
-// the tail prompt's default count, or the shell in the first pod.
+// the tail prompt's default count, or the request's shell in the first
+// pod.
 func (c container) Command() kubectl.Cmd {
 	r := c.req
 	if len(r.Containers) == 0 {
@@ -105,7 +106,7 @@ func (c container) Command() kubectl.Cmd {
 		if len(r.Pods) == 0 {
 			return kubectl.Cmd{}
 		}
-		cmd, err := views.ExecCommand(views.ExecRequestMsg{Namespace: r.Namespace, Pod: r.Pods[0], Container: name})
+		cmd, err := views.ExecCommand(views.ExecRequestMsg{Namespace: r.Namespace, Pod: r.Pods[0], Container: name, Shell: r.Shell})
 		if err != nil {
 			return kubectl.Cmd{}
 		}

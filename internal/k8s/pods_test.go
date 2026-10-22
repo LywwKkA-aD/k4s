@@ -173,6 +173,32 @@ func TestContainersForPodMissing(t *testing.T) {
 	}
 }
 
+// A listed pod says whether it runs on Windows, so exec can name its shell
+// without another GET.
+func TestListPodsMarksWindowsPods(t *testing.T) {
+	t.Parallel()
+
+	objs := []runtime.Object{
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "linux", Namespace: "demo"}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "c"}}}},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "win", Namespace: "demo"},
+			Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "c"}}, OS: &corev1.PodOS{Name: corev1.Windows}},
+		},
+	}
+	c := &Client{Clientset: fake.NewSimpleClientset(objs...), Context: "test"}
+	got, err := c.ListPods(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("ListPods: %v", err)
+	}
+	windows := map[string]bool{}
+	for _, p := range got {
+		windows[p.Name] = p.Windows
+	}
+	if windows["linux"] || !windows["win"] {
+		t.Errorf("Windows = %v", windows)
+	}
+}
+
 func TestListPodsAllNamespaces(t *testing.T) {
 	t.Parallel()
 

@@ -159,6 +159,11 @@ func TestExecCommand(t *testing.T) {
 	}{
 		{name: "default container", req: views.ExecRequestMsg{Namespace: "demo", Pod: "web-1"}, want: "kubectl exec -it -n demo web-1 -- sh"},
 		{name: "named container", req: views.ExecRequestMsg{Namespace: "demo", Pod: "web-1", Container: "app"}, want: "kubectl exec -it -n demo -c app web-1 -- sh"},
+		{name: "a linux pod", req: views.ExecRequestMsg{Namespace: "demo", Pod: "web-1", Shell: views.ExecShell}, want: "kubectl exec -it -n demo web-1 -- sh"},
+		{
+			name: "a windows pod", req: views.ExecRequestMsg{Namespace: "demo", Pod: "iis-1", Container: "web", Shell: views.WindowsShell},
+			want: "kubectl exec -it -n demo -c web iis-1 -- cmd.exe",
+		},
 		{name: "pod named like a flag", req: views.ExecRequestMsg{Namespace: "demo", Pod: "--all"}, wantErr: true},
 	}
 	for _, tc := range cases {
@@ -175,6 +180,17 @@ func TestExecCommand(t *testing.T) {
 				t.Fatalf("ExecCommand = %q, %v; want %q", got.String(), err, tc.want)
 			}
 		})
+	}
+}
+
+func TestShellFor(t *testing.T) {
+	t.Parallel()
+
+	if got := views.ShellFor(false); got != "sh" {
+		t.Errorf("ShellFor(linux) = %q, want sh", got)
+	}
+	if got := views.ShellFor(true); got != "cmd.exe" {
+		t.Errorf("ShellFor(windows) = %q, want cmd.exe", got)
 	}
 }
 

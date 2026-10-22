@@ -38,7 +38,7 @@ func TestExecStatusNamesAreInert(t *testing.T) {
 		},
 		{
 			name: "no shell in a windows pod",
-			msg:  shellDoneMsg{req: req, shell: windowsShell, err: missing},
+			msg:  shellDoneMsg{req: req, shell: views.WindowsShell, err: missing},
 			want: "exec: no cmd.exe in web/app",
 		},
 	}

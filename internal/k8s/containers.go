@@ -61,6 +61,16 @@ func (cs Containers) ForExec() Containers {
 	return out
 }
 
+// OnWindows reports a pod that runs on Windows: spec.os.name says so, or,
+// for a pod from before spec.os, its node selector pins the node OS.
+// Neither can change once the pod exists.
+func OnWindows(spec *corev1.PodSpec) bool {
+	if spec.OS != nil {
+		return spec.OS.Name == corev1.Windows
+	}
+	return spec.NodeSelector[corev1.LabelOSStable] == string(corev1.Windows)
+}
+
 // PodContainers returns the containers of the named pod in picker order.
 func (c *Client) PodContainers(ctx context.Context, namespace, name string) (Containers, error) {
 	pod, err := c.Clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})

@@ -59,15 +59,33 @@ func selectorLogs(ns string, streamed int, container string, tail int64, t k8s.L
 	return c
 }
 
-// ExecShell is the command `e` runs in a container. The footer preview and
-// the exec the root starts use the same argv.
-const ExecShell = "sh"
+const (
+	// ExecShell is the shell `e` runs in a container, WindowsShell in a
+	// Windows pod's, which has no sh. The footer preview and the exec the
+	// root starts use the same argv.
+	ExecShell = "sh"
+	// WindowsShell is the shell `e` runs in a Windows pod.
+	WindowsShell = "cmd.exe"
+)
 
-// ExecCommand is `kubectl exec -it -n <ns> [-c <c>] <pod> -- sh` for req.
-// It fails on a name kubectl would misread, such as a pod named like a
-// flag.
+// ShellFor is the shell `e` runs in a pod: WindowsShell on Windows,
+// ExecShell anywhere else.
+func ShellFor(windows bool) string {
+	if windows {
+		return WindowsShell
+	}
+	return ExecShell
+}
+
+// ExecCommand is `kubectl exec -it -n <ns> [-c <c>] <pod> -- <shell>` for
+// req, with req.Shell, or ExecShell when the request names none. It fails
+// on a name kubectl would misread, such as a pod named like a flag.
 func ExecCommand(req ExecRequestMsg) (kubectl.Cmd, error) {
-	return kubectl.Exec(req.Namespace, req.Pod, req.Container, ExecShell)
+	shell := req.Shell
+	if shell == "" {
+		shell = ExecShell
+	}
+	return kubectl.Exec(req.Namespace, req.Pod, req.Container, shell)
 }
 
 // orZero drops a builder error: an invalid command is not shown at all.

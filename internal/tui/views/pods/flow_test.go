@@ -72,7 +72,7 @@ func TestRowActionsEmitRequests(t *testing.T) {
 			name:      "e on a single-container pod execs straight away",
 			namespace: demo,
 			keys:      keys(tuitest.FilterBy(tuitest.PodWeb1), tuitest.Press("e")),
-			want:      views.ExecRequestMsg{Namespace: demo, Pod: tuitest.PodWeb1, Container: tuitest.ContainerNginx},
+			want:      views.ExecRequestMsg{Namespace: demo, Pod: tuitest.PodWeb1, Container: tuitest.ContainerNginx, Shell: views.ExecShell},
 		},
 		{
 			name:      "e on a multi-container pod asks for the container",
@@ -80,7 +80,7 @@ func TestRowActionsEmitRequests(t *testing.T) {
 			keys:      keys(tuitest.FilterBy(tuitest.PodMulti), tuitest.Press("e")),
 			want: views.ContainerPromptRequestMsg{
 				Namespace: demo, Pods: []string{tuitest.PodMulti}, Containers: multi, NextKind: "exec",
-				Target: podRef(demo, tuitest.PodMulti),
+				Target: podRef(demo, tuitest.PodMulti), Shell: views.ExecShell,
 			},
 		},
 		{

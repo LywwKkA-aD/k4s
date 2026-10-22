@@ -24,8 +24,6 @@ import (
 )
 
 const (
-	// windowsShell is what `e` runs in a Windows container, which has no sh.
-	windowsShell = "cmd.exe"
 	// debugImage is the image the kubectl debug hint suggests for a
 	// container without a shell.
 	debugImage = "busybox:1.36"
@@ -40,10 +38,14 @@ const (
 	stderrTail = 4 << 10
 )
 
-// onExecRequest looks the pod up before handing the terminal to `kubectl
-// exec -it`: a Windows pod gets cmd.exe, every other one sh, as the
-// footer shows. Without a client there is nothing to look up.
+// onExecRequest hands the terminal to `kubectl exec -it` with the shell
+// the request names, the one its view looked up and previewed. A request
+// that names none has the pod looked up first: a Windows pod gets cmd.exe,
+// every other one sh. Without a client there is nothing to look up.
 func (m Model) onExecRequest(msg views.ExecRequestMsg) (tea.Model, tea.Cmd) {
+	if msg.Shell != "" {
+		return m.startExec(msg, msg.Shell)
+	}
 	if m.client == nil {
 		return m.startExec(msg, views.ExecShell)
 	}
@@ -84,18 +86,11 @@ func (r execResolvedMsg) apply(m Model) (tea.Model, tea.Cmd) {
 }
 
 // shellFor is the shell `e` runs in pod: cmd.exe on Windows, else sh.
-// spec.os.name says so; older pods only pin the node OS.
 func shellFor(pod *corev1.Pod) string {
 	if pod == nil {
 		return views.ExecShell
 	}
-	if pod.Spec.OS != nil && pod.Spec.OS.Name == corev1.Windows {
-		return windowsShell
-	}
-	if pod.Spec.NodeSelector[corev1.LabelOSStable] == string(corev1.Windows) {
-		return windowsShell
-	}
-	return views.ExecShell
+	return views.ShellFor(k8s.OnWindows(&pod.Spec))
 }
 
 // startExec hands the terminal to `kubectl exec -it ... -- <shell>`. When
@@ -148,7 +143,7 @@ func (d shellDoneMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if !d.missingShell() {
 		return m.setError("exec: " + d.err.Error())
 	}
-	if d.shell == windowsShell {
+	if d.shell == views.WindowsShell {
 		return m.setError("exec: no " + d.shell + " in " + podLabel(d.req) + exitLabel(d.err))
 	}
 	text := "no " + d.shell + " in " + podPath(d.req) + " · y copies the kubectl debug command" + exitLabel(d.err)

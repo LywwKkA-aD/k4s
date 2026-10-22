@@ -73,6 +73,8 @@ func TestContainerPickerPreviewsTheNextCommand(t *testing.T) {
 	logs := pickerRequest()
 	exec := pickerRequest()
 	exec.NextKind = "exec"
+	windows := pickerRequest()
+	windows.NextKind, windows.Shell = "exec", views.WindowsShell
 	deploy := views.ContainerPromptRequestMsg{
 		Namespace: "demo", Pods: []string{"web-1", "web-2"}, Containers: []string{"app", "sidecar"},
 		NextKind: "logs", Logs: webTarget(),
@@ -93,6 +95,7 @@ func TestContainerPickerPreviewsTheNextCommand(t *testing.T) {
 	}{
 		{name: "logs of the highlighted container", req: logs, keys: []string{"down"}, want: "kubectl logs -f multi-0 --tail=100 -n demo -c sidecar"},
 		{name: "exec into the highlighted container", req: exec, want: "kubectl exec -it -n demo -c app multi-0 -- sh"},
+		{name: "exec into a windows pod", req: windows, keys: []string{"down"}, want: "kubectl exec -it -n demo -c sidecar multi-0 -- cmd.exe"},
 		{name: "deployment logs", req: deploy, want: "kubectl logs -f -l 'app=web,pod-template-hash in (h1)' --prefix --tail=100 --max-log-requests=2 -n demo -c app"},
 		{name: "exec without a pod", req: noPod},
 		{name: "unknown follow-up", req: other},

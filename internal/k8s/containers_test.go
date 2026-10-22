@@ -88,6 +88,30 @@ func TestContainersForExec(t *testing.T) {
 	}
 }
 
+func TestOnWindows(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		spec corev1.PodSpec
+		want bool
+	}{
+		{name: "nothing said"},
+		{name: "linux by spec.os", spec: corev1.PodSpec{OS: &corev1.PodOS{Name: corev1.Linux}}},
+		{name: "windows by spec.os", spec: corev1.PodSpec{OS: &corev1.PodOS{Name: corev1.Windows}}, want: true},
+		{name: "windows by the node selector", spec: corev1.PodSpec{NodeSelector: map[string]string{corev1.LabelOSStable: "windows"}}, want: true},
+		{name: "linux by the node selector", spec: corev1.PodSpec{NodeSelector: map[string]string{corev1.LabelOSStable: "linux"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := k8s.OnWindows(&tc.spec); got != tc.want {
+				t.Errorf("OnWindows = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPodContainersOfAMissingPod(t *testing.T) {
 	t.Parallel()
 

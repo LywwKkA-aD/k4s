@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -84,6 +85,32 @@ func TestExecArgvPerShell(t *testing.T) {
 			}
 			if !slices.Equal(c.Args, tc.want) {
 				t.Errorf("argv = %q, want %q", c.Args, tc.want)
+			}
+		})
+	}
+}
+
+// TestExecRunsTheShellTheRequestNames: a request that names its shell, as
+// the pods view's lookup found it, starts at once, with no second GET.
+func TestExecRunsTheShellTheRequestNames(t *testing.T) {
+	t.Parallel()
+
+	for _, shell := range []string{views.ExecShell, views.WindowsShell} {
+		t.Run(shell, func(t *testing.T) {
+			t.Parallel()
+			var gets atomic.Int32
+			count := tuitest.WithReactor("get", "pods", func(k8stesting.Action) (bool, kruntime.Object, error) {
+				gets.Add(1)
+				return false, nil, nil
+			})
+			m := withLookPath(New(tuitest.NewFakeClient(t, count), nil), foundAt(fakeKubectlPath), nil)
+			req := views.ExecRequestMsg{Namespace: tuitest.NamespaceDemo, Pod: tuitest.PodWeb1, Container: "app", Shell: shell}
+			_, cmd := m.Update(req)
+			if cmd == nil || !slices.ContainsFunc(tuitest.Collect(t, cmd), tuitest.IsExec) {
+				t.Fatal("the exec did not start")
+			}
+			if n := gets.Load(); n != 0 {
+				t.Errorf("the root looked the pod up %d times", n)
 			}
 		})
 	}

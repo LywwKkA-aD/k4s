@@ -107,7 +107,7 @@ func TestDetachedWhenTheCursorMoved(t *testing.T) {
 			want: views.ContainerPromptRequestMsg{
 				Namespace: demo, Pods: []string{tuitest.PodMulti},
 				Containers: []string{tuitest.ContainerApp, tuitest.ContainerSidecar}, NextKind: "exec",
-				Target: podRef(demo, tuitest.PodMulti), Detached: true,
+				Target: podRef(demo, tuitest.PodMulti), Detached: true, Shell: views.ExecShell,
 			},
 		},
 	}
@@ -162,7 +162,7 @@ func TestLookupOffersContainersByAction(t *testing.T) {
 			name: "exec offers the app container and the sidecar", pod: initPod("init-0", true), key: "e",
 			want: views.ContainerPromptRequestMsg{
 				Namespace: demo, Pods: []string{"init-0"}, NextKind: "exec", Target: podRef(demo, "init-0"),
-				Containers: []string{"app", "log-shipper"}, Init: []string{"log-shipper"},
+				Containers: []string{"app", "log-shipper"}, Init: []string{"log-shipper"}, Shell: views.ExecShell,
 			},
 		},
 		{
@@ -174,7 +174,7 @@ func TestLookupOffersContainersByAction(t *testing.T) {
 		},
 		{
 			name: "exec goes straight into the one app container", pod: initPod("migrating-0", false), key: "e",
-			want: views.ExecRequestMsg{Namespace: demo, Pod: "migrating-0", Container: "app"},
+			want: views.ExecRequestMsg{Namespace: demo, Pod: "migrating-0", Container: "app", Shell: views.ExecShell},
 		},
 	}
 	for _, tc := range cases {
@@ -182,6 +182,62 @@ func TestLookupOffersContainersByAction(t *testing.T) {
 			t.Parallel()
 			c := tuitest.NewFakeClient(t, tuitest.WithObjects(tuitest.Namespace(demo), tc.pod))
 			_, out := tuitest.Drive(t, mounted(t, c, demo), tuitest.Press(tc.key))
+			if reqs := tuitest.Requests(out); len(reqs) != 1 || !tuitest.Contains(reqs, tc.want) {
+				t.Fatalf("want %+v, got:\n%s", tc.want, tuitest.Describe(reqs))
+			}
+		})
+	}
+}
+
+// windowsPod runs on Windows, as spec.os says or, for an older pod, as its
+// node selector pins the node OS.
+func windowsPod(name string, byNodeSelector bool, containers ...string) *corev1.Pod {
+	p := tuitest.Pod(demo, name, nil, containers...)
+	if byNodeSelector {
+		p.Spec.NodeSelector = map[string]string{corev1.LabelOSStable: "windows"}
+		return p
+	}
+	p.Spec.OS = &corev1.PodOS{Name: corev1.Windows}
+	return p
+}
+
+// TestExecNamesTheShell: e asks for cmd.exe in a Windows pod and sh in any
+// other, so the picker's preview, the footer and what runs agree.
+func TestExecNamesTheShell(t *testing.T) {
+	t.Parallel()
+
+	linux := tuitest.Pod(demo, "web-0", nil, "app")
+	linux.Spec.OS = &corev1.PodOS{Name: corev1.Linux}
+	cases := []struct {
+		name string
+		pod  *corev1.Pod
+		want tea.Msg
+	}{
+		{
+			name: "windows by spec.os", pod: windowsPod("iis-0", false, "web"),
+			want: views.ExecRequestMsg{Namespace: demo, Pod: "iis-0", Container: "web", Shell: views.WindowsShell},
+		},
+		{
+			name: "windows by the node selector", pod: windowsPod("iis-1", true, "web"),
+			want: views.ExecRequestMsg{Namespace: demo, Pod: "iis-1", Container: "web", Shell: views.WindowsShell},
+		},
+		{
+			name: "a windows pod with two containers", pod: windowsPod("iis-2", false, "web", "agent"),
+			want: views.ContainerPromptRequestMsg{
+				Namespace: demo, Pods: []string{"iis-2"}, Containers: []string{"web", "agent"}, NextKind: "exec",
+				Target: podRef(demo, "iis-2"), Shell: views.WindowsShell,
+			},
+		},
+		{
+			name: "a linux pod", pod: linux,
+			want: views.ExecRequestMsg{Namespace: demo, Pod: "web-0", Container: "app", Shell: views.ExecShell},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := tuitest.NewFakeClient(t, tuitest.WithObjects(tuitest.Namespace(demo), tc.pod))
+			_, out := tuitest.Drive(t, mounted(t, c, demo), tuitest.Press("e"))
 			if reqs := tuitest.Requests(out); len(reqs) != 1 || !tuitest.Contains(reqs, tc.want) {
 				t.Fatalf("want %+v, got:\n%s", tc.want, tuitest.Describe(reqs))
 			}
