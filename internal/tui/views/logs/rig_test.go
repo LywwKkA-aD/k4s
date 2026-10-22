@@ -34,6 +34,12 @@ const shop = "shop"
 // a read of the (silent) streams is given up quickly.
 var quick = tuitest.Driver{CmdTimeout: 30 * time.Millisecond}
 
+// patient runs what the clock's timers bring: re-resolves, checks,
+// reconnects and the timers they arm. None of them reads a stream, so
+// they all return, and a loaded machine cannot make the driver give up on
+// a reply or on a timer before it is armed.
+var patient = tuitest.Driver{CmdTimeout: 10 * time.Second}
+
 // recorder is a streamer whose streams stay open until the session stops
 // and never send a line. It records how each pod's log was asked for.
 type recorder struct {
@@ -112,15 +118,20 @@ func mount(t *testing.T, c *k8s.Client, cs *fake.Clientset, pods []string, opts 
 // send delivers msgs and keeps what they bring.
 func (r *rig) send(msgs ...tea.Msg) {
 	r.t.Helper()
+	r.sendWith(quick, msgs...)
+}
+
+func (r *rig) sendWith(d tuitest.Driver, msgs ...tea.Msg) {
+	r.t.Helper()
 	var out []tea.Msg
-	r.m, out = tuitest.DriveWith(r.t, quick, r.m, msgs...)
+	r.m, out = tuitest.DriveWith(r.t, d, r.m, msgs...)
 	r.out = append(r.out, out...)
 }
 
 // advance moves the clock by d and delivers the timers due.
 func (r *rig) advance(d time.Duration) {
 	r.t.Helper()
-	r.send(r.clock.Advance(d)...)
+	r.sendWith(patient, r.clock.Advance(d)...)
 }
 
 // feed hands the view one batch, as the pump would.
