@@ -175,9 +175,14 @@ func newDescriber(c *k8s.Client, r *kubectl.Runner, session kubectl.Session) des
 
 // Init starts the active view, asks the server for the header's version
 // and the terminal for its background, and reports a failed preflight and
-// a saved-forwards file that could not be read.
+// a saved-forwards file that could not be read. A credential plugin the
+// preflight did not log in with (--no-preflight, or a preflight that
+// failed) gets the login probe :ctx runs (login.go).
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.current.Init(), m.fetchVersion(), m.askBackground()}
+	if m.startup.ServerVersion == nil {
+		cmds = append(cmds, loginProbe(m.client, false))
+	}
 	if err := m.startup.PreflightErr; err != nil {
 		cmds = append(cmds, warnCmd(preflightText(err)))
 	}
