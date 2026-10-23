@@ -138,9 +138,12 @@ func (d denial) what(msg string) string {
 }
 
 // canI is the `kubectl auth can-i` that asks exactly what was refused, or
-// lists what the user may do when the refusal does not say.
+// lists what the user may do when the refusal does not say or says it in
+// words can-i would not take as written.
 func (d denial) canI() kubectl.Cmd {
 	switch {
+	case !d.askable():
+		return kubectl.New("auth", "can-i", "--list")
 	case d.path != "":
 		return kubectl.New("auth", "can-i", d.verb, d.path)
 	case d.verb == "" || d.resource == "":
@@ -159,4 +162,20 @@ func (d denial) canI() kubectl.Cmd {
 		args = append(args, "-A")
 	}
 	return kubectl.New(args...)
+}
+
+// askable reports whether can-i takes every word of d as written. The
+// apiserver writes the refusal, so a verb, resource or namespace such as
+// --server=… would read as a flag in the hint the user types.
+func (d denial) askable() bool {
+	return canIWord(d.verb) && canIWord(d.resource) &&
+		(d.subresource == "" || kubectl.CheckLabel("subresource", d.subresource) == nil) &&
+		(d.namespace == "" || kubectl.CheckLabel("namespace", d.namespace) == nil) &&
+		(d.path == "" || strings.HasPrefix(d.path, "/"))
+}
+
+// canIWord reports a verb or resource can-i takes: "" (not known), "*",
+// or a DNS-1123 subdomain such as "list" or "deployments.apps".
+func canIWord(s string) bool {
+	return s == "" || s == "*" || kubectl.CheckSubdomain("word", s) == nil
 }
