@@ -24,7 +24,7 @@ events: ok total=0 truncated=false reasons=0 objects=0 counted=0 | kubectl event
 k3s: shown=true hidden="" | kubectl get deploy,ds -n kube-system
   [ok] deployment/kube-system/coredns present=true 1/1 | kubectl describe deployment coredns -n kube-system
   [ok] deployment/kube-system/traefik present=true 1/1 | kubectl describe deployment traefik -n kube-system
-  [ok] deployment/kube-system/metrics-server present=false 0/0 | kubectl describe deployment metrics-server -n kube-system
+  [ok] deployment/kube-system/metrics-server present=false 0/0 | kubectl get deploy,ds -n kube-system
   [ok] deployment/kube-system/local-path-provisioner present=true 1/1 | kubectl describe deployment local-path-provisioner -n kube-system
   servicelb ok 1/1 pending=0 | kubectl get svc -A --field-selector spec.type=LoadBalancer
   helm ok [traefik traefik-crd] failed=0 | kubectl get helmcharts -A

@@ -123,6 +123,28 @@ func TestK3sRows(t *testing.T) {
 	}
 }
 
+// TestAnOffComponentPointsAtThePanel: a component k3s runs without has no
+// object to describe; its row shows the panel's command, which lists what
+// kube-system does run, and Enter describes nothing.
+func TestAnOffComponentPointsAtThePanel(t *testing.T) {
+	t.Parallel()
+
+	base := func() dash.Snapshot {
+		s := busyK3s()
+		k := dash.ObjectKey{Kind: "deployment", Namespace: "kube-system", Name: "traefik"}
+		s.K3s.Components[1] = dash.Component{Key: k, Cmd: kc("describe", "deployment", "traefik", "-n", "kube-system")}
+		return s
+	}
+	m, _ := press(t, mount(t, newFeed(base), wideW, wideH), "6", "down", "down")
+	if got := command(m); got != "kubectl get deploy,ds -n kube-system" {
+		t.Fatalf("command on an off component = %q", got)
+	}
+	_, out := press(t, m, "enter")
+	if _, ok := tuitest.Find[views.DescribeRequestMsg](out); ok {
+		t.Fatalf("enter described an off component:\n%s", tuitest.Describe(out))
+	}
+}
+
 // TestTopPodsPanel draws panel 7: the top pods in kubectl units with a bar
 // relative to the busiest; s sorts by memory and back, and the footer's
 // --sort-by, the border note and the hint follow.
