@@ -1,2 +1,2 @@
- q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  o yaml  ·  enter select  ·  / filter  ·  w paused  ·  r refresh
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  enter select  ·  / filter  ·  w paused  ·  r refresh  ·  o yaml
  kubectl get namespaces

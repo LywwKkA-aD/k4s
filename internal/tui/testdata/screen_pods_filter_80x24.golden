@@ -19,5 +19,5 @@
 
 
 ──────────────────────────────────────────────────────────────────────────────
- q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  o y…
+ q home  ·  ^c quit  ·  esc back  ·  : command  ·  ? help  ·  y copy  ·  ent…
  kubectl get pods -A

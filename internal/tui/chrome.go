@@ -141,23 +141,25 @@ func (m Model) footerCommandRow(width int) string {
 	return styles.KubectlHint.Render(ansi.Truncate(shown, width, "…"))
 }
 
-// footerBindings are the key hints: the root's keys, then the view's. o
-// is hinted only on a view with an object to open (views.Selection);
-// elsewhere it just says there is none.
+// footerBindings are the key hints: the root's keys, the view's, then o
+// on a view with an object to open (views.Selection; elsewhere o just
+// says there is none). o comes last because the row is cut to the width:
+// ahead of the view's hints it would push them, the watch state among
+// them, off a narrow terminal. The help lists o on every view.
 func (m Model) footerBindings() []string {
 	quitLabel := "q quit"
 	if m.current.Title() != viewDashboard {
 		quitLabel = "q home"
 	}
 	bindings := []string{quitLabel, "^c quit", "esc back", ": command", "? help", "y copy"}
-	if _, ok := m.current.(views.Selection); ok {
-		bindings = append(bindings, m.keys.YAML.Help().Key+" yaml")
-	}
 	for _, b := range m.current.Help() {
 		h := b.Help()
 		if h.Key != "" && h.Desc != "" {
 			bindings = append(bindings, h.Key+" "+h.Desc)
 		}
+	}
+	if _, ok := m.current.(views.Selection); ok {
+		bindings = append(bindings, m.keys.YAML.Help().Key+" yaml")
 	}
 	return bindings
 }

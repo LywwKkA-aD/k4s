@@ -6,12 +6,23 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/tui"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
-// TestYAMLKeyHint: o is the root's, so the root's hints name it next to y
-// wherever the view has an object for it, and nowhere else.
+// wideW is wide enough for every view's hints, the last included.
+const wideW = 400
+
+// hintsRow is the footer's first row: the key hints.
+func hintsRow(m tui.Model) string {
+	hints, _, _ := strings.Cut(footer(m), "\n")
+	return hints
+}
+
+// TestYAMLKeyHint: o is the root's, so the root's hints name it, after
+// the view's own, wherever the view has an object for it, and nowhere
+// else.
 func TestYAMLKeyHint(t *testing.T) {
 	t.Parallel()
 
@@ -31,10 +42,46 @@ func TestYAMLKeyHint(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), tc.input...)
-			hints, _, _ := strings.Cut(footer(m), "\n")
-			if got := strings.Contains(hints, "y copy  ·  o yaml"); got != tc.shown {
-				t.Errorf("o yaml hinted = %v, want %v: %q", got, tc.shown, hints)
+			m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil), wideW, screenH)
+			m, _ = tuitest.Drive(t, m, tc.input...)
+			hints := hintsRow(m)
+			if got := strings.HasSuffix(hints, "  ·  o yaml"); got != tc.shown {
+				t.Errorf("o yaml hinted last = %v, want %v: %q", got, tc.shown, hints)
+			}
+			if !tc.shown && strings.Contains(hints, "o yaml") {
+				t.Errorf("o yaml hinted where there is nothing to open: %q", hints)
+			}
+		})
+	}
+}
+
+// TestViewHintsComeBeforeTheYAMLHint: the footer is cut to the width, so
+// a global hint ahead of the view's would push them, the watch state among
+// them, off a narrow terminal. The view's first hint follows y copy.
+func TestViewHintsComeBeforeTheYAMLHint(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		width int
+		input []tea.Msg
+		want  string
+	}{
+		{name: "pods at 80 columns", width: 80, input: colon("pods"), want: "y copy  ·  ent"},
+		{name: "describe at 80 columns", width: 80, input: []tea.Msg{views.DescribeRequestMsg{Kind: "pod", Namespace: tuitest.NamespaceDemo, Name: tuitest.PodWeb1}}, want: "y copy  ·  "},
+		{name: "pods in a namespace at 160 columns", width: screenW, input: []tea.Msg{views.NamespaceSelectedMsg{Namespace: tuitest.NamespaceDemo}}, want: "w watch 5s"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil), tc.width, screenH)
+			m, _ = tuitest.Drive(t, m, tc.input...)
+			hints := hintsRow(m)
+			if !strings.Contains(hints, tc.want) {
+				t.Errorf("hints lack %q: %q", tc.want, hints)
+			}
+			if strings.Contains(hints, "y copy  ·  o y") {
+				t.Errorf("o yaml comes before the view's hints: %q", hints)
 			}
 		})
 	}
