@@ -27,8 +27,9 @@ type Source struct {
 // NewSource builds the dashboard's clients from c. Typed calls use a
 // dashboard-only copy of c's config that speaks protobuf; Tables, CRDs and
 // metrics stay JSON through c's own REST client, since a Table over
-// protobuf is answered with 406. A client without a RestConfig (a fake)
-// is used as it is.
+// protobuf is answered with 406. A client without a RestConfig, or whose
+// clientset is not a real one (a fake that only names a server), is used
+// as it is.
 func NewSource(c *k8s.Client) (Source, error) {
 	if c == nil || c.Clientset == nil {
 		return Source{}, ErrNoClient
@@ -38,6 +39,9 @@ func NewSource(c *k8s.Client) (Source, error) {
 		return src, nil
 	}
 	src.Host = c.RestConfig.Host
+	if _, real := c.Clientset.(*kubernetes.Clientset); !real {
+		return src, nil
+	}
 	cfg := rest.CopyConfig(c.RestConfig)
 	cfg.ContentType = runtime.ContentTypeProtobuf
 	cfg.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON

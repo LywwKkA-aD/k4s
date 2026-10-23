@@ -11,6 +11,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/k8stest"
 )
@@ -353,6 +354,14 @@ func TestNewSource(t *testing.T) {
 	src, err = NewSource(served)
 	if err != nil || src.Host != served.RestConfig.Host || !usable(src.REST) || src.Typed == served.Clientset {
 		t.Fatalf("server source = %+v, %v", src, err)
+	}
+	// A fake with a server address (as the header tests use) must stay the
+	// fake: a protobuf copy of the config would dial that address.
+	named, _ := k8stest.NewFakeClient()
+	named.RestConfig = &rest.Config{Host: "https://10.0.0.5:6443"}
+	src, err = NewSource(named)
+	if err != nil || src.Typed != named.Clientset || usable(src.REST) || src.Host != "https://10.0.0.5:6443" {
+		t.Fatalf("named fake source = %+v, %v", src, err)
 	}
 }
 
