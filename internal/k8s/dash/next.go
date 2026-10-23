@@ -112,7 +112,7 @@ func podSuggestion(r PodRow) (Suggestion, bool) {
 	sg := Suggestion{Target: r.Key, Sev: r.Sev, ago: ago, Action: ActionDescribe, Cmd: r.Cmd}
 	switch {
 	case r.Class == ClassCrash && r.Restarts > 0 && r.Container != "":
-		sg.Cmd = kubectl("logs", r.Key.Name, "-n", r.Key.Namespace, "-c", r.Container, "--previous")
+		sg.Cmd = logsCmd(r.Key, r.Container, "--previous")
 		sg.Question, sg.Action, sg.Container = "why does it keep crashing?", ActionLogsPrevious, r.Container
 	case r.Class == ClassPull:
 		sg.Question = "why can't it pull its image?"
@@ -156,7 +156,7 @@ func probeSuggestion(e EventRow) (Suggestion, bool) {
 		return Suggestion{}, false
 	}
 	return Suggestion{
-		Cmd:      kubectl("logs", e.Object.Name, "-n", e.Object.Namespace, "-c", e.Container),
+		Cmd:      logsCmd(e.Object, e.Container),
 		Question: "why does it fail its probe?", Action: ActionLogs, Target: e.Object, Container: e.Container,
 		Sev: SevWaiting, ago: e.Ago,
 	}, true
@@ -167,11 +167,7 @@ func probeSuggestion(e EventRow) (Suggestion, bool) {
 func accessSuggestions(s Snapshot) []Suggestion {
 	var out []Suggestion
 	if deniedList(s.Ledger) {
-		args := []string{"auth", "can-i", "--list"}
-		if ns := s.Scope.Namespace; ns != "" {
-			args = append(args, "-n", ns)
-		}
-		out = append(out, Suggestion{Cmd: kubectl(args...), Question: "what am I allowed to see here?",
+		out = append(out, Suggestion{Cmd: canIListAll(s.Scope.Namespace), Question: "what am I allowed to see here?",
 			Action: ActionCopy, Target: ObjectKey{Kind: "access"}, Sev: SevWaiting})
 	}
 	if s.Nodes.Metrics.State == StateAbsent {
@@ -179,6 +175,28 @@ func accessSuggestions(s Snapshot) []Suggestion {
 			Question: "is the metrics API served?", Action: ActionCopy, Target: ObjectKey{Kind: "metrics"}, Sev: SevInfo})
 	}
 	return out
+}
+
+// canIListAll is `kubectl auth can-i --list [-n <ns>]`, the zero Cmd for
+// a namespace kubectl would not take.
+func canIListAll(ns string) Cmd {
+	switch {
+	case ns == "":
+		return kubectl("auth", "can-i", "--list")
+	case !isLabel(ns):
+		return Cmd{}
+	}
+	return kubectl("auth", "can-i", "--list", "-n", ns)
+}
+
+// logsCmd is `kubectl logs <pod> -n <ns> -c <container>` and extra, the
+// zero Cmd when a name is not one kubectl takes as written.
+func logsCmd(pod ObjectKey, container string, extra ...string) Cmd {
+	if !isName(pod.Name) || !isLabel(pod.Namespace) || !isLabel(container) {
+		return Cmd{}
+	}
+	args := append([]string{"logs", pod.Name, "-n", pod.Namespace, "-c", container}, extra...)
+	return kubectl(args...)
 }
 
 // deniedList reports a denied namespaced list or a denied nodes list; the
@@ -219,12 +237,13 @@ func pick(in []Suggestion) []Suggestion {
 }
 
 // take keeps the first suggestion per object, up to the cap, skipping
-// the workloads in skip.
+// the workloads in skip and any suggestion whose command a builder
+// refused: a question with no command to answer it is not shown.
 func take(in []Suggestion, skip map[ObjectKey]bool) []Suggestion {
 	seen := map[ObjectKey]bool{}
 	var out []Suggestion
 	for _, sg := range in {
-		if seen[sg.Target] || skip[sg.Target] || len(out) >= maxSuggestions {
+		if sg.Cmd.IsZero() || seen[sg.Target] || skip[sg.Target] || len(out) >= maxSuggestions {
 			continue
 		}
 		seen[sg.Target] = true

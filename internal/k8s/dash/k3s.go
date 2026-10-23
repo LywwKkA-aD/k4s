@@ -93,6 +93,16 @@ func component(name string, byName map[string]placedComponent) Component {
 	return comp
 }
 
+// reconciledCmd reads the node annotation k3s stamps when it reconciles
+// etcd snapshots; the zero Cmd for a node name kubectl would not take.
+func reconciledCmd(node string) Cmd {
+	if !isName(node) {
+		return Cmd{}
+	}
+	return kubectl("get", "node", node, "-o",
+		`jsonpath={.metadata.annotations.etcd\.k3s\.cattle\.io/local-snapshots-timestamp}`)
+}
+
 // k3sPanelCmd lists kube-system's deployments and daemonsets, where the
 // bundled components run.
 func k3sPanelCmd() Cmd { return kubectl("get", "deploy,ds", "-n", kubeSystem) }
@@ -227,8 +237,7 @@ func etcdRow(st store, led Ledger, now time.Time) EtcdRow {
 		return row
 	}
 	row.Reconciled, row.Node = true, etcdNode
-	row.Cmd = kubectl("get", "node", etcdNode, "-o",
-		`jsonpath={.metadata.annotations.etcd\.k3s\.cattle\.io/local-snapshots-timestamp}`)
+	row.Cmd = reconciledCmd(etcdNode)
 	for _, n := range st.nodes {
 		if n.name != etcdNode {
 			continue

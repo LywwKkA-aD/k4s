@@ -110,12 +110,17 @@ func describable(r row) bool {
 }
 
 // toKubectl turns a data-layer command into the footer's, its arguments
-// cleaned of anything a terminal would act on.
+// cleaned of anything a terminal would act on. The data layer gives no
+// command for a name that reads as a flag; one that sets a session flag
+// anyway (kubectl.CheckFlags) is not shown either.
 func toKubectl(c dash.Cmd) kubectl.Cmd {
 	if c.IsZero() {
 		return kubectl.Cmd{}
 	}
 	out := kubectl.New(cleanArgs(c.Args)...)
+	if kubectl.CheckFlags(out) != nil {
+		return kubectl.Cmd{}
+	}
 	out.Approx = c.Approx
 	return out
 }

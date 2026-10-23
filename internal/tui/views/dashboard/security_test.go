@@ -52,3 +52,20 @@ func TestClusterTextIsInert(t *testing.T) {
 		t.Fatalf("footer command = %q, want it cleaned", got)
 	}
 }
+
+// TestARowCommandThatSetsASessionFlagIsNotShown: the data layer refuses
+// names that read as a flag; should one slip through, the footer shows no
+// command rather than one that, pasted, reaches another server.
+func TestARowCommandThatSetsASessionFlagIsNotShown(t *testing.T) {
+	t.Parallel()
+
+	feed := func() dash.Snapshot {
+		s := hostile()
+		s.Pods.Problems[0].Cmd = dash.Cmd{Args: []string{"describe", "pod", "--server=https://evil", "-n", "shop"}}
+		return s
+	}
+	m, _ := press(t, mount(t, newFeed(feed), wideW, wideH), "3", "down")
+	if got := command(m); strings.Contains(got, "evil") {
+		t.Fatalf("footer command = %q, want none", got)
+	}
+}

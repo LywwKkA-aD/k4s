@@ -3,6 +3,8 @@ package dash
 import (
 	"slices"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // Cmd is one read-only kubectl invocation. Args follow the binary name, so
@@ -63,8 +65,12 @@ func scopeArgs(ns string) []string {
 }
 
 // withScope puts -A or -n <ns> before the first flag, where kubectl users
-// write it: `kubectl get svc -A --field-selector …`.
+// write it: `kubectl get svc -A --field-selector …`. A namespace kubectl
+// would not take gives the zero Cmd.
 func withScope(ns string, args ...string) Cmd {
+	if ns != "" && !isLabel(ns) {
+		return Cmd{}
+	}
 	at := slices.IndexFunc(args, func(a string) bool { return strings.HasPrefix(a, "-") })
 	if at < 0 {
 		at = len(args)
@@ -84,12 +90,37 @@ func canIList(resource, ns string, namespaced bool) Cmd {
 	return withScope(ns, "auth", "can-i", "list", resource)
 }
 
+// describe is `kubectl describe <kind> <name> [-n <ns>]`, the zero Cmd
+// when a word is not one kubectl takes as written (see isName).
 func describe(kind, name, ns string) Cmd {
+	if !isName(kind) || !isName(name) || (ns != "" && !isLabel(ns)) {
+		return Cmd{}
+	}
 	if ns == "" {
 		return kubectl("describe", kind, name)
 	}
 	return kubectl("describe", kind, name, "-n", ns)
 }
+
+// findCmd is `kubectl get <resource> [-A|-n <ns>] --field-selector
+// metadata.name=<name>`, which finds an object not yet placed in a
+// namespace; the zero Cmd for a name kubectl would not take.
+func findCmd(ns, resource, name string) Cmd {
+	if !isName(name) {
+		return Cmd{}
+	}
+	return withScope(ns, "get", resource, "--field-selector", "metadata.name="+name)
+}
+
+// isName reports whether s is a DNS-1123 subdomain, the rule for object
+// names and resource words (kubectl.CheckSubdomain). Names come from the
+// cluster: one such as --server=… would read as a flag in a command the
+// user copies, and a comma would widen a field selector.
+func isName(s string) bool { return len(validation.IsDNS1123Subdomain(s)) == 0 }
+
+// isLabel reports whether s is a DNS-1123 label, the rule for namespaces
+// and containers (kubectl.CheckLabel).
+func isLabel(s string) bool { return len(validation.IsDNS1123Label(s)) == 0 }
 
 // shellQuote leaves words made only of safe characters bare and
 // single-quotes the rest, closing and reopening around embedded quotes.
