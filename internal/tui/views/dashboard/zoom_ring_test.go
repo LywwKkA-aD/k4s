@@ -141,8 +141,9 @@ func TestToastInTheBanner(t *testing.T) {
 	}
 }
 
-// TestToastInTheStatusLine: outside the wide layout the toast is a status
-// message, and the root's status line times it out.
+// TestToastInTheStatusLine: outside the wide layout the toast goes to the
+// root's status line as a toast, which never replaces an error showing
+// there, and the status line times it out.
 func TestToastInTheStatusLine(t *testing.T) {
 	t.Parallel()
 
@@ -151,11 +152,14 @@ func TestToastInTheStatusLine(t *testing.T) {
 	f.set(busyK3s)
 	var out []tea.Msg
 	m, out = tuitest.Drive(t, m, f.clock.Advance(tickStep)...)
-	// Failing has no status level of its own: the toast goes as info, the
-	// one level the root adds no glyph to, with its ▲.
-	msg, ok := tuitest.Find[views.StatusMsg](out)
-	if !ok || msg.Level != status.Info || msg.Text != "▲ pod shop/payments-worker-6c9f7d8b5-r8vqn → CrashLoopBackOff · +1" {
+	// A failing change goes as an alert: the root marks it ▲ in the error
+	// style and lets it go at the TTL.
+	msg, ok := tuitest.Find[views.ToastMsg](out)
+	if !ok || msg.Level != status.Alert || msg.Text != "pod shop/payments-worker-6c9f7d8b5-r8vqn → CrashLoopBackOff · +1" {
 		t.Fatalf("status toast:\n%s", tuitest.Describe(out))
+	}
+	if _, ok := tuitest.Find[views.StatusMsg](out); ok {
+		t.Fatalf("the toast went as a status, which replaces an error:\n%s", tuitest.Describe(out))
 	}
 	if f.frames.Pending() != 0 {
 		t.Fatal("a status toast armed a tick of its own")

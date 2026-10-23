@@ -54,8 +54,9 @@ func TestOneRefreshSendsOneStatus(t *testing.T) {
 			f.set(withoutPod(gone))
 			_, out := tuitest.Drive(t, m, f.clock.Advance(tickStep)...)
 			statuses := tuitest.All[views.StatusMsg](out)
-			if len(statuses) != 1 || statuses[0].Text != "pod shop/"+gone+" is gone" {
-				t.Fatalf("one refresh sent %d statuses, want the gone note alone:\n%s", len(statuses), tuitest.Describe(out))
+			toasts := tuitest.All[views.ToastMsg](out)
+			if len(statuses) != 1 || len(toasts) != 0 || statuses[0].Text != "pod shop/"+gone+" is gone" {
+				t.Fatalf("one refresh sent %d statuses and %d toasts, want the gone note alone:\n%s", len(statuses), len(toasts), tuitest.Describe(out))
 			}
 		})
 	}
