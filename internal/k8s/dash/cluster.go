@@ -63,6 +63,25 @@ func distroOf(git string) string {
 	}
 }
 
+// distro is the distribution the server version names or, while it is
+// unknown (denied, or not answered yet), the one every kubelet names: a
+// k3s node reports v1.36.5+k3s1 too. The nodes list is fetched anyway, so
+// this costs no request. Kubelets that disagree name none.
+func (st store) distro() string {
+	if st.version.git != "" {
+		return distroOf(st.version.git)
+	}
+	var d string
+	for i, n := range st.nodes {
+		nd := distroOf(n.kubelet)
+		if i > 0 && nd != d {
+			return ""
+		}
+		d = nd
+	}
+	return d
+}
+
 // lbFieldSelectorMinor is the first release whose Service registry accepts
 // spec.type in a field selector.
 const lbFieldSelectorMinor = 31
@@ -167,7 +186,7 @@ func apiRow(r readyzInfo, a Avail, cmd Cmd) APIRow {
 }
 
 func versionRow(st store, a Avail) VersionRow {
-	row := VersionRow{Avail: a, GitVersion: st.version.git, Distro: distroOf(st.version.git), Cmd: kubectl("version")}
+	row := VersionRow{Avail: a, GitVersion: st.version.git, Distro: st.distro(), Cmd: kubectl("version")}
 	for _, n := range st.nodes {
 		row.EmbeddedEtcd = row.EmbeddedEtcd || n.etcd
 		if n.controlPlane {
