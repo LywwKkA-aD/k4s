@@ -60,7 +60,7 @@ func TestDegradedSources(t *testing.T) {
 			},
 			want: []string{
 				"○ no metrics-server: metrics.k8s.io is not served",
-				"bundled with k3s; --disable=metrics-server?",
+				"metrics-server is bundled with k3s; disabled with --disable=metrics-server?",
 			},
 			not: []string{"cluster cpu", "re-checked"},
 		},
@@ -70,7 +70,7 @@ func TestDegradedSources(t *testing.T) {
 				s.Nodes.Metrics = dash.Avail{State: dash.StateAbsent}
 				s.Cluster.Version.Distro = "eks"
 			},
-			want: []string{"○ no metrics-server: metrics.k8s.io is not served", "install: kubernetes-sigs/metrics-server"},
+			want: []string{"○ no metrics-server: metrics.k8s.io is not served", "install metrics-server: kubectl apply -f https://github.com/kubernetes-sigs/"},
 		},
 		{
 			name:   "metrics not ready",

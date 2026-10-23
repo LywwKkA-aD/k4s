@@ -6,7 +6,7 @@
 │ ● you      shop-dev                                      ││   pods per node (ns shop) still shown in 3 pods          │
 │ — ns       forbidden · :ns <name> to switch              ││                                                          │
 │ ● storage  4/4 pvc Bound (ns shop)                       ││ ○ no metrics-server: metrics.k8s.io is not in discovery  │
-│ ● network  12 svc in ns shop · no LoadBalancer           ││   install: kubernetes-sigs/metrics-server                │
+│ ● network  12 svc in ns shop · no LoadBalancer           ││   install metrics-server: kubectl apply -f https://githu…│
 │   server   https://C0FFEE.gr7.eu-west-1.eks.amazonaws.c… ││   re-checked every 60s and on r                          │
 │                                                          ││                                                          │
 ╰─────────────────────────────────────────────── ctx fake ─╯╰──────────────────────────────────────────────────────────╯

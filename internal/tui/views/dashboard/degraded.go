@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 )
 
@@ -131,11 +132,7 @@ func metricsLines(f frame) []string {
 		if notDiscovered(f.snap) {
 			why = "metrics.k8s.io is not in discovery"
 		}
-		hint := "install: kubernetes-sigs/metrics-server"
-		if f.snap.Cluster.Version.Distro == "k3s" {
-			hint = "bundled with k3s; --disable=metrics-server?"
-		}
-		out := []string{f.paint(markOff) + " no metrics-server: " + why, "  " + hint}
+		out := []string{f.paint(markOff) + " no metrics-server: " + why, "  " + cluster.MetricsHint(f.distro)}
 		if notDiscovered(f.snap) {
 			out = append(out, "  "+f.muted("re-checked every 60s and on r"))
 		}

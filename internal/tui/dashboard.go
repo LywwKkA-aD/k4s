@@ -12,7 +12,8 @@ import (
 // last dashboard learned, the terminal's focus and colour profile as last
 // reported and the session the footer decorates with, so commands printed
 // in its body paste as the footer's do. When the root asks /version for the
-// header, the dashboard takes that answer instead of asking again.
+// header, the dashboard takes that answer instead of asking again; the
+// distribution the root detected words the dashboard's hints, as top's.
 func (m Model) newDashboard() views.View {
 	opts := []dashboard.Option{
 		dashboard.WithNamespace(m.namespace),
@@ -20,6 +21,7 @@ func (m Model) newDashboard() views.View {
 		dashboard.WithBlurred(m.blurred),
 		dashboard.WithColorProfile(m.profile),
 		dashboard.WithSession(m.kubectlSession),
+		dashboard.WithDistro(m.startup.Distro),
 	}
 	if m.ownsVersion() {
 		opts = append(opts, dashboard.WithServerVersion(m.startup.ServerVersion))
@@ -27,13 +29,14 @@ func (m Model) newDashboard() views.View {
 	return dashboard.New(m.client, m.loadErr, opts...)
 }
 
-// tellDashboard hands the server version to the dashboard on screen; one
-// built later takes it from the session (see newDashboard).
+// tellDashboard hands the server version and the distribution detected
+// from it to the dashboard on screen; one built later takes both from the
+// session (see newDashboard).
 func (m Model) tellDashboard(info *apiversion.Info) (tea.Model, tea.Cmd) {
 	if _, ok := m.current.(dashboard.Model); !ok {
 		return m, nil
 	}
-	return m.forwardToView(dashboard.VersionMsg{Info: info})
+	return m.forwardToView(dashboard.VersionMsg{Info: info, Distro: m.startup.Distro})
 }
 
 // keepDashboard takes v's memory when v is a dashboard about to be

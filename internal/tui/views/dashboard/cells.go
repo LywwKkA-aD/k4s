@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -22,6 +23,8 @@ type frame struct {
 	focus  focus
 	since  time.Time
 	ctx    string // kubeconfig context name, cleaned
+	// distro words the hints that depend on the distribution.
+	distro cluster.Distro
 	// session decorates the commands the body prints for pasting.
 	session kubectl.Session
 	hint    string // "watch 5s", "paused", "refreshing…"
