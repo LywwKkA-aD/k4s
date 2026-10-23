@@ -236,8 +236,9 @@ func TestJobsAndCronLinesTakeTheCursor(t *testing.T) {
 	requireAll(t, screen, []string{"┃›cron    14 · ○ 1 suspended · last schedule 3m", "2/8 · 5 need attention"}, nil)
 }
 
-// TestEnterOnPanelRows opens describe where k4s has the view (pods,
-// deployments and services) and says so elsewhere.
+// TestEnterOnPanelRows opens describe for a row of one object (kubectl
+// describes the kinds k4s does not write itself) and says so on a line
+// with no view.
 func TestEnterOnPanelRows(t *testing.T) {
 	t.Parallel()
 
@@ -249,7 +250,10 @@ func TestEnterOnPanelRows(t *testing.T) {
 	}{
 		{name: "deployment row", keys: []string{"4", "down", "down", "down"}, want: views.DescribeRequestMsg{Kind: "deployment", Namespace: "shop", Name: "payments-worker"}, hint: "describe"},
 		{name: "pod event", keys: []string{"5", "down"}, want: views.DescribeRequestMsg{Kind: "pod", Namespace: "monitoring", Name: "loki-backend-0"}, hint: "describe"},
-		{name: "statefulset row", keys: []string{"4", "down", "down", "down", "down", "down", "down"}},
+		{
+			name: "statefulset row", keys: []string{"4", "down", "down", "down", "down", "down", "down"},
+			want: views.DescribeRequestMsg{Kind: "statefulset", Namespace: "monitoring", Name: "loki-backend"}, hint: "describe",
+		},
 		{name: "jobs line", keys: []string{"4", "down"}},
 	}
 	for _, tt := range tests {

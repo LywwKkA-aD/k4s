@@ -65,7 +65,7 @@ func k3sItems(s dash.Snapshot) []k3sItem {
 // when LoadBalancers wait and none exists, nothing without LoadBalancers.
 func serviceLBItem(k dash.K3sPanel) (k3sItem, bool) {
 	lb := k.ServiceLB
-	it := k3sItem{row: row{key: "k3s/servicelb", cmd: lb.Cmd}, label: "servicelb"}
+	it := k3sItem{row: row{key: serviceLBKey, cmd: lb.Cmd}, label: "servicelb"}
 	pending := ""
 	if lb.Pending > 0 {
 		pending = plural(lb.Pending, "LoadBalancer", "LoadBalancers") + " <pending>"

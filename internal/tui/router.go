@@ -82,6 +82,8 @@ func (m Model) onRequest(msg tea.Msg) (next tea.Model, cmd tea.Cmd, ok bool) {
 		next, cmd = m.onContextSelected(msg)
 	case views.DescribeRequestMsg:
 		next, cmd = m.onDescribeRequest(msg)
+	case views.OpenViewMsg:
+		next, cmd = m.onOpenView(msg)
 	case views.YAMLRequestMsg:
 		next, cmd = m.onYAMLRequest(msg)
 	case views.TailPromptRequestMsg:

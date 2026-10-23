@@ -39,7 +39,7 @@ type mode string
 
 const (
 	modePods  mode = "pods"
-	modeNodes mode = "nodes"
+	modeNodes mode = views.ModeNodes
 )
 
 // sortKey is the column rows are sorted by, busiest first, as
@@ -48,7 +48,7 @@ type sortKey string
 
 const (
 	sortCPU    sortKey = "cpu"
-	sortMemory sortKey = "memory"
+	sortMemory sortKey = views.SortMemory
 )
 
 // Model is the top view.

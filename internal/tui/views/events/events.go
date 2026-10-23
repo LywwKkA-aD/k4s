@@ -29,6 +29,7 @@ import (
 	"github.com/LywwKkA-aD/k4s/internal/tui/filter"
 	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
 const (
@@ -39,7 +40,7 @@ const (
 	maxRows = 2000
 
 	// modeWarnings is State.Mode while W keeps only the warnings.
-	modeWarnings = "warnings"
+	modeWarnings = views.ModeWarnings
 	typeWarning  = "Warning"
 
 	// Events across every namespace take longer to read, and may take

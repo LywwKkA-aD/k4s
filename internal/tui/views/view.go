@@ -118,6 +118,30 @@ type DescribeRequestMsg struct {
 	Name      string
 }
 
+// OpenViewMsg asks the root to open the list view Name (a command bar
+// name: "pods", "deployments", "services", "events", "nodes",
+// "namespaces", "top"), one Esc from the view that asked, as typing its
+// command does: a namespaced list in Namespace ("" for every namespace)
+// as `:<name> <namespace>` does, a cluster-wide one as `:<name>`. A
+// non-zero State opens it in that state, such as the events view with
+// only the warnings (Mode ModeWarnings).
+type OpenViewMsg struct {
+	Name      string
+	Namespace string
+	State     State
+}
+
+// The State values a view opened with OpenViewMsg can start in.
+const (
+	// ModeWarnings is the events view's Mode with only the warnings
+	// (--types=Warning).
+	ModeWarnings = "warnings"
+	// ModeNodes is the top view's Mode for nodes instead of pods.
+	ModeNodes = "nodes"
+	// SortMemory is the top view's Sort by memory instead of CPU.
+	SortMemory = "memory"
+)
+
 // ResourceRef names the object a request was made for: the row the user
 // acted on, which may stand for several pods. Kind is the name kubectl
 // takes ("pod", "deployment", "service", "namespace"); Namespace is ""

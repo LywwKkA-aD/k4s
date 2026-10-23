@@ -164,7 +164,7 @@ func nsItem(r dash.NamespacesRow) (clusterItem, bool) {
 		return clusterItem{}, false
 	}
 	value := fmt.Sprintf("%d · %d terminating", r.Count, r.Terminating) + staleNote(r.Avail)
-	return clusterItem{key: "ns", label: "ns", value: value, cmd: r.Cmd}, true
+	return clusterItem{key: nsKey, label: "ns", value: value, cmd: r.Cmd}, true
 }
 
 // storageItem counts the claims of the namespace listed (ns, "" for all),
@@ -206,7 +206,7 @@ func networkItem(r dash.NetworkRow, ns string) (clusterItem, bool) {
 	if !readable(r.Avail) {
 		return clusterItem{}, false
 	}
-	it := clusterItem{key: "network", mark: markOK, label: "network", cmd: r.Cmd}
+	it := clusterItem{key: networkKey, mark: markOK, label: "network", cmd: r.Cmd}
 	var parts []string
 	switch {
 	case r.ServicesKnown && ns != "":
