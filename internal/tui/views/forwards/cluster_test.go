@@ -104,3 +104,18 @@ func TestALegacyForwardIsConfirmedByStartingIt(t *testing.T) {
 		t.Errorf("List = %+v, want the forward bound to %s", a, devServer)
 	}
 }
+
+// The notice quotes the saved file, which anyone who can write it
+// controls, so it reaches the status row inert.
+func TestACorruptStateNoticeIsInert(t *testing.T) {
+	seedLegacy(t, "{\"forwards\": [{\"id\": \"x\", \"context\": \"default\", \"namespace\": \"demo\", \"kind\": \"pod\", \"name\": \"a\\u001b]0;pwn\\u0007b\", \"local_port\": 1, \"remote_port\": 1}]}")
+	mgr, err := forwards.NewManager(nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	m, out := tuitest.Mount(t, forwardsview.New(mgr), width, height)
+	t.Cleanup(func() { _ = m.Close() })
+	if got := statusOf(t, out); strings.ContainsAny(got.Text, "\x1b\x07") {
+		t.Errorf("status %q carries control bytes", got.Text)
+	}
+}

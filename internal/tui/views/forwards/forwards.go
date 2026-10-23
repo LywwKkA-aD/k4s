@@ -16,6 +16,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -102,7 +103,7 @@ func New(mgr *forwards.Manager, opts ...Option) Model {
 		return m
 	}
 	m.changes = mgr.Changes()
-	m.notice = mgr.TakeNotice()
+	m.notice = sanitize.Line(mgr.TakeNotice())
 	m.show(mgr.List())
 	return m
 }
