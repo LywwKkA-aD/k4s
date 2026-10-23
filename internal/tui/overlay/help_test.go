@@ -83,3 +83,25 @@ func TestHelpClosesOnEveryKey(t *testing.T) {
 		t.Error("a resize closed help")
 	}
 }
+
+func TestIsHelp(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		o    overlay.Overlay
+		want bool
+	}{
+		{name: "help", o: overlay.NewHelp(helpPage()), want: true},
+		{name: "command bar", o: overlay.NewCommand()},
+		{name: "none"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := overlay.IsHelp(tc.o); got != tc.want {
+				t.Errorf("IsHelp = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

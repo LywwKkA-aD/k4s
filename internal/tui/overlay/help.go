@@ -46,6 +46,12 @@ func NewHelp(page HelpPage, closeOn ...key.Binding) Overlay {
 	return help{page: page, closeOn: closeOn}
 }
 
+// IsHelp reports whether o is the help popup.
+func IsHelp(o Overlay) bool {
+	_, ok := o.(help)
+	return ok
+}
+
 // Update closes on any key or paste.
 func (h help) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	switch msg.(type) {

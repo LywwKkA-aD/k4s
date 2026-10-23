@@ -117,6 +117,11 @@ func (m Model) onInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) onWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
+	// Help picks its page by the body it opened in; the new body may fit
+	// more of it, or less.
+	if overlay.IsHelp(m.overlay) {
+		m = m.openHelp()
+	}
 	bodyMsg := tea.WindowSizeMsg{Width: msg.Width, Height: m.bodyHeight()}
 	return m.forwardToView(bodyMsg)
 }
