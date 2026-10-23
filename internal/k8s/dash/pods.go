@@ -113,6 +113,8 @@ func derivePods(st store, led Ledger, scope Scope, now time.Time) PodsPanel {
 		row, keep := podRowOf(st, r, c, scope, now, used)
 		switch {
 		case !keep:
+		case row.Sev > SevOK && len(p.Problems) >= maxProblemRows:
+			p.Cut = p.Cut.add(row)
 		case row.Sev > SevOK:
 			p.Problems = append(p.Problems, row)
 		case row.HasRestart && row.LastRestart < restartWindow && len(p.Restarted) < maxRestartedRows:

@@ -273,16 +273,12 @@ func podsFooter(f frame, items []podItem, hidden int) string {
 	if f.focus.panel == dash.PanelPods && f.focus.row != "" {
 		parts = append(parts, fmt.Sprintf("%d/%d", f.focus.index+1, len(items)))
 	}
-	if hidden > 0 {
+	// Rows past the data layer's cap are hidden too, and need attention
+	// like the rest.
+	if hidden += f.snap.Pods.Cut.Rows; hidden > 0 {
 		parts = append(parts, fmt.Sprintf("+%d", hidden))
 	}
-	attention := 0
-	for _, it := range items {
-		if it.pod.Sev >= dash.SevWaiting {
-			attention++
-		}
-	}
-	if attention > 0 {
+	if attention := f.snap.Pods.Attention(); attention > 0 {
 		parts = append(parts, fmt.Sprintf("%d need attention", attention))
 	}
 	if n := len(f.snap.Pods.Restarted); n > 0 {

@@ -47,9 +47,10 @@ type PodsPanel struct {
 	Failing   []ReasonCount // failing STATUS words with counts, most first
 	NotOK     int           // pods that are not Running-and-ready nor Completed
 	PerNode   []NodeCount
-	Problems  []PodRow // ▲, △ and · rows, most severe and most recent first
-	Restarted []PodRow // up to 3 ◇ rows restarted in the last 24 h
-	Missing   []string // Table columns the server did not send; their metrics are dropped
+	Problems  []PodRow      // ▲, △ and · rows, most severe and most recent first; at most maxProblemRows
+	Cut       ProblemCounts // the problem rows past the cap, which Attention and Waiting add in
+	Restarted []PodRow      // up to 3 ◇ rows restarted in the last 24 h
+	Missing   []string      // Table columns the server did not send; their metrics are dropped
 }
 
 // PhaseCounts feeds the phase bar.

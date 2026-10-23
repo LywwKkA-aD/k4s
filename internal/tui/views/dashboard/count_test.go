@@ -31,6 +31,12 @@ func TestCutCountsReadAsAtLeast(t *testing.T) {
 			not:    []string{"102+ svc"},
 		},
 		{
+			name:   "problem pods past the cap",
+			change: func(s *dash.Snapshot) { s.Pods.Cut = dash.ProblemCounts{Rows: 1000, Attention: 1000, Waiting: 400} },
+			want:   []string{"+1000 · 1006 need attention · 2 restarting"},
+			not:    []string{" 6 need attention"},
+		},
+		{
 			name:   "a capped page of warnings",
 			change: func(s *dash.Snapshot) { s.Events.Total, s.Events.Truncated = 2000, true },
 			want:   []string{"2000+ warnings", "newest first · 10 of 2000+"},
@@ -48,4 +54,18 @@ func TestCutCountsReadAsAtLeast(t *testing.T) {
 			requireAll(t, tuitest.Screen(mount(t, newFeed(base), wideW, wideH)), tt.want, tt.not)
 		})
 	}
+}
+
+// TestPodsSummaryCountsRowsPastTheCap: the folded pods line counts every
+// pod that needs attention, not only the rows the data layer kept.
+func TestPodsSummaryCountsRowsPastTheCap(t *testing.T) {
+	t.Parallel()
+
+	base := func() dash.Snapshot {
+		s := busyK3s()
+		s.Pods.Cut = dash.ProblemCounts{Rows: 1000, Attention: 1000}
+		return s
+	}
+	w, h := body(60, 14)
+	requireAll(t, tuitest.Screen(mount(t, newFeed(base), w, h)), []string{"▲ 1006 need attention · 185 pods"}, nil)
 }

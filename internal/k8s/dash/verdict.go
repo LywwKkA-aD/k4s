@@ -105,13 +105,7 @@ func podChips(p PodsPanel) []Chip {
 	for _, rc := range p.Failing {
 		out = append(out, Chip{Sev: SevFailing, Panel: PanelPods, Count: rc.Count, Text: fmt.Sprintf("%d %s", rc.Count, rc.Reason)})
 	}
-	waiting := 0
-	for _, r := range p.Problems {
-		if r.Sev == SevWaiting && !r.Starting {
-			waiting++
-		}
-	}
-	if waiting > 0 {
+	if waiting := p.Waiting(); waiting > 0 {
 		out = append(out, Chip{Sev: SevWaiting, Panel: PanelPods, Count: waiting, Text: fmt.Sprintf("%d not ready", waiting)})
 	}
 	return out
