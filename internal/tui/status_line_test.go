@@ -40,6 +40,7 @@ func TestStatusRowMarksItsLevel(t *testing.T) {
 		{name: "ok", level: status.OK, want: styles.GlyphOK + " resolving logs"},
 		{name: "warn", level: status.Warn, want: styles.GlyphWarn + " resolving logs"},
 		{name: "error", level: status.Error, want: styles.GlyphErr + " resolving logs"},
+		{name: "alert", level: status.Alert, want: styles.GlyphErr + " resolving logs"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -84,6 +85,7 @@ func TestStatusMessagesExpire(t *testing.T) {
 		{name: "error outlives the ttl", level: status.Error, advance: time.Hour, showing: true},
 		{name: "error lasts the ttl despite a key", level: status.Error, steps: tuitest.Keys("x"), advance: time.Second, showing: true},
 		{name: "error goes at the ttl after a key", level: status.Error, steps: tuitest.Keys("x"), advance: status.TTL},
+		{name: "alert goes at the ttl without a key", level: status.Alert, advance: status.TTL},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

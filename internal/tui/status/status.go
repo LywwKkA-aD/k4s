@@ -26,6 +26,10 @@ const (
 	// Error reports a failed action. It stays up until a key is pressed,
 	// however long that takes, but never for less than TTL.
 	Error
+	// Alert is bad news nobody asked for, such as a pod a poll found
+	// failing: shown as an error, but gone at TTL like Warn, since no
+	// key of the user's is waiting on it.
+	Alert
 )
 
 // TTL is how long a message stays up.

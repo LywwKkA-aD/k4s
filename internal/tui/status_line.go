@@ -24,6 +24,15 @@ func (m Model) setStatusAbout(level status.Level, text string, c kubectl.Cmd) (M
 	return m, cmd
 }
 
+// setToast is setStatus for news nobody asked for (views.ToastMsg): it
+// never replaces an error still showing, which waits for the user's key.
+func (m Model) setToast(level status.Level, text string) (Model, tea.Cmd) {
+	if cur, ok := m.status.Current(m.now()); ok && cur.Level == status.Error {
+		return m, nil
+	}
+	return m.setStatus(level, text)
+}
+
 // setError is setStatus at status.Error.
 func (m Model) setError(text string) (Model, tea.Cmd) {
 	return m.setStatus(status.Error, text)
@@ -36,7 +45,7 @@ func statusStyle(level status.Level) lipgloss.Style {
 		return styles.OK
 	case status.Warn:
 		return styles.Warn
-	case status.Error:
+	case status.Error, status.Alert:
 		return styles.Err
 	}
 	return lipgloss.NewStyle()

@@ -72,6 +72,15 @@ type StatusAboutMsg struct {
 	Cmd kubectl.Cmd
 }
 
+// ToastMsg is news a view brings unasked, such as the change a dashboard
+// poll found. The root shows it as a StatusMsg, except while an error is
+// showing: no poll replaces an error before the user has pressed a key.
+// Failing news goes at status.Alert. It is comparable, like StatusMsg.
+type ToastMsg struct {
+	Level status.Level
+	Text  string
+}
+
 // NamespaceSelectedMsg is emitted by the namespaces view when the user picks
 // a namespace; the root model handles it by updating the active namespace and
 // switching to the pods view. Empty string means "all namespaces".
