@@ -175,21 +175,32 @@ func newDescriber(c *k8s.Client, r *kubectl.Runner, session kubectl.Session) des
 
 // Init starts the active view, asks the server for the header's version
 // and the terminal for its background, and reports a failed preflight and
-// a saved-forwards file that could not be read. A credential plugin the
-// preflight did not log in with (--no-preflight, or a preflight that
-// failed) gets the login probe :ctx runs (login.go).
+// a saved-forwards file that could not be read. A preflight that failed
+// for want of a login offers the terminal login :ctx offers (login.go).
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.current.Init(), m.fetchVersion(), m.askBackground()}
-	if m.startup.ServerVersion == nil {
-		cmds = append(cmds, loginProbe(m.client, false))
-	}
 	if err := m.startup.PreflightErr; err != nil {
-		cmds = append(cmds, warnCmd(preflightText(err)))
+		cmds = append(cmds, m.preflightLogin(err), warnCmd(preflightText(err)))
 	}
 	if notice := forwardsNotice(m.forwardMgr); notice != "" {
 		cmds = append(cmds, warnCmd(notice))
 	}
 	return tea.Batch(cmds...)
+}
+
+// preflightLogin hands the preflight's error to the login flow as the
+// answer of its probe, for a context with a credential plugin: the flow
+// offers the terminal login when err wants one and leaves anything else
+// to the views. It sends no request of its own, which would run the
+// plugin again next to the first list, and could prompt or open a
+// browser a second time, to learn what the preflight already said.
+func (m Model) preflightLogin(err error) tea.Cmd {
+	c := m.client
+	if c == nil || c.RestConfig == nil || c.RestConfig.ExecProvider == nil {
+		return nil
+	}
+	msg := loginProbeMsg{context: c.Context, err: err}
+	return func() tea.Msg { return msg }
 }
 
 // warnCmd emits text as a warning for the status row.
