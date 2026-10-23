@@ -84,6 +84,33 @@ func TestDescribeCommandScope(t *testing.T) {
 	}
 }
 
+// TestDescribeCommandRefusesNamesKubectlWouldMisread: a name from the
+// cluster that reads as a flag gives no command, so y never copies
+// `kubectl describe pod --server=https://evil`.
+func TestDescribeCommandRefusesNamesKubectlWouldMisread(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		kind      describe.Kind
+		namespace string
+		object    string
+	}{
+		{name: "name", kind: describe.KindPod, namespace: "demo", object: "--server=https://evil"},
+		{name: "namespace", kind: describe.KindPod, namespace: "--kubeconfig=/tmp/evil", object: "web"},
+		{name: "kind", kind: "--server=https://evil", namespace: "demo", object: "web"},
+		{name: "cluster-scoped name", kind: "node", object: "-shttps://evil"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := describe.New(nil, tc.kind, tc.namespace, tc.object).Command(); !got.IsZero() {
+				t.Errorf("Command = %q, want none", got.String())
+			}
+		})
+	}
+}
+
 func TestDescribeFailures(t *testing.T) {
 	t.Parallel()
 
