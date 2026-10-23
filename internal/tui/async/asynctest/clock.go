@@ -1,5 +1,6 @@
-// Package asynctest provides a manual clock for tests of views that poll
-// through async.Poller.
+// Package asynctest provides clocks for tests: Clock, a manual one for
+// views that poll through async.Poller, and Instant, whose ticks fire at
+// once, for motion frames.
 package asynctest
 
 import (

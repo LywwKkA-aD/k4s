@@ -78,7 +78,7 @@ func TestNarrowScreenGoldens(t *testing.T) {
 			name := fmt.Sprintf("screen_%s_%dx%d", tc.name, size[0], size[1])
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
-				m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil), size[0], size[1])
+				m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil, instantFrames()), size[0], size[1])
 				tuitest.Golden(t, name, onTerminal(tuitest.Screen(tc.drive(t, m)), size[0])+"\n")
 			})
 		}

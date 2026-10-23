@@ -70,7 +70,7 @@ func TestFooterIsTwoRowsAtEveryWidth(t *testing.T) {
 func TestLongFooterRowsEndInAnEllipsis(t *testing.T) {
 	t.Parallel()
 
-	m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil), 60, 20)
+	m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil, instantFrames()), 60, 20)
 	m, _ = tuitest.Drive(t, m, views.NamespaceSelectedMsg{Namespace: tuitest.NamespaceDemo})
 	block := footerBlock(t, m)
 	hints, command := strings.TrimSpace(block[1]), strings.TrimSpace(block[2])

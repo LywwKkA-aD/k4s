@@ -47,7 +47,7 @@ func TestTopHintFollowsTheDistribution(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			c := versionedClient(tc.context, tc.gitVersion)
-			m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(tc.session)), screenW, screenH)
+			m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(tc.session), instantFrames()), screenW, screenH)
 			m, _ = tuitest.Drive(t, m, colon("top")...)
 			requireView(t, m, "top")
 			screen := strings.Join(strings.Fields(tuitest.Screen(m)), " ")

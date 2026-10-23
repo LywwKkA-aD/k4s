@@ -206,7 +206,7 @@ func TestVersionArrivesOnARetry(t *testing.T) {
 func TestContextSwitchFetchesTheNewVersion(t *testing.T) {
 	t.Parallel()
 
-	m := New(tuitest.NewFakeClient(t), nil)
+	m := New(tuitest.NewFakeClient(t), nil, instantFrames())
 	before := m.ident.version
 	next, out := tuitest.Drive(t, m, views.ContextSelectedMsg{Name: testContextBeta})
 	if next.ident.version == before || next.ident.version.Accept(before) {

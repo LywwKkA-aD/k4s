@@ -35,6 +35,6 @@ func (c *clock) Advance(d time.Duration) {
 // startedAt is started with the model reading the time from clk.
 func startedAt(t *testing.T, c *k8s.Client, clk *clock) tui.Model {
 	t.Helper()
-	m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithClock(clk.Now)), screenW, screenH)
+	m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithClock(clk.Now), instantFrames()), screenW, screenH)
 	return m
 }

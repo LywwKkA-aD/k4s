@@ -57,7 +57,7 @@ func requireOneCorruptNotice(t *testing.T, msgs []tea.Msg) {
 func TestACorruptStateFileIsReportedAtStartupOnce(t *testing.T) {
 	corruptState(t, isolatedState(t))
 
-	m, out := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil), screenW, screenH)
+	m, out := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil, instantFrames()), screenW, screenH)
 	requireOneCorruptNotice(t, out)
 	requireScreen(t, m, corruptNotice)
 
@@ -91,7 +91,7 @@ func TestACorruptStateFileAndAFailedPreflightShowTogether(t *testing.T) {
 	const preflight = "preflight: no answer from 10.0.0.5:6443 within 30s"
 	c := tuitest.NewFakeClient(t)
 	session := startup.Session{Client: c, PreflightErr: errors.New(preflight)}
-	m, out := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(session)), screenW, screenH)
+	m, out := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(session), instantFrames()), screenW, screenH)
 	warnings := tuitest.All[views.StatusMsg](out)
 	if len(warnings) != 1 || warnings[0].Level != status.Warn {
 		t.Fatalf("statuses at the start = %+v, want one warning", warnings)

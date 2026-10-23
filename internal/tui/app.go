@@ -86,6 +86,9 @@ type Model struct {
 	// profile is the colour profile the program reported; the dashboard
 	// holds still on ASCII and NoTTY.
 	profile colorprofile.Profile
+	// dashOpts go to every dashboard after the root's own (see
+	// WithDashboardOptions).
+	dashOpts []dashboard.Option
 	// build makes the view for a name; nil means newView. Tests use it to
 	// put stub views in history.
 	build func(m Model, name string) views.View

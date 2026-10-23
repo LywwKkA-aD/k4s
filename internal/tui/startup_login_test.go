@@ -86,7 +86,7 @@ func TestStartupOffersTheLoginAPreflightFailedFor(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var versions atomic.Int32
-			m, _ := tuitest.Mount(t, tui.New(loginClient(t, tc.plugin, &versions), nil, tui.WithSession(tc.session)), screenW, screenH)
+			m, _ := tuitest.Mount(t, tui.New(loginClient(t, tc.plugin, &versions), nil, tui.WithSession(tc.session), instantFrames()), screenW, screenH)
 			if got := versions.Load(); got != tc.versions {
 				t.Errorf("/version asked %d times at the start, want %d", got, tc.versions)
 			}

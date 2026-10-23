@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	tea "charm.land/bubbletea/v2"
 	apiversion "k8s.io/apimachinery/pkg/version"
 
@@ -27,7 +29,16 @@ func (m Model) newDashboard() views.View {
 	if m.ownsVersion() {
 		opts = append(opts, dashboard.WithServerVersion(m.startup.ServerVersion), dashboard.WithServerVersionError(m.ident.versionErr))
 	}
-	return dashboard.New(m.client, m.loadErr, opts...)
+	return dashboard.New(m.client, m.loadErr, append(opts, m.dashOpts...)...)
+}
+
+// WithDashboardOptions adds opts to every dashboard the root builds,
+// after its own, so they win. Root tests arm the motion frames on
+// asynctest.Instant (dashboard.WithFrames), which their driver feeds at
+// once instead of waiting 50ms for each, and answer refreshes with a
+// fixture (dashboard.WithFetch).
+func WithDashboardOptions(opts ...dashboard.Option) Option {
+	return func(m *Model) { m.dashOpts = append(slices.Clip(m.dashOpts), opts...) }
 }
 
 // tellDashboard hands the server version, or err when the request for it
