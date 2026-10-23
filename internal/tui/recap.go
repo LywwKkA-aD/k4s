@@ -27,9 +27,11 @@ type recap struct {
 	lines []string
 }
 
+// add records c, unless it sets a session flag (kubectl.CheckFlags): the
+// recap is printed to be pasted.
 func (r recap) add(c kubectl.Cmd) recap {
 	line := sanitize.Line(c.Display())
-	if line == "" {
+	if line == "" || kubectl.CheckFlags(c) != nil {
 		return r
 	}
 	out := make([]string, 0, len(r.lines)+1)

@@ -30,6 +30,12 @@ func (m Model) copyCommand() (Model, tea.Cmd) {
 	if sanitize.Line(text) != text {
 		return m.setStatus(status.Warn, "not copied: the command holds control characters")
 	}
+	// A name that reads as --server or --kubeconfig would, pasted, send
+	// the user's credentials elsewhere. The error names the flag, never
+	// the word that set it.
+	if err := kubectl.CheckFlags(cmd); err != nil {
+		return m.setStatus(status.Warn, "not copied: "+err.Error())
+	}
 	verb := "copied"
 	if cmd.Approx {
 		verb = "copied (approximate)"

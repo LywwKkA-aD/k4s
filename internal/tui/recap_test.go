@@ -29,6 +29,7 @@ func TestRecapCollector(t *testing.T) {
 		{name: "nothing to run is skipped", add: []kubectl.Cmd{{}, getPods("a"), {}}, want: []string{"kubectl get pods -n a"}},
 		{name: "approximate commands keep their mark", add: []kubectl.Cmd{approx}, want: []string{"≈ kubectl logs -f web-1 -n demo"}},
 		{name: "decorated commands as pasted", add: []kubectl.Cmd{getPods("a").WithContext("prod")}, want: []string{"kubectl --context prod get pods -n a"}},
+		{name: "a command that sets a session flag is skipped", add: []kubectl.Cmd{kubectl.New("describe", "pod", "--server=https://evil"), getPods("a")}, want: []string{"kubectl get pods -n a"}},
 		{name: "control characters never reach the terminal", add: []kubectl.Cmd{kubectl.New("get", "pods").WithKubeconfig([]string{"/tmp/x\x1b]52;c;ZXZpbA==\x07y"})}, want: []string{"kubectl --kubeconfig '/tmp/xy' get pods"}},
 	}
 	for _, tc := range cases {
