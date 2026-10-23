@@ -97,13 +97,14 @@ func logsFailed(ref views.ResourceRef, err error) tea.Cmd {
 }
 
 // logsPrompt asks the root for the container picker when the pods run
-// several containers, else for the tail prompt.
+// several containers, init containers and native sidecars counted, else
+// for the tail prompt.
 func logsPrompt(ref views.ResourceRef, t k8s.LogTarget, detached bool) tea.Cmd {
 	pods := t.PodNames()
 	if len(t.Containers) > 1 {
 		return func() tea.Msg {
 			return views.ContainerPromptRequestMsg{
-				Namespace: ref.Namespace, Pods: pods, Containers: t.Containers, NextKind: actLogs,
+				Namespace: ref.Namespace, Pods: pods, Containers: t.Containers, Init: t.Init, NextKind: actLogs,
 				Target: ref, Logs: t, Detached: detached,
 			}
 		}

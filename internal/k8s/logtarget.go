@@ -51,9 +51,14 @@ type PodRef struct {
 	Created time.Time
 	// Owner is the pod's controller as "Kind/name"; empty for none.
 	Owner string
-	// Containers are the pod's app containers in spec order, so a stream
-	// can fall back to the pod's own without asking for the pod.
+	// Containers are the pod's containers in picker order, the app
+	// containers then the init containers, so a stream keeps an init
+	// container the user picked and falls back to the pod's first app
+	// container without asking for the pod.
 	Containers []string
+	// Init names the entries of Containers that are init containers or
+	// native sidecars.
+	Init []string
 	// State is what a stream's end is explained by.
 	State PodState
 }
@@ -100,8 +105,12 @@ type LogTarget struct {
 	// Skipped are matched but not streamed, sorted by name.
 	Skipped []SkippedPod
 	// Containers are the deployment template's containers, or those of a
-	// service's first streamed pod.
+	// service's first streamed pod, in picker order: the app containers,
+	// then the init containers and native sidecars (Containers.Names).
 	Containers []string
+	// Init names the entries of Containers that are init containers or
+	// native sidecars (Containers.InitNames), which the picker labels.
+	Init []string
 	// OwnersGuessed is set when listing ReplicaSets was forbidden: a pod
 	// counted as the deployment's when its controller is a ReplicaSet
 	// named <deployment>-<pod-template-hash>.
@@ -227,13 +236,15 @@ func skippedPod(p *corev1.Pod, reason SkipReason, inSelector bool) SkippedPod {
 }
 
 func podRef(p *corev1.Pod) PodRef {
+	cs := containersOf(p.Spec)
 	return PodRef{
 		Name:       p.Name,
 		Phase:      string(p.Status.Phase),
 		Hash:       p.Labels[hashLabel],
 		Created:    p.CreationTimestamp.Time,
 		Owner:      controllerName(p),
-		Containers: containerNames(&p.Spec),
+		Containers: cs.Names(),
+		Init:       cs.InitNames(),
 		State:      PodStateOf(p),
 	}
 }
@@ -259,12 +270,4 @@ func controllerName(p *corev1.Pod) string {
 		return ""
 	}
 	return ref.Kind + "/" + ref.Name
-}
-
-func containerNames(spec *corev1.PodSpec) []string {
-	out := make([]string, 0, len(spec.Containers))
-	for _, ct := range spec.Containers {
-		out = append(out, ct.Name)
-	}
-	return out
 }
