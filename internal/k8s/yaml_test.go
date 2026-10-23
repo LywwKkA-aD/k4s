@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,6 +31,10 @@ func yamlObjects() []runtime.Object {
 			Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "nginx", Image: "nginx:1.27"}}},
 		},
 		&appsv1.Deployment{ObjectMeta: meta(granted, "web")},
+		&appsv1.StatefulSet{ObjectMeta: meta(granted, "db"), Spec: appsv1.StatefulSetSpec{ServiceName: "db-headless"}},
+		&appsv1.DaemonSet{ObjectMeta: meta(granted, "agent")},
+		&batchv1.Job{ObjectMeta: meta(granted, "backup-1")},
+		&batchv1.CronJob{ObjectMeta: meta(granted, "backup"), Spec: batchv1.CronJobSpec{Schedule: "0 3 * * *"}},
 		&corev1.Service{ObjectMeta: meta(granted, "web"), Spec: corev1.ServiceSpec{ClusterIP: "10.43.0.10"}},
 		&corev1.Node{ObjectMeta: meta("", "node-1"), Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{KubeletVersion: "v1.36.5+k3s1"}}},
 		&corev1.Event{ObjectMeta: meta(granted, "web-1.17a"), Reason: "BackOff", Message: "the whole message"},
@@ -46,6 +51,10 @@ func TestObjectYAML(t *testing.T) {
 	}{
 		{kind: "pod", namespace: granted, name: "web-1", head: "apiVersion: v1\nkind: Pod\nmetadata:\n", want: []string{"  name: web-1\n", "  - image: nginx:1.27\n"}},
 		{kind: "deployment", namespace: granted, name: "web", head: "apiVersion: apps/v1\nkind: Deployment\n"},
+		{kind: "statefulset", namespace: granted, name: "db", head: "apiVersion: apps/v1\nkind: StatefulSet\n", want: []string{"  serviceName: db-headless\n"}},
+		{kind: "daemonset", namespace: granted, name: "agent", head: "apiVersion: apps/v1\nkind: DaemonSet\n"},
+		{kind: "job", namespace: granted, name: "backup-1", head: "apiVersion: batch/v1\nkind: Job\n"},
+		{kind: "cronjob", namespace: granted, name: "backup", head: "apiVersion: batch/v1\nkind: CronJob\n", want: []string{"  schedule: 0 3 * * *\n"}},
 		{kind: "service", namespace: granted, name: "web", head: "apiVersion: v1\nkind: Service\n", want: []string{"  clusterIP: 10.43.0.10\n"}},
 		{kind: "namespace", name: granted, head: "apiVersion: v1\nkind: Namespace\n", want: []string{"  name: " + granted + "\n"}},
 		{kind: "node", name: "node-1", head: "apiVersion: v1\nkind: Node\n", want: []string{"    kubeletVersion: v1.36.5+k3s1\n"}},
@@ -90,6 +99,10 @@ func TestObjectYAMLErrors(t *testing.T) {
 		{name: "missing deployment", kind: "deployment", objName: "gone", is: apierrors.IsNotFound, prefix: "get deployment: "},
 		{name: "missing service", kind: "service", objName: "gone", is: apierrors.IsNotFound, prefix: "get service: "},
 		{name: "missing namespace", kind: "namespace", objName: "gone", is: apierrors.IsNotFound, prefix: "get namespace: "},
+		{name: "missing statefulset", kind: "statefulset", objName: "gone", is: apierrors.IsNotFound, prefix: "get statefulset: "},
+		{name: "missing daemonset", kind: "daemonset", objName: "gone", is: apierrors.IsNotFound, prefix: "get daemonset: "},
+		{name: "missing job", kind: "job", objName: "gone", is: apierrors.IsNotFound, prefix: "get job: "},
+		{name: "missing cronjob", kind: "cronjob", objName: "gone", is: apierrors.IsNotFound, prefix: "get cronjob: "},
 		{
 			name: "unsupported kind", kind: "secret", objName: "token",
 			is:     func(err error) bool { return errors.Is(err, k8s.ErrYAMLKind) },

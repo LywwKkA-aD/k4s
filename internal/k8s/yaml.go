@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,8 +20,8 @@ var ErrYAMLKind = errors.New("unsupported kind for yaml")
 // ObjectYAML returns the object as `kubectl get <kind> <name> -o yaml`
 // prints it: apiVersion and kind set, keys in order, and managedFields
 // left out as kubectl leaves them out by default. kind is the lower-case
-// name the kubectl command uses: pod, deployment, service, namespace,
-// node or event. namespace is ignored for a namespace and a node, which
+// name the kubectl command uses: pod, deployment, statefulset, daemonset,
+// job, cronjob, service, namespace, node or event. namespace is ignored for a namespace and a node, which
 // have none.
 func (c *Client) ObjectYAML(ctx context.Context, kind, namespace, name string) (string, error) {
 	obj, err := c.getObject(ctx, kind, namespace, name)
@@ -43,6 +44,18 @@ func (c *Client) getObject(ctx context.Context, kind, namespace, name string) (r
 	case "deployment":
 		d, err := c.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, get)
 		return asPrinted(d, err, kind, appsv1.SchemeGroupVersion.WithKind("Deployment"))
+	case "statefulset":
+		s, err := c.Clientset.AppsV1().StatefulSets(namespace).Get(ctx, name, get)
+		return asPrinted(s, err, kind, appsv1.SchemeGroupVersion.WithKind("StatefulSet"))
+	case "daemonset":
+		d, err := c.Clientset.AppsV1().DaemonSets(namespace).Get(ctx, name, get)
+		return asPrinted(d, err, kind, appsv1.SchemeGroupVersion.WithKind("DaemonSet"))
+	case "job":
+		j, err := c.Clientset.BatchV1().Jobs(namespace).Get(ctx, name, get)
+		return asPrinted(j, err, kind, batchv1.SchemeGroupVersion.WithKind("Job"))
+	case "cronjob":
+		j, err := c.Clientset.BatchV1().CronJobs(namespace).Get(ctx, name, get)
+		return asPrinted(j, err, kind, batchv1.SchemeGroupVersion.WithKind("CronJob"))
 	case "service":
 		s, err := c.Clientset.CoreV1().Services(namespace).Get(ctx, name, get)
 		return asPrinted(s, err, kind, corev1.SchemeGroupVersion.WithKind("Service"))
