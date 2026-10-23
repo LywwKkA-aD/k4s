@@ -93,6 +93,11 @@ func TestEscFromDescribeBringsNodesBack(t *testing.T) {
 	if footer := tuitest.Footer(m); !strings.Contains(footer, warning) {
 		t.Errorf("the warning left with the describe view:\n%s", footer)
 	}
+	// While the warning shows, row 2 is the command it is about, so y
+	// copies the describe the user needs kubectl for.
+	if got := kubectlRow(m); !strings.HasSuffix(got, "kubectl describe node "+nodeOld) {
+		t.Errorf("kubectl row under the warning = %q", got)
+	}
 	clk.Advance(status.TTL)
 	if after := tuitest.Footer(m); after != before {
 		t.Errorf("footer once the warning is gone:\n%s\nwant as left:\n%s", after, before)

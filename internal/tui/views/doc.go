@@ -36,7 +36,9 @@
 //   - Never fail silently. A key that cannot do its job (no row, a lookup
 //     error, 0 replicas, no selector, nothing left to stream) answers with
 //     a Cmd that emits StatusMsg, never with nil: "deployment web has 0
-//     replicas", "service api has no selector".
+//     replicas", "service api has no selector". A status about a command
+//     the user may want to run by hand ("describe node needs kubectl")
+//     is a StatusAboutMsg, so the footer shows that command while it lasts.
 //   - Never block in Update. Cluster calls go through internal/tui/async
 //     (see its package doc): a Token per view instance fences late
 //     replies, InFlight guards row actions such as l and e, and a Poller

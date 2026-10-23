@@ -32,8 +32,14 @@ func mounted(t *testing.T, f fake) (describe.Model, []tea.Msg) {
 	return tuitest.InitWith(t, driver, m)
 }
 
-func statusOf(msgs []tea.Msg) (views.StatusMsg, bool) {
-	return tuitest.Find[views.StatusMsg](msgs)
+// statusOf is the status the view sent: a warning about its describe
+// command, or a plain status.
+func statusOf(msgs []tea.Msg) (views.StatusAboutMsg, bool) {
+	if st, ok := tuitest.Find[views.StatusAboutMsg](msgs); ok {
+		return st, true
+	}
+	st, ok := tuitest.Find[views.StatusMsg](msgs)
+	return views.StatusAboutMsg{StatusMsg: st}, ok
 }
 
 // TestKubectlRunsTheFooterCommand: the argv kubectl gets is the footer's
@@ -124,6 +130,9 @@ func TestFallbackToBuiltIn(t *testing.T) {
 			st, ok := statusOf(msgs)
 			if !ok || st.Level != tc.level || !strings.Contains(st.Text, tc.reason) || !strings.Contains(st.Text, "built-in") {
 				t.Errorf("status = %+v (found %v), want %v naming %q", st, ok, tc.level, tc.reason)
+			}
+			if got, want := st.Cmd.String(), m.Command().String(); got != want {
+				t.Errorf("status is about %q, want the describe %q", got, want)
 			}
 		})
 	}

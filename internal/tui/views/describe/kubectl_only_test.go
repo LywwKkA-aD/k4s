@@ -45,8 +45,12 @@ func TestKindOnlyKubectlDescribes(t *testing.T) {
 			m := describe.New(tuitest.NewFakeClient(t), "node", "", "k3s-server", opts...)
 			m, _ = tuitest.Drive(t, m, tuitest.Resize(120, 40))
 			m, msgs := tuitest.InitWith(t, driver, m)
-			if st, ok := statusOf(msgs); !ok || st != (views.StatusMsg{Level: status.Warn, Text: tc.want}) {
+			st, ok := statusOf(msgs)
+			if !ok || st.StatusMsg != (views.StatusMsg{Level: status.Warn, Text: tc.want}) {
 				t.Errorf("status = %+v (found %v), want a warning %q", st, ok, tc.want)
+			}
+			if got := st.Cmd.String(); got != "kubectl describe node k3s-server" {
+				t.Errorf("warning is about %q, want the describe it needs kubectl for", got)
 			}
 			if screen := tuitest.Screen(m); !strings.Contains(screen, tc.want) || strings.Contains(screen, "unsupported") {
 				t.Errorf("body:\n%s", screen)

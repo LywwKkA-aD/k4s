@@ -62,6 +62,16 @@ type StatusMsg struct {
 	Text  string
 }
 
+// StatusAboutMsg is a StatusMsg about Cmd: while it shows, the footer's
+// command row shows Cmd instead of the view's and y copies it, so a
+// warning that outlives its view still names the command it is about.
+// It is a type of its own because kubectl.Cmd is not comparable and
+// StatusMsg is.
+type StatusAboutMsg struct {
+	StatusMsg
+	Cmd kubectl.Cmd
+}
+
 // NamespaceSelectedMsg is emitted by the namespaces view when the user picks
 // a namespace; the root model handles it by updating the active namespace and
 // switching to the pods view. Empty string means "all namespaces".

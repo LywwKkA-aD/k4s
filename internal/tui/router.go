@@ -31,6 +31,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onSelfApplying(msg)
 	case views.StatusMsg:
 		return m.setStatus(msg.Level, msg.Text)
+	case views.StatusAboutMsg:
+		return m.setStatusAbout(msg.Level, msg.Text, msg.Cmd)
 	case status.ExpireMsg:
 		m.status = m.status.Expire(msg, m.now())
 		return m, nil

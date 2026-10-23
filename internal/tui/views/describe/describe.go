@@ -220,10 +220,10 @@ func (m Model) onContent(msg async.Result[output]) (Model, tea.Cmd) {
 	}
 	var only kubectlOnlyError
 	if errors.As(msg.Err, &only) {
-		warn := views.StatusMsg{Level: status.Warn, Text: only.Error()}
+		warn := views.StatusAboutMsg{StatusMsg: views.StatusMsg{Level: status.Warn, Text: only.Error()}, Cmd: m.Command()}
 		return m, func() tea.Msg { return warn }
 	}
-	return m, fallbackStatus(out.kubectlErr)
+	return m, fallbackStatus(out.kubectlErr, m.Command())
 }
 
 func sourceOf(out output) string {
@@ -236,8 +236,9 @@ func sourceOf(out output) string {
 	return sourceKubectl + " " + out.version
 }
 
-// fallbackStatus says why kubectl did not describe; nothing when it did.
-func fallbackStatus(err error) tea.Cmd {
+// fallbackStatus says why kubectl did not describe, about the describe
+// command; nothing when it did.
+func fallbackStatus(err error, about kubectl.Cmd) tea.Cmd {
 	if err == nil {
 		return nil
 	}
@@ -246,7 +247,7 @@ func fallbackStatus(err error) tea.Cmd {
 	if missing {
 		level = status.Info
 	}
-	msg := views.StatusMsg{Level: level, Text: text}
+	msg := views.StatusAboutMsg{StatusMsg: views.StatusMsg{Level: level, Text: text}, Cmd: about}
 	return func() tea.Msg { return msg }
 }
 
