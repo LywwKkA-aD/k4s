@@ -173,3 +173,32 @@ func TestCopyRefusesControlCharacters(t *testing.T) {
 		t.Errorf("status row = %q", row)
 	}
 }
+
+// TestCopyRefusesSessionFlags: a name from a hostile cluster that reads as
+// a flag such as --server would, pasted, send the user's credentials
+// elsewhere; y copies nothing and names the flag.
+func TestCopyRefusesSessionFlags(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name, namespace, flag string
+	}{
+		{name: "server", namespace: "--server=https://evil", flag: "--server"},
+		{name: "kubeconfig", namespace: "--kubeconfig=/tmp/evil", flag: "--kubeconfig"},
+		{name: "short server", namespace: "-shttps://evil", flag: "-s"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			setup := []tea.Msg{views.NamespaceSelectedMsg{Namespace: tc.namespace}}
+			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), setup...)
+			m, out := tuitest.Drive(t, m, tuitest.Press("y"))
+			if got, ok := tuitest.Clipboard(out); ok {
+				t.Fatalf("y copied %q", got)
+			}
+			if row, want := statusRow(footer(m)), "not copied: the command sets "+tc.flag; row != want {
+				t.Errorf("status row = %q, want %q", row, want)
+			}
+		})
+	}
+}
