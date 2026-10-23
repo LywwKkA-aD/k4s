@@ -71,8 +71,8 @@ func (m Model) onList(msg async.Result[k8s.EventList]) (Model, tea.Cmd) {
 	if !m.poll.Accept(msg.Token) {
 		return m, nil
 	}
-	if m.canFallBack(msg.Err) {
-		return m.fallBack()
+	if say, ok := m.fallbackSay(msg.Err); ok {
+		return m.fallBack(say)
 	}
 	var cmd, said tea.Cmd
 	m.poll, cmd = m.poll.Done(msg.Token, msg.Err)
@@ -91,7 +91,7 @@ func (m Model) onList(msg async.Result[k8s.EventList]) (Model, tea.Cmd) {
 
 // fallBack lists the context's namespace after -A was forbidden. The
 // poller moves to a new epoch, so a late reply for -A is dropped.
-func (m Model) fallBack() (Model, tea.Cmd) {
+func (m Model) fallBack(say tea.Cmd) (Model, tea.Cmd) {
 	ns := m.client.ContextNamespace
 	m.namespace, m.fellBack = ns, true
 	m.tok = m.tok.Next()
@@ -101,8 +101,7 @@ func (m Model) fallBack() (Model, tea.Cmd) {
 	m.items, m.shown, m.loaded, m.health = nil, nil, false, m.health.Reset()
 	m.table.SetRows(nil)
 	m = m.resized(tea.WindowSizeMsg{Width: m.width, Height: m.bodyH})
-	said := statusCmd(status.Warn, "cluster-wide list forbidden; showing "+ns+" · "+canI(""))
-	return m, tea.Batch(said, m.list(k8s.FromCache()), views.NamespaceFallback(m.Title(), ns))
+	return m, tea.Batch(say, m.list(k8s.FromCache()), views.NamespaceFallback(m.Title(), ns))
 }
 
 func (m Model) onKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {

@@ -3,6 +3,7 @@ package events
 import (
 	"errors"
 
+	tea "charm.land/bubbletea/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/LywwKkA-aD/k4s/internal/sanitize"
@@ -41,17 +42,13 @@ func detail(err error) string {
 	return sanitize.Line(le.err.Error())
 }
 
-// canI is the command that checks the list the view makes.
-func canI(namespace string) string {
-	if namespace == "" {
-		return "kubectl auth can-i list events -A"
+// fallbackSay is what the view says when it can answer a forbidden -A by
+// listing the context's namespace: once, and only when the context names
+// one. The pods, deployments, services and top views decide the same way
+// (stale.Fallback).
+func (m Model) fallbackSay(err error) (tea.Cmd, bool) {
+	if err == nil || m.namespace != "" || m.fellBack || m.client == nil {
+		return nil, false
 	}
-	return "kubectl auth can-i list events -n " + namespace
-}
-
-// canFallBack reports a forbidden -A the view can answer by listing the
-// context's namespace: once, and only when the context names one.
-func (m Model) canFallBack(err error) bool {
-	return err != nil && apierrors.IsForbidden(err) && m.namespace == "" && !m.fellBack &&
-		m.client != nil && m.client.ContextNamespace != ""
+	return stale.Fallback(err, m.client.ContextNamespace)
 }
