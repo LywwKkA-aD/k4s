@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	corev1 "k8s.io/api/core/v1"
 	kruntime "k8s.io/apimachinery/pkg/runtime"
 	k8stesting "k8s.io/client-go/testing"
@@ -52,31 +53,44 @@ func TestExecFromThePodsView(t *testing.T) {
 }
 
 // TestExecInAWindowsPodFromThePodsView: the pods view's lookup names
-// cmd.exe and the root runs it without looking the pod up again.
+// cmd.exe, straight away or through the container picker, and the root
+// runs it without looking the pod up again.
 func TestExecInAWindowsPodFromThePodsView(t *testing.T) {
 	pathWithKubectl(t)
 
-	win := tuitest.Pod(tuitest.NamespaceDemo, "iis-0", nil, "web")
-	win.Spec.OS = &corev1.PodOS{Name: corev1.Windows}
-	var gets atomic.Int32
-	count := tuitest.WithReactor("get", "pods", func(a k8stesting.Action) (bool, kruntime.Object, error) {
-		if a.GetSubresource() == "" {
-			gets.Add(1)
-		}
-		return false, nil, nil
-	})
-	c := tuitest.NewFakeClient(t, tuitest.WithObjects(tuitest.Namespace(tuitest.NamespaceDemo), win), count)
-	m, _ := tuitest.Drive(t, started(t, c), views.NamespaceSelectedMsg{Namespace: tuitest.NamespaceDemo})
-	_, out := tuitest.Drive(t, m, then(tuitest.FilterBy("iis-0"), tuitest.Keys("e"))...)
-	want := views.ExecRequestMsg{Namespace: tuitest.NamespaceDemo, Pod: "iis-0", Container: "web", Shell: views.WindowsShell}
-	if !tuitest.Contains(out, want) {
-		t.Fatalf("want %+v, got:\n%s", want, tuitest.Describe(out))
+	cases := []struct {
+		name       string
+		containers []string
+		keys       []tea.Msg
+	}{
+		{name: "one container", containers: []string{"web"}, keys: tuitest.Keys("e")},
+		{name: "picked in the container picker", containers: []string{"web", "agent"}, keys: then(tuitest.Keys("e"), []tea.Msg{tuitest.Enter()})},
 	}
-	if !slices.ContainsFunc(out, tuitest.IsExec) {
-		t.Errorf("the root did not hand the terminal to kubectl:\n%s", tuitest.Describe(out))
-	}
-	if n := gets.Load(); n != 1 {
-		t.Errorf("the pod was read %d times, want once, by the pods view", n)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			win := tuitest.Pod(tuitest.NamespaceDemo, "iis-0", nil, tc.containers...)
+			win.Spec.OS = &corev1.PodOS{Name: corev1.Windows}
+			var gets atomic.Int32
+			count := tuitest.WithReactor("get", "pods", func(a k8stesting.Action) (bool, kruntime.Object, error) {
+				if a.GetSubresource() == "" {
+					gets.Add(1)
+				}
+				return false, nil, nil
+			})
+			c := tuitest.NewFakeClient(t, tuitest.WithObjects(tuitest.Namespace(tuitest.NamespaceDemo), win), count)
+			m, _ := tuitest.Drive(t, started(t, c), views.NamespaceSelectedMsg{Namespace: tuitest.NamespaceDemo})
+			_, out := tuitest.Drive(t, m, then(tuitest.FilterBy("iis-0"), tc.keys)...)
+			want := views.ExecRequestMsg{Namespace: tuitest.NamespaceDemo, Pod: "iis-0", Container: "web", Shell: views.WindowsShell}
+			if !tuitest.Contains(out, want) {
+				t.Fatalf("want %+v, got:\n%s", want, tuitest.Describe(out))
+			}
+			if !slices.ContainsFunc(out, tuitest.IsExec) {
+				t.Errorf("the root did not hand the terminal to kubectl:\n%s", tuitest.Describe(out))
+			}
+			if n := gets.Load(); n != 1 {
+				t.Errorf("the pod was read %d times, want once, by the pods view", n)
+			}
+		})
 	}
 }
 

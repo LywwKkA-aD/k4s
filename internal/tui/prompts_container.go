@@ -34,7 +34,7 @@ func dispatchContainerCmd(req views.ContainerPromptRequestMsg, container string)
 			return nil
 		}
 		return func() tea.Msg {
-			return views.ExecRequestMsg{Namespace: req.Namespace, Pod: req.Pods[0], Container: container}
+			return views.ExecRequestMsg{Namespace: req.Namespace, Pod: req.Pods[0], Container: container, Shell: req.Shell}
 		}
 	}
 	return nil
