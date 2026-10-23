@@ -34,12 +34,11 @@ func podsSummary(f frame) string {
 	if !readable(p.Avail) {
 		return f.unreadable("pods", p.Avail)
 	}
-	attention, worst := 0, dash.SevOK
+	// The rows are most severe first, so the worst is among those kept;
+	// the count takes in the rows past the data layer's cap.
+	attention, worst := p.Attention(), dash.SevOK
 	for _, r := range p.Problems {
-		if r.Sev >= dash.SevWaiting {
-			attention++
-			worst = max(worst, r.Sev)
-		}
+		worst = max(worst, r.Sev)
 	}
 	if attention == 0 {
 		return f.paint(markOK) + fmt.Sprintf(" %d pods ok", p.Total)

@@ -91,12 +91,7 @@ func scopeFacts(f frame) []string {
 	s := f.snap
 	var out []string
 	if readable(s.Pods.Avail) {
-		starting := 0
-		for _, r := range s.Pods.Problems {
-			if r.Sev >= dash.SevWaiting {
-				starting++
-			}
-		}
+		starting := s.Pods.Attention()
 		out = append(out, f.paint(markOK)+fmt.Sprintf(" %d pods ok", s.Pods.Total-starting))
 		if starting > 0 {
 			out = append(out, f.paint(markInfo)+fmt.Sprintf(" %d starting", starting))

@@ -128,6 +128,18 @@ func TestDegradedStates(t *testing.T) {
 			want: []string{"● 40 pods ok  ◇ 1 starting  ● 9/9 deploy ready  — metrics forbidden"},
 		},
 		{
+			name: "a scoped user with starting pods past the cap",
+			base: func() dash.Snapshot {
+				s := nsScopedEKS()
+				s.Pods.Problems = []dash.PodRow{problem("shop", "web-1", "ContainerCreating", 0, 1, 0, 0, minute, "ip-10-0-1-17", dash.SevWaiting)}
+				s.Pods.Cut = dash.ProblemCounts{Rows: 9, Attention: 9}
+				s.Nodes.Metrics = denied("auth", "can-i", "list", "nodes.metrics.k8s.io")
+				return s
+			},
+			w: wideW, h: wideH,
+			want: []string{"● 31 pods ok  ◇ 10 starting"},
+		},
+		{
 			name: "a short denied nodes panel keeps the probe",
 			base: nsScopedEKS, w: 80, h: 14, keys: []string{"2"},
 			want: []string{"— nodes: list forbidden for shop-dev", "kubectl auth can-i list nodes"},
