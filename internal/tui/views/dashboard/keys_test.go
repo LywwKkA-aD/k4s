@@ -147,8 +147,8 @@ func TestHintsFollowTheFocus(t *testing.T) {
 		t.Fatalf("hints on the banner = %v", got)
 	}
 	m, _ = press(t, m, "1")
-	if got := tuitest.HelpKeys(m); strings.Join(got, " ") != "tab/0-7 ←→ ↑↓ z r w" {
-		t.Fatalf("hints on panel 1 = %v, want no enter", got)
+	if got := tuitest.HelpKeys(m); strings.Join(got, " ") != "tab/0-7 ←→ ↑↓ enter z r w" {
+		t.Fatalf("hints on panel 1 = %v, want enter for :ns", got)
 	}
 	m, _ = press(t, m, "3", "down")
 	if hint(m, "enter") != "describe" {

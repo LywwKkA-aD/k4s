@@ -98,13 +98,15 @@ func rowsFrom[T any](items []T, rowOf func(T) row) []row {
 	return out
 }
 
-// describeKinds are the kinds k4s has a describe view for.
-var describeKinds = []string{"pod", "deployment", "service"}
+// describeKinds are the kinds of the dashboard's rows that k4s's describe
+// view shows: it writes pods, deployments and services itself and runs
+// kubectl describe for the others.
+var describeKinds = []string{"pod", "deployment", "service", "node", "statefulset", "daemonset", "job", "cronjob"}
 
 // describable reports a row Enter opens in k4s's describe view: an object
-// of a kind it describes, placed in its namespace.
+// of a kind it describes, placed in its namespace (a node has none).
 func describable(r row) bool {
-	return r.placed && slices.Contains(describeKinds, r.target.Kind)
+	return r.placed && !r.gone && slices.Contains(describeKinds, r.target.Kind)
 }
 
 // toKubectl turns a data-layer command into the footer's, its arguments

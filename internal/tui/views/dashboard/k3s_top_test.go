@@ -100,7 +100,7 @@ func TestK3sRows(t *testing.T) {
 	}{
 		{downs: 0, cmd: "kubectl get deploy,ds -n kube-system"},
 		{downs: 1, cmd: "kubectl describe deployment coredns -n kube-system", want: views.DescribeRequestMsg{Kind: "deployment", Namespace: "kube-system", Name: "coredns"}},
-		{downs: 5, cmd: "kubectl get svc -A --field-selector spec.type=LoadBalancer"},
+		{downs: 5, cmd: "kubectl get svc -A --field-selector spec.type=LoadBalancer", want: views.OpenViewMsg{Name: "services"}},
 		{downs: 6, cmd: "≈ kubectl get helmcharts -A"},
 		{downs: 7, cmd: "kubectl get etcdsnapshotfiles"},
 	}
