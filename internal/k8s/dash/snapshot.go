@@ -138,7 +138,7 @@ func sum(v any) uint64 {
 
 func capsOf(st store) Caps {
 	c := Caps{
-		Metrics: st.metricsOK, K3s: distroOf(st.version.git) == "k3s",
+		Metrics: st.metricsOK, K3s: st.distro() == "k3s",
 		LBFallback: st.lbFallback, VersionGiven: st.versionGiven,
 	}
 	for _, n := range st.nodes {

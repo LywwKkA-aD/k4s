@@ -18,8 +18,8 @@ func versionGets(log []seen) int {
 
 // TestGivenVersionIsNeverAsked: the root asks /version for the header and
 // hands the answer over, so a context costs one request. While the answer
-// is on its way the version row waits; once given, the version names the
-// distro and the plan never asks, not even on r.
+// is on its way the version row waits and the kubelets name the distro;
+// once given, the version names it and the plan never asks, not even on r.
 func TestGivenVersionIsNeverAsked(t *testing.T) {
 	t.Parallel()
 
@@ -32,7 +32,7 @@ func TestGivenVersionIsNeverAsked(t *testing.T) {
 	if n := versionGets(a.take()); n != 0 {
 		t.Fatalf("/version asked %d times while the caller's answer was on its way", n)
 	}
-	if v := s.Cluster.Version; v.GitVersion != "" || s.Caps.K3s {
+	if v := s.Cluster.Version; v.GitVersion != "" || v.Avail.State != StateUnknown || !s.Caps.K3s {
 		t.Fatalf("version before it was given = %+v, k3s %v", v, s.Caps.K3s)
 	}
 
