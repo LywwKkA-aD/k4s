@@ -31,9 +31,25 @@ type toast struct {
 	tok  async.Token
 }
 
-// text is the toast as words: "▲ pod shop/api → CrashLoopBackOff".
-func (t toast) text() string {
-	return markGlyphs[markOf(t.c.sev)] + " " + t.c.object() + " → " + clean(t.c.to)
+// status is the toast as the status line shows it, which leads a message
+// with its level's glyph (styles.GlyphOK for ok, GlyphWarn for warn), so
+// the row shows one glyph, the change's severity's: a recovery goes as
+// ok and a change to waiting as warn, without a glyph of their own. A
+// failing change has no level that fits: warn would show △, and an error
+// stays up until a key. It goes as info, which has no glyph, with its own
+// ▲, as minor and info changes go with theirs.
+func (t toast) status() (status.Level, string) {
+	text := t.c.object() + " → " + clean(t.c.to)
+	if t.more > 0 {
+		text += fmt.Sprintf(" · +%d", t.more)
+	}
+	switch t.c.sev {
+	case dash.SevOK:
+		return status.OK, text
+	case dash.SevWaiting:
+		return status.Warn, text
+	}
+	return status.Info, markGlyphs[markOf(t.c.sev)] + " " + text
 }
 
 // raise shows the first of changes: in the banner, or in the status line
@@ -44,11 +60,7 @@ func (m Model) raise(changes []change) (Model, tea.Cmd) {
 	}
 	t := toast{c: changes[0], more: len(changes) - 1}
 	if m.lay.kind != kindWide {
-		text := t.text()
-		if t.more > 0 {
-			text += fmt.Sprintf(" · +%d", t.more)
-		}
-		return m, statusCmd(toastLevel(t.c.sev), text)
+		return m, statusCmd(t.status())
 	}
 	m.mo.mint = m.mo.mint.Next()
 	t.tok = m.mo.mint
@@ -62,18 +74,6 @@ func (m Model) onToastDone(msg toastDoneMsg) (views.View, tea.Cmd) {
 		m.toast = toast{}
 	}
 	return m, nil
-}
-
-// toastLevel is the status level of a toast: a change for the worse
-// warns, a recovery is ok. Never error: that would stay until a key.
-func toastLevel(s dash.Severity) status.Level {
-	switch {
-	case s >= dash.SevWaiting:
-		return status.Warn
-	case s == dash.SevOK:
-		return status.OK
-	}
-	return status.Info
 }
 
 // toastNote is the toast lane on the banner's second row, "" when there
