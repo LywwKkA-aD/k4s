@@ -130,7 +130,6 @@ func workloadChips(p WorkloadsPanel) []Chip {
 	return out
 }
 
-// plural renders "1 job" or "3 jobs".
 // warningsChip is the warnings chip: "3 warnings in 10m", "3+ warnings in
 // 10m" when they were counted on a page cut at the cap, a lower bound.
 func warningsChip(n int, capped bool) string {
@@ -140,6 +139,7 @@ func warningsChip(n int, capped bool) string {
 	return plural(n, "warning", "warnings") + " in 10m"
 }
 
+// plural renders "1 job" or "3 jobs".
 func plural(n int, one, many string) string {
 	word := many
 	if n == 1 {
