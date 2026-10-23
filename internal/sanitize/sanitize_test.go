@@ -38,6 +38,9 @@ func TestLine(t *testing.T) {
 		{name: "other C1 controls are dropped", in: "a\u0085b\u0080c", want: "abc"},
 		{name: "invalid UTF-8 becomes U+FFFD", in: "a\xffb\xc3", want: "a�b�"},
 		{name: "raw 8-bit CSI byte is invalid UTF-8", in: "a\x9b31mb", want: "a�31mb"},
+		{name: "bidi embeddings and overrides are dropped", in: "a\u202ab\u202bc\u202cd\u202de\u202ef", want: "abcdef"},
+		{name: "bidi isolates are dropped", in: "evil\u2066x\u2067y\u2068z\u2069.exe", want: "evilxyz.exe"},
+		{name: "marks next to the bidi ranges are kept", in: "a\u2029b\u206ac", want: "a\u2029b\u206ac"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -62,6 +65,7 @@ func TestText(t *testing.T) {
 		{name: "escapes go on every line", in: "\x1b[1ma\x1b[0m\n\x1b]0;t\ab", want: "a\nb"},
 		{name: "an unterminated OSC stops at the line end", in: "a\x1b]0;t\nb", want: "a\nb"},
 		{name: "an unterminated CSI stops at the line end", in: "a\x1b[3\nb", want: "a\nb"},
+		{name: "bidi controls go on every line", in: "a\u202egnp.exe\nb\u2066c\u2069", want: "agnp.exe\nbc"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

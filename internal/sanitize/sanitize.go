@@ -36,7 +36,7 @@ const (
 //     sequences) are removed together with their payload, so application
 //     colours go too;
 //   - every other C0 and C1 control is dropped, tab excepted, and so are
-//     CR and LF;
+//     CR, LF and the bidi embedding, override and isolate controls;
 //   - invalid UTF-8 becomes U+FFFD;
 //   - text over MaxLine bytes is cut there and noted with "…[+N bytes]".
 func Line(s string) string {
@@ -123,9 +123,17 @@ func skipSequence(s string, i int, r rune, size int, keepLF bool) (int, bool) {
 }
 
 // printable reports whether r is text: tab, or anything but a C0 or C1
-// control and DEL.
+// control, DEL and the bidi controls.
 func printable(r rune) bool {
-	return r == '\t' || (r >= 0x20 && r != 0x7f && (r < 0x80 || r > 0x9f))
+	return r == '\t' || (r >= 0x20 && r != 0x7f && (r < 0x80 || r > 0x9f) && !bidiControl(r))
+}
+
+// bidiControl reports the embedding, override and isolate controls
+// (U+202A-U+202E, U+2066-U+2069): a name or a log line carrying one can
+// make the terminal show its text in another order than it is read, so a
+// pasted command would not be the one seen.
+func bidiControl(r rune) bool {
+	return (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
 }
 
 // skipEscape returns the index after the sequence whose ESC ended at i.
