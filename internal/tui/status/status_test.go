@@ -55,6 +55,9 @@ func TestMessagesLiveForTheTTL(t *testing.T) {
 		{name: "error stays to the ttl after an early key", level: Error, keyAt: time.Second, lookAt: TTL - time.Millisecond, showing: true},
 		{name: "error goes at the ttl after an early key", level: Error, keyAt: time.Second, lookAt: TTL},
 		{name: "error goes on the first key after the ttl", level: Error, keyAt: time.Minute, lookAt: time.Minute},
+		{name: "alert inside the ttl", level: Alert, keyAt: -1, lookAt: TTL - time.Millisecond, showing: true},
+		{name: "alert goes at the ttl without a key", level: Alert, keyAt: -1, lookAt: TTL},
+		{name: "alert survives a key inside the ttl", level: Alert, keyAt: time.Second, lookAt: 2 * time.Second, showing: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

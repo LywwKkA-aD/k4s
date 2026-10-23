@@ -39,6 +39,9 @@
 //     replicas", "service api has no selector". A status about a command
 //     the user may want to run by hand ("describe node needs kubectl")
 //     is a StatusAboutMsg, so the footer shows that command while it lasts.
+//     News nobody asked for, such as a change a poll found, is a ToastMsg,
+//     which never replaces an error; failing news goes at status.Alert,
+//     styled as an error but gone at the TTL.
 //   - Never block in Update. Cluster calls go through internal/tui/async
 //     (see its package doc): a Token per view instance fences late
 //     replies, InFlight guards row actions such as l and e, and a Poller

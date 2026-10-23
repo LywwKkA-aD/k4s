@@ -123,7 +123,7 @@ func statusMark(level status.Level) string {
 		return styles.GlyphOK + " "
 	case status.Warn:
 		return styles.GlyphWarn + " "
-	case status.Error:
+	case status.Error, status.Alert:
 		return styles.GlyphErr + " "
 	}
 	return ""
