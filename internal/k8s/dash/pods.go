@@ -166,7 +166,7 @@ func podCmd(r PodRow, scope Scope) Cmd {
 	if r.Resolved {
 		return describe("pod", r.Key.Name, r.Key.Namespace)
 	}
-	return withScope(scope.Namespace, "get", "pods", "--field-selector", "metadata.name="+r.Key.Name)
+	return findCmd(scope.Namespace, "pods", r.Key.Name)
 }
 
 func countPhase(p *PhaseCounts, c Class) {

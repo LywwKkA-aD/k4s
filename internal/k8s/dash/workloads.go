@@ -197,7 +197,7 @@ func workloadCmd(key ObjectKey, resolved bool) Cmd {
 	if resolved {
 		return describe(key.Kind, key.Name, key.Namespace)
 	}
-	return kubectl("get", key.Kind, "-A", "--field-selector", "metadata.name="+key.Name)
+	return findCmd("", key.Kind, key.Name)
 }
 
 func cronSummary(st store, c CronSummary, rows []WorkloadRow, now time.Time) (CronSummary, []WorkloadRow) {
