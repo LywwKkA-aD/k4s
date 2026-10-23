@@ -80,6 +80,24 @@ func (s Snapshot) GiveVersion(gitVersion, minor string) Snapshot {
 	return derive(out)
 }
 
+// GiveVersionError returns s with the failure of its caller's /version
+// request (see GiveVersion), recorded in the ledger as one of the
+// dashboard's own requests would be: a denial shows as forbidden with its
+// can-i probe, a server away as stale. A later GiveVersion replaces it.
+// Telling the same class of failure again, as every refresh reply does,
+// changes nothing; a nil err changes nothing either.
+func (s Snapshot) GiveVersionError(err error) Snapshot {
+	state := classify(err)
+	if err == nil || (s.Ledger[Version].Fetched && s.Ledger[Version].State == state) {
+		return s
+	}
+	out := s
+	out.st = s.st.clone()
+	out.st.versionGiven = true
+	out = record(out, outcome{req: Request{Endpoint: Version}, state: state, err: err}, Plan{Now: s.Now})
+	return derive(out)
+}
+
 // PlanInput is the input for the plan after s. now is the caller's
 // elapsed time; watch, force and focus come from the view.
 func (s Snapshot) PlanInput(now time.Duration, watch, force bool, focus Focus) PlanInput {
