@@ -1,12 +1,14 @@
 package logs_test
 
 import (
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stesting "k8s.io/client-go/testing"
 
@@ -118,8 +120,16 @@ func TestPreviousWithoutOneSaysWhy(t *testing.T) {
 			level: status.Warn, text: "pod web-1 is gone",
 		},
 		{
-			name: "forbidden", err: apierrors.NewForbidden(corev1.Resource("pods/log"), tuitest.PodWeb1, nil),
-			level: status.Error, text: "forbidden: cannot read the logs of pod web-1 in demo (kubectl auth can-i get pods --subresource=log -n demo)",
+			name: "refused by RBAC", err: logsForbidden(tuitest.NamespaceDemo, tuitest.PodWeb1),
+			level: status.Error, text: "previous logs of pod web-1: forbidden: get pods/log in demo · kubectl auth can-i get pods --subresource=log -n demo",
+		},
+		{
+			name: "refused without the API's words", err: apierrors.NewForbidden(corev1.Resource("pods/log"), tuitest.PodWeb1, nil),
+			level: status.Error, text: "previous logs of pod web-1: forbidden: pods/log · kubectl auth can-i --list",
+		},
+		{
+			name: "credentials expired", err: apierrors.NewUnauthorized("token expired"),
+			level: status.Error, text: "previous logs of pod web-1: unauthorized: credentials expired or revoked",
 		},
 		{
 			name: "anything else", err: apierrors.NewInternalError(errBoom),
@@ -141,6 +151,14 @@ func TestPreviousWithoutOneSaysWhy(t *testing.T) {
 			}
 		})
 	}
+}
+
+// logsForbidden is RBAC refusing pod's log as the API server words it.
+func logsForbidden(ns, pod string) error {
+	return &apierrors.StatusError{ErrStatus: metav1.Status{
+		Status: metav1.StatusFailure, Code: http.StatusForbidden, Reason: metav1.StatusReasonForbidden,
+		Message: `pods "` + pod + `" is forbidden: User "dev" cannot get resource "pods/log" in API group "" in the namespace "` + ns + `"`,
+	}}
 }
 
 type boomError struct{}
