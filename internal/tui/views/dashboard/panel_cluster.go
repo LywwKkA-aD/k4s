@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -208,11 +209,12 @@ func networkItem(r dash.NetworkRow, ns string) (clusterItem, bool) {
 	}
 	it := clusterItem{key: networkKey, mark: markOK, label: "network", cmd: r.Cmd}
 	var parts []string
+	count := atLeast(r.Services, r.ServicesApprox)
 	switch {
 	case r.ServicesKnown && ns != "":
-		parts = append(parts, fmt.Sprintf("%d svc in ns %s", r.Services, ns))
+		parts = append(parts, count+" svc in ns "+ns)
 	case r.ServicesKnown:
-		parts = append(parts, fmt.Sprintf("%d svc", r.Services))
+		parts = append(parts, count+" svc")
 	}
 	switch {
 	case r.Pending > 0:
@@ -262,4 +264,15 @@ func plural(n int, one, many string) string {
 		return "1 " + one
 	}
 	return fmt.Sprintf("%d %s", n, many)
+}
+
+// atLeast is n as a count, "n+" when it is a lower bound: the list it was
+// taken from was cut, and the server did not say how much followed. Every
+// count in k4s reads that way (M4.3).
+func atLeast(n int, more bool) string {
+	s := strconv.Itoa(n)
+	if more {
+		s += "+"
+	}
+	return s
 }

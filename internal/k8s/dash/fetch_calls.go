@@ -131,7 +131,9 @@ func (f Fetcher) loadBalancers(ctx context.Context, r Request) outcome {
 	}
 	if err == nil {
 		rows := serviceRowsFrom(t, r.Namespace)
-		o.apply = func(s *store) { s.services, s.lbFallback, s.svcCount, s.svcCountOK = rows, true, len(rows), true }
+		o.apply = func(s *store) {
+			s.services, s.lbFallback, s.svcCount, s.svcCountOK, s.svcCountMore = rows, true, len(rows), true, false
+		}
 	}
 	return o
 }
@@ -145,7 +147,9 @@ func (f Fetcher) serviceCount(ctx context.Context, r Request) outcome {
 	if l.RemainingItemCount != nil {
 		n += int(*l.RemainingItemCount)
 	}
-	return outcome{rows: n, bytes: l.Size(), apply: func(s *store) { s.svcCount, s.svcCountOK = n, true }}
+	// Cut without a remaining count, the list says only that more follow.
+	more := l.RemainingItemCount == nil && l.Continue != ""
+	return outcome{rows: n, bytes: l.Size(), apply: func(s *store) { s.svcCount, s.svcCountOK, s.svcCountMore = n, true, more }}
 }
 
 func (f Fetcher) nodes(ctx context.Context, r Request) outcome {

@@ -53,7 +53,7 @@ func verdictOf(s Snapshot) Verdict {
 		v.Chips = append(v.Chips, Chip{Sev: SevWaiting, Panel: PanelCluster, Count: st.Pending + st.Lost, Text: plural(st.Pending+st.Lost, "pvc", "pvcs") + " not bound"})
 	}
 	if n := s.Events.Counted; n > 0 {
-		v.Chips = append(v.Chips, Chip{Sev: SevWaiting, Panel: PanelEvents, Count: n, Text: plural(n, "warning", "warnings") + " in 10m"})
+		v.Chips = append(v.Chips, Chip{Sev: SevWaiting, Panel: PanelEvents, Count: n, Text: warningsChip(n, s.Events.Truncated)})
 	}
 	sort.SliceStable(v.Chips, func(i, j int) bool { return v.Chips[i].Sev > v.Chips[j].Sev })
 	v.Partial = s.Scope.Fallback || s.Events.Truncated || !sourcesFresh(s)
@@ -137,6 +137,15 @@ func workloadChips(p WorkloadsPanel) []Chip {
 }
 
 // plural renders "1 job" or "3 jobs".
+// warningsChip is the warnings chip: "3 warnings in 10m", "3+ warnings in
+// 10m" when they were counted on a page cut at the cap, a lower bound.
+func warningsChip(n int, capped bool) string {
+	if capped {
+		return fmt.Sprintf("%d+ warnings in 10m", n)
+	}
+	return plural(n, "warning", "warnings") + " in 10m"
+}
+
 func plural(n int, one, many string) string {
 	word := many
 	if n == 1 {

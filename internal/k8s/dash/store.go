@@ -21,6 +21,7 @@ type store struct {
 	lbs          []svcRow // LoadBalancer services
 	svcCount     int
 	svcCountOK   bool
+	svcCountMore bool // the count's list was cut with no remaining count: svcCount is a lower bound
 	helm         []helmRow
 	snapshots    []snapRow
 	nodes        []nodeInfo
@@ -52,7 +53,7 @@ var clearers = map[Endpoint]func(*store){
 	HelmCharts:       func(s *store) { s.helm = nil },
 	EtcdSnapshots:    func(s *store) { s.snapshots = nil },
 	LoadBalancers:    func(s *store) { s.lbs, s.services = nil, nil },
-	ServiceCount:     func(s *store) { s.svcCount, s.svcCountOK = 0, false },
+	ServiceCount:     func(s *store) { s.svcCount, s.svcCountOK, s.svcCountMore = 0, false, false },
 	Nodes:            func(s *store) { s.nodes = nil },
 	Events:           func(s *store) { s.events, s.eventsTotal, s.eventsCapped = nil, 0, false },
 	Jobs:             func(s *store) { s.jobs = nil },

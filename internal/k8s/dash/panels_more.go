@@ -73,9 +73,12 @@ type StorageRow struct {
 
 // NetworkRow counts services and pending LoadBalancers.
 type NetworkRow struct {
-	Avail          Avail
-	Services       int
-	ServicesKnown  bool
+	Avail         Avail
+	Services      int
+	ServicesKnown bool
+	// ServicesApprox marks Services as a lower bound: the server cut the
+	// count's list and did not say how many follow (shown as N+).
+	ServicesApprox bool
 	LoadBalancers  int
 	Pending        int
 	PendingObjects []ObjectKey // pending LoadBalancers placed in a namespace

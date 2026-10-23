@@ -153,7 +153,7 @@ func TestEventsPanel(t *testing.T) {
 		{
 			name:   "a capped list",
 			change: func(s *dash.Snapshot) { s.Events.Total, s.Events.Truncated = 500, true },
-			want:   []string{"≥500 warnings", "newest first · 10 of ≥500"},
+			want:   []string{"500+ warnings", "newest first · 10 of 500+"},
 		},
 		{
 			name:   "no warnings",
