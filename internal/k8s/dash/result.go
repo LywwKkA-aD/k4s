@@ -1,13 +1,12 @@
 package dash
 
 import (
-	"context"
 	"errors"
-	"net"
-	"syscall"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 )
 
 // State is the outcome class of an endpoint's last request. Denials,
@@ -45,40 +44,36 @@ func (s State) keepsData() bool {
 	return s == StateStale || s == StateThrottled || s == StateFailed || s == StateUnauthorized
 }
 
-// classify maps a request error to a State. It is a local stand-in for the
-// M4.3 classifier and only needs the class, not the user-facing text.
+// classify maps a request error to a State through the shared classifier
+// (k8s.Classify), so a failed credential plugin, an unknown host or no
+// route to the API read here as in every other view. A 400 has no kind of
+// its own there: it is a server that does not know a field selector, and
+// the plan falls back on it, so it is told apart first.
 func classify(err error) State {
 	switch {
 	case err == nil:
 		return StateOK
 	case errors.Is(err, errNoREST):
 		return StateAbsent
-	case apierrors.IsForbidden(err):
-		return StateForbidden
-	case apierrors.IsNotFound(err):
-		return StateAbsent
-	case apierrors.IsServiceUnavailable(err):
-		return StateNotReady
-	case apierrors.IsTooManyRequests(err):
-		return StateThrottled
 	case apierrors.IsBadRequest(err):
 		return StateUnsupported
-	case apierrors.IsUnauthorized(err):
+	}
+	switch k8s.Classify(err).Kind {
+	case k8s.KindForbidden:
+		return StateForbidden
+	case k8s.KindNotFound:
+		return StateAbsent
+	case k8s.KindUnavailable:
+		return StateNotReady
+	case k8s.KindThrottled:
+		return StateThrottled
+	case k8s.KindUnauthorized, k8s.KindLogin:
 		return StateUnauthorized
-	case isTimeout(err):
+	case k8s.KindTimeout, k8s.KindUnreachable:
 		return StateStale
 	default:
 		return StateFailed
 	}
-}
-
-func isTimeout(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, syscall.ECONNREFUSED) ||
-		apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) {
-		return true
-	}
-	var ne net.Error
-	return errors.As(err, &ne) && ne.Timeout()
 }
 
 // Usage is one endpoint's ledger entry: what its last request cost and how
