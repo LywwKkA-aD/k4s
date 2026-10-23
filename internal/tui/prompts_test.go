@@ -183,10 +183,10 @@ func TestHelpPopup(t *testing.T) {
 		not   []string
 	}{
 		{
-			// The popup is cut to the body: with the dashboard's own keys it
-			// is whole from 46 rows (spec size 160x46).
+			// The popup fits the body: with the dashboard's own keys and its
+			// map it lists every command from 49 rows.
 			name:  "dashboard",
-			setup: []tea.Msg{tuitest.Resize(screenW, 46)},
+			setup: []tea.Msg{tuitest.Resize(screenW, 49)},
 			want:  []string{"help", "global", "force quit", "command bar", "commands", ":pods", "po, pod", ":forwards", ":ns <name>", ":<list> <ns>", "? / Esc close", "view: dashboard"},
 		},
 		{

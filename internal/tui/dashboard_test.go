@@ -112,10 +112,11 @@ func TestHelpShowsTheDashboardMap(t *testing.T) {
 	tall, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), tuitest.Resize(screenW, 70), tuitest.Press("?"))
 	requireScreen(t, tall, "dashboard map", "cluster · "+readyzCommand, ":forwards")
 
-	// The popup does not scroll: where the map would push the commands
-	// off screen, it is left out.
+	// The popup does not scroll: where it would not fit whole, the
+	// commands go down to one row first, so the map stays.
 	short, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), tuitest.Press("?"))
-	requireScreen(t, short, "view: dashboard", ":forwards")
+	requireScreen(t, short, "view: dashboard", "dashboard map", "cluster · "+readyzCommand, ": home pods ns")
+	refuteScreen(t, short, ":forwards")
 }
 
 // TestColorProfileReachesTheNextDashboard: the program reports the colour

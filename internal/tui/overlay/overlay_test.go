@@ -26,7 +26,7 @@ func TestPlacement(t *testing.T) {
 		{name: "container", o: overlay.NewContainer(views.ContainerPromptRequestMsg{Containers: []string{"c"}}), want: overlay.Popup},
 		{name: "forward", o: overlay.NewForward(views.ForwardRequestMsg{Kind: "pod", Name: "p"}, nil), want: overlay.Popup},
 		{name: "restore", o: overlay.NewRestore(1, now), want: overlay.Popup},
-		{name: "help", o: overlay.NewHelp(nil), want: overlay.Popup},
+		{name: "help", o: overlay.NewHelp(overlay.HelpPage{}), want: overlay.Popup},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -41,7 +41,7 @@ func TestPlacement(t *testing.T) {
 func TestOnlyHelpPassesInputOn(t *testing.T) {
 	t.Parallel()
 
-	help := overlay.NewHelp(nil, key.NewBinding(key.WithKeys("?")), key.NewBinding(key.WithKeys("q")))
+	help := overlay.NewHelp(overlay.HelpPage{}, key.NewBinding(key.WithKeys("?")), key.NewBinding(key.WithKeys("q")))
 	cases := []struct {
 		name string
 		o    overlay.Overlay

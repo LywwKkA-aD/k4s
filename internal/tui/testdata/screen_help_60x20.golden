@@ -2,18 +2,18 @@
 ──────────────────────────────────────────────────────────
 ╭──────────────────────────────────────────────────────────╮
 │                                                          │
-│   help                                                   │
-│                                                          │
-│   global                                                 │
-│     q       quit                                         │
-│     ctrl+c  force quit                                   │
-│     esc     back                                         │
-│     :       command bar                                  │
-│     o       YAML of the selected object                  │
-│     y       copy the kubectl command below (OSC 52)      │
-│             in tmux: set -g set-clipboard on             │
-│                                                          │
+│   help   ? / Esc close                                   │
+│   global  q quit  ^c quit  esc back  : command  o yam…   │
 │   view: dashboard                                        │
+│     tab/0-7  panel                                       │
+│     ←→       neighbour                                   │
+│     ↑↓       row                                         │
+│     r        refresh                                     │
+│     w        5s                                          │
+│   : home pods ns deploy svc events nodes ctx top pf      │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+
 ──────────────────────────────────────────────────────────
  q quit  ·  ^c quit  ·  esc back  ·  : command  ·  ? hel…
  ≈ kubectl get nodes,pods,deploy,sts,ds -A
