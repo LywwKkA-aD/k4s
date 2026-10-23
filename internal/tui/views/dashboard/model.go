@@ -47,9 +47,11 @@ type Model struct {
 	fetch   FetchFunc
 	session kubectl.Session
 	// version is the root's answer to /version (see WithServerVersion),
-	// distro its distribution (see WithDistro).
-	version *apiversion.Info
-	distro  cluster.Distro
+	// versionErr its failure while there is no answer, distro its
+	// distribution (see WithDistro).
+	version    *apiversion.Info
+	versionErr error
+	distro     cluster.Distro
 
 	mem  Memory
 	poll async.Poller
@@ -99,7 +101,7 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 	if cfg.given && client != nil && !mem.snap.Caps.VersionGiven {
 		mem.snap = mem.snap.GiveVersion("", "")
 	}
-	mem.snap = givenVersion(mem.snap, cfg.version)
+	mem.snap = givenVersion(mem.snap, cfg.version, cfg.versionErr)
 	fetch := mem.fetch
 	if cfg.fetch != nil && client != nil {
 		fetch = cfg.fetch
@@ -128,6 +130,7 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 		perf:    &renderClock{},
 		memo:    &renderMemo{},
 	}
+	m.versionErr = cfg.versionErr
 	m.poll = async.NewPoller(async.New(), async.Config{
 		Enabled: fetch != nil && !mem.paused,
 		Timeout: fetchTimeout,

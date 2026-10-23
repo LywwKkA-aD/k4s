@@ -8,18 +8,24 @@ import (
 )
 
 // VersionMsg is the root's answer to /version for the active client,
-// handed to a dashboard built WithServerVersion(nil), with the
-// distribution the root detected from it.
+// handed to a dashboard built WithServerVersion, with the distribution the
+// root detected from it; Err is the request's failure when there is no
+// answer. A later answer, from the root's retry, replaces a failure.
 type VersionMsg struct {
 	Info   *apiversion.Info
 	Distro cluster.Distro
+	Err    error
 }
 
-// givenVersion folds the root's version into s. A refresh that started
-// before the answer landed replies with a snapshot without it, so every
-// reply goes through here; one that has it already is left as it is.
-func givenVersion(s dash.Snapshot, info *apiversion.Info) dash.Snapshot {
-	if info == nil || s.Cluster.Version.GitVersion == info.GitVersion {
+// givenVersion folds the root's version, or its failure, into s. A
+// refresh that started before either landed replies with a snapshot
+// without it, so every reply goes through here; one that has it already
+// is left as it is.
+func givenVersion(s dash.Snapshot, info *apiversion.Info, err error) dash.Snapshot {
+	if info == nil {
+		return s.GiveVersionError(err)
+	}
+	if s.Cluster.Version.GitVersion == info.GitVersion {
 		return s
 	}
 	return s.GiveVersion(info.GitVersion, info.Minor)
@@ -32,10 +38,16 @@ func (m Model) onVersion(msg VersionMsg) Model {
 	if msg.Distro != "" {
 		m.distro = msg.Distro
 	}
-	if msg.Info != nil && m.mem.snap.Caps.VersionGiven {
-		m.version = msg.Info
-		m.mem.snap = givenVersion(m.mem.snap, m.version)
+	if !m.mem.snap.Caps.VersionGiven {
+		return m.relayout()
 	}
+	switch {
+	case msg.Info != nil:
+		m.version, m.versionErr = msg.Info, nil
+	case msg.Err != nil && m.version == nil:
+		m.versionErr = msg.Err
+	}
+	m.mem.snap = givenVersion(m.mem.snap, m.version, m.versionErr)
 	return m.relayout()
 }
 
