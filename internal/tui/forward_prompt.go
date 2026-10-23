@@ -9,7 +9,9 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/forwards"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
@@ -55,19 +57,20 @@ func checkLocalPort(port uint16) error {
 // onForwardChosen registers the forward, starts it, and opens the forwards
 // view so the user sees the entry land.
 func (m Model) onForwardChosen(msg overlay.ForwardChosenMsg) (tea.Model, tea.Cmd) {
-	if err := startForward(m.forwardMgr, currentContextName(m.client), msg); err != nil {
+	start, err := startForward(m.forwardMgr, currentContextName(m.client), msg)
+	if err != nil {
 		return m.setError("port-forward: " + err.Error())
 	}
 	next := m.switchTo(viewForwards)
-	return next, next.relayoutCmd()
+	return next, tea.Batch(next.relayoutCmd(), start)
 }
 
-// startForward saves the forward and starts it in the background: Start may
-// block briefly while it resolves the target pod, and the Manager reports
-// progress through its change channel.
-func startForward(mgr *forwards.Manager, contextName string, msg overlay.ForwardChosenMsg) error {
+// startForward saves the forward and returns the Cmd that starts it: Start
+// may block briefly while it resolves the target pod, and the Manager
+// reports progress through its change channel.
+func startForward(mgr *forwards.Manager, contextName string, msg overlay.ForwardChosenMsg) (tea.Cmd, error) {
 	if mgr == nil {
-		return errForwardsUnavailable
+		return nil, errForwardsUnavailable
 	}
 	fwd := forwards.Forward{
 		ID:         forwards.NewID(),
@@ -79,12 +82,24 @@ func startForward(mgr *forwards.Manager, contextName string, msg overlay.Forward
 		RemotePort: msg.Remote,
 	}
 	if err := mgr.Register(fwd); err != nil {
-		return err
+		return nil, err
 	}
-	go func(id string) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	return forwardStartCmd(mgr.Start, fwd.ID), nil
+}
+
+// forwardStartTimeout bounds one Start or Revive.
+const forwardStartTimeout = 10 * time.Second
+
+// forwardStartCmd runs start for the forward id off the event loop. An
+// error goes to the status row: some, such as a forward refused for
+// another cluster, end the start before its row could show them.
+func forwardStartCmd(start func(context.Context, string) error, id string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), forwardStartTimeout)
 		defer cancel()
-		_ = mgr.Start(ctx, id)
-	}(fwd.ID)
-	return nil
+		if err := start(ctx, id); err != nil {
+			return views.StatusMsg{Level: status.Error, Text: "port-forward: " + sanitize.Line(err.Error())}
+		}
+		return nil
+	}
 }

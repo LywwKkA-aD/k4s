@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"slices"
 	"time"
 
@@ -40,28 +39,25 @@ func (m Model) onRestoreDecision(msg overlay.RestoreDecisionMsg) (Model, tea.Cmd
 	if m.forwardsStopping() {
 		return m.setError(msgForwardsStopping)
 	}
-	m.reviveAll()
-	return m, nil
+	return m, m.reviveAll()
 }
 
-// reviveAll kicks off Revive for every forward the restore question
-// offered. Each one blocks briefly on its own goroutine; we don't wait.
-// The Manager's change channel will refresh the forwards view
-// automatically. A forward saved before k4s recorded servers is saved for
-// this cluster as it starts: answering the question confirmed it.
-func (m Model) reviveAll() {
+// reviveAll is the Cmds that Revive every forward the restore question
+// offered, each off the event loop. The Manager's change channel refreshes
+// the forwards view; a failed revival also says so on the status row. A
+// forward saved before k4s recorded servers is saved for this cluster as
+// it starts: answering the question confirmed it.
+func (m Model) reviveAll() tea.Cmd {
 	if m.forwardMgr == nil {
-		return
+		return nil
 	}
 	mgr := m.forwardMgr
-	for _, a := range restorable(mgr, currentContextName(m.client)) {
-		id := a.Forward.ID
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			_ = mgr.Revive(ctx, id)
-		}()
+	offered := restorable(mgr, currentContextName(m.client))
+	cmds := make([]tea.Cmd, 0, len(offered))
+	for _, a := range offered {
+		cmds = append(cmds, forwardStartCmd(mgr.Revive, a.Forward.ID))
 	}
+	return tea.Batch(cmds...)
 }
 
 // restoreOverlay asks whether to revive the forwards saved for this

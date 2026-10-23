@@ -126,7 +126,15 @@ func TestReviveBindsTheLegacyForwardAndStartsThisClusters(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	Model{forwardMgr: mgr, client: client}.reviveAll()
+	// Each revival is a Cmd of its own; run them as Bubble Tea would.
+	revive := Model{forwardMgr: mgr, client: client}.reviveAll()
+	batch, ok := revive().(tea.BatchMsg)
+	if !ok || len(batch) != 2 {
+		t.Fatalf("reviveAll = %#v, want a batch of 2 revivals", batch)
+	}
+	for _, c := range batch {
+		go c()
+	}
 
 	deadline := time.Now().Add(5 * time.Second)
 	for !allRunningAndBound(mgr.List()) {
