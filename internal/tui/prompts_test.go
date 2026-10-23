@@ -56,7 +56,7 @@ func TestTailPrompt(t *testing.T) {
 			if len(logs) != 1 || !tuitest.Contains(out, want) {
 				t.Fatalf("want %+v, got:\n%s", want, tuitest.Describe(out))
 			}
-			requireView(t, m, "logs · web-1 / nginx")
+			requireView(t, m, "pod · web-1 / nginx · logs")
 		})
 	}
 }

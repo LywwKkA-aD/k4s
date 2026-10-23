@@ -55,7 +55,7 @@ func TestFollowAgainstTheCluster(t *testing.T) {
 	if !strings.Contains(m.Command().String(), "pod-template-hash in (") {
 		t.Errorf("footer = %s", m.Command())
 	}
-	if want := fmt.Sprintf("logs · %d pods", len(target.Pods)); len(target.Pods) > 1 && !strings.HasPrefix(m.Title(), want) {
+	if want := fmt.Sprintf("deployment · %s · logs · %d pods", target.Name, len(target.Pods)); len(target.Pods) > 1 && !strings.HasPrefix(m.Title(), want) {
 		t.Errorf("a steady minute changed the pods: title %q, want %q", m.Title(), want)
 	}
 	for _, pod := range target.PodNames() {

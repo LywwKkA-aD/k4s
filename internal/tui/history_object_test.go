@@ -32,7 +32,7 @@ func TestNoEntryForAViewThatCannotComeBack(t *testing.T) {
 	if _, ok := m.entryOf(nil); ok {
 		t.Error("a nil view has an entry")
 	}
-	if _, ok := m.entryOf(stubView{title: "logs · web-1"}); ok {
+	if _, ok := m.entryOf(stubView{title: "pod · web-1 · logs"}); ok {
 		t.Error("logs have an entry")
 	}
 	m.current = nil

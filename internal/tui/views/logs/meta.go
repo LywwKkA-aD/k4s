@@ -6,20 +6,17 @@ import (
 	"charm.land/bubbles/v2/key"
 
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
 
-// Title implements views.View.
+// Title implements views.View: what the view streams, named as the
+// other object views name theirs ("pod · web-1 · yaml"): "pod · web-1 /
+// nginx · logs" for a pod, "deployment · web · logs · 3 pods" for the
+// pods of a deployment or a service (the pod by name when there is one),
+// then the instance, the search and the pause.
 func (m Model) Title() string {
-	base := "logs"
-	if len(m.pods) == 1 {
-		base += " · " + m.pods[0]
-	} else {
-		base += fmt.Sprintf(" · %d pods", len(m.pods))
-	}
-	if m.container != "" {
-		base += " / " + m.container
-	}
+	base := m.subject()
 	if m.previous {
 		base += " · previous"
 	}
@@ -34,6 +31,29 @@ func (m Model) Title() string {
 		base += " · paused"
 	}
 	return base
+}
+
+// subject names the object streamed, its names made inert.
+func (m Model) subject() string {
+	container := ""
+	if m.container != "" {
+		container = " / " + sanitize.Line(m.container)
+	}
+	switch {
+	case m.target.Kind != "" && m.target.Name != "":
+		return sanitize.Line(m.target.Kind) + " · " + sanitize.Line(m.target.Name) + " · logs · " + m.podsLabel() + container
+	case len(m.pods) == 1:
+		return "pod · " + sanitize.Line(m.pods[0]) + container + " · logs"
+	}
+	return "logs · " + m.podsLabel() + container
+}
+
+// podsLabel is the one pod streamed by name, else how many there are.
+func (m Model) podsLabel() string {
+	if len(m.pods) == 1 {
+		return sanitize.Line(m.pods[0])
+	}
+	return fmt.Sprintf("%d pods", len(m.pods))
 }
 
 // Command implements views.View: the kubectl logs command for the pods

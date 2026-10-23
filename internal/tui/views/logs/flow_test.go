@@ -62,7 +62,7 @@ func TestLinesArriveAndAnEndedStreamSaysWhy(t *testing.T) {
 	if strings.Contains(screen, "ended") {
 		t.Errorf("the end is told before it is known:\n%s", screen)
 	}
-	requireTitle(t, m, "logs · web-1")
+	requireTitle(t, m, "pod · web-1 · logs")
 
 	if err := c.Clientset.CoreV1().Pods(tuitest.NamespaceDemo).Delete(context.Background(), tuitest.PodWeb1, metav1.DeleteOptions{}); err != nil {
 		t.Fatalf("delete: %v", err)
@@ -88,7 +88,7 @@ func TestSearchFlow(t *testing.T) {
 	if m.CapturesKeys() {
 		t.Fatal("enter closes the search prompt")
 	}
-	requireTitle(t, m, "logs · web-1 · /alpha · 1/2 · paused")
+	requireTitle(t, m, "pod · web-1 · logs · /alpha · 1/2 · paused")
 	if screen := tuitest.Screen(m); !strings.Contains(screen, "/alpha · 1/2 (n/N step · c cancel)") {
 		t.Errorf("status line:\n%s", screen)
 	}
@@ -97,11 +97,11 @@ func TestSearchFlow(t *testing.T) {
 		key  string
 		want string
 	}{
-		{key: "n", want: "logs · web-1 · /alpha · 2/2 · paused"},
-		{key: "n", want: "logs · web-1 · /alpha · 1/2 · paused"},
-		{key: "N", want: "logs · web-1 · /alpha · 2/2 · paused"},
-		{key: "c", want: "logs · web-1 · paused"},
-		{key: "f", want: "logs · web-1"},
+		{key: "n", want: "pod · web-1 · logs · /alpha · 2/2 · paused"},
+		{key: "n", want: "pod · web-1 · logs · /alpha · 1/2 · paused"},
+		{key: "N", want: "pod · web-1 · logs · /alpha · 2/2 · paused"},
+		{key: "c", want: "pod · web-1 · logs · paused"},
+		{key: "f", want: "pod · web-1 · logs"},
 	}
 	for _, s := range steps {
 		m, _ = tuitest.Drive(t, m, tuitest.Press(s.key))
@@ -125,8 +125,8 @@ func TestSearchEdgeCases(t *testing.T) {
 		wantTitle string
 		wantLine  string
 	}{
-		{name: "no match", keys: []string{"/"}, text: "zzz", wantTitle: "logs · web-1 · /zzz · no match", wantLine: "/zzz · no match (c cancel)"},
-		{name: "esc abandons the prompt", keys: []string{"/"}, text: "alpha", wantTitle: "logs · web-1"},
+		{name: "no match", keys: []string{"/"}, text: "zzz", wantTitle: "pod · web-1 · logs · /zzz · no match", wantLine: "/zzz · no match (c cancel)"},
+		{name: "esc abandons the prompt", keys: []string{"/"}, text: "alpha", wantTitle: "pod · web-1 · logs"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -197,15 +197,15 @@ func TestScrollingUpPausesFollow(t *testing.T) {
 		fmt.Fprintf(&b, "line %02d\n", i)
 	}
 	m := streaming(t, b.String(), 10, tuitest.PodWeb1)
-	requireTitle(t, m, "logs · web-1")
+	requireTitle(t, m, "pod · web-1 · logs")
 
 	m, _ = tuitest.Drive(t, m, tuitest.Press("up"))
-	requireTitle(t, m, "logs · web-1 · paused")
+	requireTitle(t, m, "pod · web-1 · logs · paused")
 	if !strings.Contains(tuitest.Screen(m), "[paused — press f to follow]") {
 		t.Errorf("paused banner missing:\n%s", tuitest.Screen(m))
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Press("f"))
-	requireTitle(t, m, "logs · web-1")
+	requireTitle(t, m, "pod · web-1 · logs")
 }
 
 func TestStreamErrorsAndPlaceholders(t *testing.T) {
@@ -225,7 +225,7 @@ func TestStreamErrorsAndPlaceholders(t *testing.T) {
 		t.Errorf("stream error screen:\n%s", screen)
 	}
 	failing, _ = tuitest.Drive(t, failing, tuitest.Press("/"), tuitest.Type("forbidden"), tuitest.Enter())
-	requireTitle(t, failing, "logs · crash-0 · /forbidden · 1/1 · paused")
+	requireTitle(t, failing, "pod · crash-0 · logs · /forbidden · 1/1 · paused")
 
 	offline, out := tuitest.Init(t, logs.New(nil, tuitest.NamespaceDemo, []string{tuitest.PodWeb1}, 0, ""))
 	if screen := tuitest.Screen(offline); !strings.Contains(screen, "no kubeconfig") {

@@ -51,7 +51,7 @@ func TestRolloutJoinsNewPodsAndEndsOldOnes(t *testing.T) {
 	if got, want := r.m.Command().String(), "kubectl logs -f web-h2-a --tail=100 -n shop"; got != want {
 		t.Errorf("footer after the rollout = %q, want %q", got, want)
 	}
-	if !strings.HasPrefix(r.m.Title(), "logs · web-h2-a") {
+	if !strings.HasPrefix(r.m.Title(), "deployment · web · logs · web-h2-a") {
 		t.Errorf("title = %q", r.m.Title())
 	}
 	// Lines keep their pod's prefix once several pods have streamed.

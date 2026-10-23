@@ -165,7 +165,7 @@ func TestLogsAreSkippedByHistory(t *testing.T) {
 	}
 
 	m, _ = tuitest.Drive(t, m, views.LogsRequestMsg{Namespace: tuitest.NamespaceDemo, Pods: []string{tuitest.PodWeb1}, Tail: 50})
-	requireView(t, m, "logs · web-1")
+	requireView(t, m, "pod · web-1 · logs")
 	requireScreen(t, m, "fake logs")
 
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())

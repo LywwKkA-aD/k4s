@@ -23,10 +23,10 @@ func TestSearchIsSmartCase(t *testing.T) {
 		query string
 		title string
 	}{
-		{query: "error", title: "logs · web-1 · /error · 1/3 · paused"},
-		{query: "Error", title: "logs · web-1 · /Error · 1/1 · paused"},
-		{query: "ERROR", title: "logs · web-1 · /ERROR · 1/1 · paused"},
-		{query: "e", title: "logs · web-1 · /e · 1/7 · paused"},
+		{query: "error", title: "pod · web-1 · logs · /error · 1/3 · paused"},
+		{query: "Error", title: "pod · web-1 · logs · /Error · 1/1 · paused"},
+		{query: "ERROR", title: "pod · web-1 · logs · /ERROR · 1/1 · paused"},
+		{query: "e", title: "pod · web-1 · logs · /e · 1/7 · paused"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
@@ -41,11 +41,11 @@ func TestSearchCountsEveryOccurrence(t *testing.T) {
 	t.Parallel()
 
 	m := search(t, streaming(t, "alpha alpha\nbeta alpha\ngamma\n", 20, tuitest.PodWeb1), "alpha")
-	requireTitle(t, m, "logs · web-1 · /alpha · 1/3 · paused")
+	requireTitle(t, m, "pod · web-1 · logs · /alpha · 1/3 · paused")
 	steps := []string{"2/3", "3/3", "1/3"}
 	for _, want := range steps {
 		m, _ = tuitest.Drive(t, m, tuitest.Press("n"))
-		requireTitle(t, m, "logs · web-1 · /alpha · "+want+" · paused")
+		requireTitle(t, m, "pod · web-1 · logs · /alpha · "+want+" · paused")
 	}
 }
 
@@ -122,10 +122,10 @@ func TestSearchLandsInsideAWrappedLine(t *testing.T) {
 	steps := []struct {
 		key, title, shows string
 	}{
-		{title: "logs · web-1 · /needle · 1/2 · paused", shows: "a short needle"},
-		{key: "n", title: "logs · web-1 · /needle · 2/2 · paused", shows: "far end"},
-		{key: "N", title: "logs · web-1 · /needle · 1/2 · paused", shows: "a short needle"},
-		{key: "N", title: "logs · web-1 · /needle · 2/2 · paused", shows: "far end"},
+		{title: "pod · web-1 · logs · /needle · 1/2 · paused", shows: "a short needle"},
+		{key: "n", title: "pod · web-1 · logs · /needle · 2/2 · paused", shows: "far end"},
+		{key: "N", title: "pod · web-1 · logs · /needle · 1/2 · paused", shows: "a short needle"},
+		{key: "N", title: "pod · web-1 · logs · /needle · 2/2 · paused", shows: "far end"},
 	}
 	for _, s := range steps {
 		if s.key != "" {
