@@ -9,27 +9,138 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
 
 ### Behaviour changes
 
+- The home screen is a new dashboard (see Added); the four counters are
+  gone.
 - k4s starts in the namespace the kubeconfig context sets, as kubectl does,
   and `:ctx` lands in the new context's namespace. A context without a
   namespace still starts in all namespaces; `-A` or `:ns -A` shows all
   namespaces.
+- Footer commands no longer end in `--watch`: k4s refreshes by polling,
+  which `kubectl get --watch` does not do. The `w` hint shows the refresh
+  state instead: `watch 5s`, `watch 20s (slow API)` or `paused`.
+- `l` on a deployment streams the pods its ReplicaSets run, not every pod
+  its labels match, so CronJob pods that share the label stay out. `l` on a
+  service skips finished pods. When `kubectl logs -l` would stream more
+  pods, the footer marks the command `≈` and the status row says how many
+  were skipped and why.
+- Describe runs `kubectl describe` (or `k3s kubectl describe`) exactly as
+  the footer shows it. The built-in describer answers only when kubectl is
+  missing, fails or takes more than 10 s; the footer then marks the command
+  `≈` and the status row says why.
 - The question about saved port-forwards answers yes on Enter only: `y`
   now copies the command.
 
 ### Added
 
+- A dashboard as the home screen (`q`, `:dashboard`, `:home`):
+  - The banner answers whether the cluster is healthy: a verdict
+    (`▲ attention` with what is wrong, or `● all clear since hh:mm` with
+    what k4s saw), up to five `▸ next` suggestions, each an exact read-only
+    kubectl command with the question it answers, and a command of the day
+    when nothing needs a fix.
+  - Seven numbered panels: 1 cluster (API readiness, version and
+    distribution, user, age, namespaces, storage, network, server), 2 nodes
+    (condition, roles, CPU and memory meters, pods per node), 3 pods (phase
+    bar, problem pods, recent restarts), 4 workloads (deployments,
+    statefulsets, daemonsets, jobs, cronjobs), 5 events (recent warnings),
+    6 k3s (bundled components, ServiceLB, Helm charts, etcd snapshots; on
+    k3s only), 7 top pods (with metrics-server).
+  - The footer shows the kubectl command of the focused panel or row, and
+    `y` copies it. Enter opens the matching k4s view (`:pods`, `:deploy`,
+    `:events` with only the warnings, `:nodes`, `:ns`, `:svc`, `:top`) or
+    describes the row's object; `l` opens a pod row's logs, the previous
+    instance's for a crash loop suggestion; `o` opens the row's YAML; `z`
+    zooms a panel. `tab`/`shift+tab`, `0`-`7`, `←`/`→` and `↑`/`↓` move the
+    focus, and `?` lists each panel with its key and command.
+  - What k4s works out itself is marked `≈`: CPU and memory history, the
+    count of pods not ok, and "seen by k4s", the changes between two polls.
+    It lives in memory for the session and is still there when you come
+    back from another view. A change between polls raises one toast.
+  - Wide, medium and compact layouts fit every terminal size; panel
+    numbers never change with the size.
+  - A denied source reads `—` with the `kubectl auth can-i` that asks the
+    same, never `0`. A user limited to one namespace sees that namespace
+    and a note in the banner. A missing metrics-server says why, with the
+    install or re-enable hint for the distribution. A source that stops
+    answering keeps its last data, dimmed and marked `stale`.
+  - Requests come in tiers of 5 s, 15 s, 30 s and once per context and
+    read the API server's watch cache; pod metrics are asked only while
+    panel 7 shows. Polls slow down on large clusters, while the terminal
+    is in the background, after 10 minutes without a key, on timeouts and
+    on 429s. With watch off nothing is polled.
+- `o` opens the YAML of the object under the cursor, or of the object
+  describe shows: `kubectl get <kind> <name> -o yaml` for pods,
+  deployments, statefulsets, daemonsets, jobs, cronjobs, services,
+  namespaces, nodes and events. It is built in-process and leaves out
+  `managedFields`, as kubectl does.
+- Describe and YAML scroll with `↑`/`↓`, `pgup`/`pgdn`, `g` and `G`, and
+  search with `/`, `n` and `N`; Esc clears a search before it leaves.
+- `:events` (`:ev`): `kubectl events`, newest first. `W` keeps only the
+  warnings (`--types=Warning`), Enter describes the object an event is
+  about, `/` filters.
+- `:nodes` (`:no`): `kubectl get nodes -o wide`, with k3s roles and
+  cordoned nodes shown as `SchedulingDisabled`. Enter describes the node.
+- `:pods`, `:deploy`, `:svc`, `:top` and `:events` take a namespace as
+  kubectl spells it: `:pods demo`, `:deploy -n demo`, `:svc -A`.
 - Flags `--kubeconfig`, `--context`, `-n`/`--namespace`,
-  `-A`/`--all-namespaces`, `--theme` and `--no-preflight` (also
-  `K4S_NO_PREFLIGHT`). A `--kubeconfig` or `--context` that cannot be
-  loaded stops k4s before the TUI starts.
+  `-A`/`--all-namespaces`, `--theme`, `--no-preflight` (also
+  `K4S_NO_PREFLIGHT`) and `--no-recap` (also `K4S_NO_RECAP`). A
+  `--kubeconfig` or `--context` that cannot be loaded stops k4s before the
+  TUI starts.
+- On exit k4s prints the kubectl commands the session led to (the views
+  opened, describe, logs, exec and port-forward), each once, the 15 most
+  recent, so they stay in the shell's scrollback. `--no-recap` turns it
+  off.
+- `--theme high-contrast` (or `K4S_THEME=high-contrast`): text at 7:1 and
+  borders at 3:1 or better, following the terminal background like `auto`.
 - On a k3s server without `$KUBECONFIG` or `~/.kube/config`, k4s reads
   `/etc/rancher/k3s/k3s.yaml`. When that file is not readable, k4s prints
   how to make a readable copy.
+- The header names the distribution and release, and the API host when the
+  context name alone does not say which cluster it is:
+  `k4s · k3s v1.36.5 · ctx default (10.0.0.5) · ns ALL · pods`. The
+  terminal title reads `k4s · <context>/<namespace>`.
 - `y` copies the footer's kubectl command to the clipboard through the
   terminal (OSC 52); inside tmux this needs `set -g set-clipboard on`.
 - `:ns <name>` and `:ns -A` switch the namespace of the current list.
 - A status row in the footer. Actions that cannot run say why, and a failed
-  credential preflight is shown there when the TUI starts.
+  credential preflight is shown there when the TUI starts. Messages lead
+  with a glyph for their level (`●` ok, `△` warning, `▲` error), so no
+  level depends on colour.
+- Esc brings a list back as it was left: its filter, the row under the
+  cursor, watch, and top's mode and sort. Esc on a kept filter clears it
+  first.
+- Logs:
+  - Deployment and service logs look for their pods again every 10 s while
+    the view is open, so the pods of a rollout join the stream
+    (`+ pod …-k7x2p joined (new ReplicaSet 7d9f…)`). `kubectl logs -l`
+    does not follow new pods, and the help says so.
+  - Every stream that ends says why: the pod was deleted, completed or
+    failed (`Evicted`, `Error (exit 1)`), its container restarted (the
+    stream reattaches), exited (it waits for the restart), or the stream
+    dropped (it reconnects after 1, 2, 4, 8, then 30 s without repeating a
+    line). The bare `stream closed` line is gone.
+  - `p` shows the previous instance of a single pod's container
+    (`kubectl logs --previous`); `p` again goes back.
+  - The container picker lists init containers and native sidecars as
+    `init:<name>`.
+  - At most 50 pods stream at once, and the footer asks kubectl for no
+    more.
+- `s` in `:top` sorts by memory and back; the footer command always carries
+  `--sort-by`.
+- A list whose refresh fails keeps its last rows under a stale banner, and
+  they stay usable.
+- When RBAC forbids listing namespaces, `:ns` opens a prompt to type one,
+  with the namespaces used this session to pick from.
+- After `:ctx` to a context whose credential plugin needs a terminal login,
+  a question offers it; Enter runs `kubectl version` for that context on
+  the plain terminal. A preflight that failed for want of a login at start
+  leads to the same question.
+- Exec runs `cmd.exe` in Windows pods. A container without a shell ends in
+  a status that offers the `kubectl debug` command bringing one; `y` copies
+  it, and k4s never runs it.
+- The forwards view's DETAIL column shows a forward's last connection
+  failure (`last error: connection refused · 12s ago`).
 
 ### Changed
 
@@ -40,32 +151,112 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
   k4s reads a kubeconfig that plain `kubectl` would not (`--kubeconfig`,
   the k3s fallback). `≈` now marks only commands that differ from what k4s
   does.
-- Footer commands no longer end in `--watch`: k4s refreshes by polling,
-  which `kubectl get --watch` does not do.
 - The multi-pod logs footer is a runnable command instead of a list of pods
-  in braces.
+  in braces: `kubectl logs -f -l '<selector>' --prefix --tail=<n>
+  --max-log-requests=<m>`, narrowed for a deployment to its ReplicaSets
+  with `pod-template-hash in (…)`.
+- API errors are worded by what went wrong: forbidden (with the verb,
+  resource and scope, and the `kubectl auth can-i` that asks the same),
+  unauthorized, login needed, not found, timeout, unreachable, throttled or
+  unavailable. A refused `127.0.0.1:6443` off a k3s server points at a
+  copied `k3s.yaml`.
+- When RBAC refuses a list across all namespaces and the context names a
+  namespace, the pods, deployments, services, top and events views list
+  that namespace and say so (`cluster-wide list forbidden; showing demo ·
+  kubectl auth can-i list pods -A`), and the header moves there too.
+  Without a context namespace the error points at `:ns <name>`.
+- Lists read their polls from the API server's watch cache, and `r` asks
+  for a consistent read. With watch off a view polls nothing and arms no
+  timer. A slow API backs the refresh off to 10, 20, 40 and 60 s.
 - The pod list's READY, STATUS and RESTARTS columns count the way
   `kubectl get pods` does, including init containers, native sidecars,
-  `Terminating` and `Evicted`.
-- The tail prompt names what the logs are for (`deployment/web · ns demo`),
-  and the footer shows the logs command it will open.
+  `Terminating` and `Evicted`. RESTARTS reads `3 (5m ago)`, ages print as
+  kubectl prints them (`90m`, `3d12h`), and the pod table fits 80
+  columns.
+- The tail prompt names what the logs are for (`deployment/web · ns demo`)
+  and its line cap (5000 lines shared out over the pods), and the footer
+  shows the logs command it will open.
+- `e` offers only the containers a shell runs in: app containers and native
+  sidecars.
 - A port-forward prompt with a bad or busy port stays open and shows the
   error.
-- Help closes on `?`, Esc or `q`; any other key closes it and does what it
-  does without help open.
-- The question about saved port-forwards ignores keys pressed in its first
+- Saved port-forwards are bound to their cluster: context, API server and
+  CA. Stock k3s names every context `default` at `127.0.0.1:6443`, so a
+  forward saved on one k3s cluster no longer comes back on another. Forwards
+  saved by earlier releases read `unknown cluster, confirm` and are bound
+  when started.
+- The question about saved port-forwards names the clusters it offers
+  (`default · 127.0.0.1:6443`) and ignores keys pressed in its first
   400 ms.
+- Port-forwards connect as kubectl does (SPDY over WebSocket, else SPDY)
+  and give up after 15 s.
+- Help closes on `?`, Esc or `q`; any other key closes it and does what it
+  does without help open. It always fits the screen, dropping detail on a
+  small terminal.
 - Exec runs exactly the footer's command, without a shell, and uses
   `k3s kubectl` when `kubectl` is not on `PATH`.
 - `:ctx` lists and loads contexts from the kubeconfig k4s started with.
 - The credential plugin login before the TUI starts gives up after 30 s;
   `--no-preflight` skips it.
+- `auto` and `high-contrast` ask the terminal for its background once the
+  TUI starts, and hold the first frame up to 150 ms for the answer.
+  Windows terminals are asked too; tmux, screen and `TERM=dumb` are not.
 - Built on Bubble Tea, Lip Gloss and Bubbles v2, with these visible effects:
   - Truecolor terminals get the exact palette colours (v1 was one step off in some channels), and inside tmux `COLORTERM=truecolor` is honoured.
   - Pasting into the command bar, filters and the logs search works through bracketed paste.
   - With the kitty keyboard protocol (Alacritty, kitty, WezTerm, ghostty), shift+Enter and ctrl+Enter still act as Enter.
   - Under `CI=1` or `TERM=screen` the palette is shown instead of no styling, and East Asian ambiguous-width locales truncate and box consistently.
   - Without a terminal (ssh without `-t`, cron) the error reads `no terminal: open /dev/tty: …`.
+- `k8s.io/*` v0.37.1.
+
+### Fixed
+
+- A panic in a log stream or a port-forward no longer ends k4s with the
+  terminal in raw mode: that stream or forward ends with
+  `internal error (see ~/.local/state/k4s/k4s.log)`, and the stack goes to
+  the log.
+- A log line longer than the reader's buffer no longer ends its stream:
+  each line keeps its first 64 KiB. The log buffer holds at most 5000
+  lines and 8 MiB, so a flood of long lines no longer freezes the screen.
+- Multi-pod history is merged by line time without comparing a node's
+  clock with the laptop's, so a node minutes off no longer scrambles it.
+- Logs search is smart-case, counts every match, and highlights only the
+  log text; `n` and `N` reach matches in wrapped lines, and a paused view
+  keeps its place while old lines scroll out.
+- A header whose cluster did not answer `/version` at start asks again
+  after 15 s, 30 s and then every minute, instead of staying unnamed.
+- `:ctx` no longer waits for port-forwards that hang: the status row says
+  `stopping N forwards…` while they close (2 s at most), and a new forward
+  waits until they have.
+- A forward that fails to start, or a saved one that cannot be revived,
+  says why in the status row.
+- A corrupt port-forward state file is moved aside to
+  `portforwards.json.corrupt-<time>` and reported at startup; k4s starts
+  with no saved forwards instead of disabling them.
+- A dial that times out reads as a slow API, not an unreachable one.
+- The built-in describer shows an object's newest 500 events and says how
+  many there were. Describe of a node has no `-n`.
+
+### Security
+
+- Text from the cluster is made inert before k4s draws it: log lines,
+  events, describe and YAML output, object names, the header, the
+  footer's command row and the terminal title. Escape sequences (clipboard
+  writes over OSC 52, title changes, screen clears) and control, bidi and
+  zero-width characters are dropped, invalid UTF-8 becomes U+FFFD, and a
+  line is cut at 64 KiB.
+- `y`, the exit recap and every kubectl k4s runs refuse a command in which
+  a word from the cluster would set a session flag such as `--server`,
+  `--kubeconfig`, `--token` or `-s`; `y` also refuses one that holds
+  control characters. Names that are not valid Kubernetes names never
+  reach a kubectl command.
+- Errors shown in the TUI lose URL queries and credentials.
+- The port-forward state file is synced before and after it is replaced,
+  its directory is kept to its owner, and every saved forward is checked
+  on load.
+- The dashboard reads a single node annotation,
+  `etcd.k3s.cattle.io/local-snapshots-timestamp`, and shows only the user
+  name from `kubectl auth whoami`.
 
 ## [1.1.5] - 2026-10-20
 
