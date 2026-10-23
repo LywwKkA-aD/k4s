@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -22,10 +23,11 @@ func withoutPod(name string) func() dash.Snapshot {
 }
 
 // TestOneRefreshSendsOneStatus: a refresh that takes the row under the
-// cursor away and brings a change outside the wide layout has two things
-// for the status row, the note that the row is gone and the change's
+// cursor away and brings a change has two things for the status row
+// outside the wide layout, the note that the row is gone and the change's
 // toast. One status row shows one, so the refresh sends one: the note,
-// which answers where the user's cursor went.
+// which answers where the user's cursor went. A poll raised it, not a
+// key, so it goes as a toast too, which never replaces an error.
 func TestOneRefreshSendsOneStatus(t *testing.T) {
 	t.Parallel()
 
@@ -34,6 +36,7 @@ func TestOneRefreshSendsOneStatus(t *testing.T) {
 		name string
 		w, h int
 	}{
+		{name: "wide", w: wideW, h: wideH},
 		{name: "medium", w: 120, h: 34},
 		{name: "compact", w: 80, h: 24},
 	}
@@ -55,8 +58,9 @@ func TestOneRefreshSendsOneStatus(t *testing.T) {
 			_, out := tuitest.Drive(t, m, f.clock.Advance(tickStep)...)
 			statuses := tuitest.All[views.StatusMsg](out)
 			toasts := tuitest.All[views.ToastMsg](out)
-			if len(statuses) != 1 || len(toasts) != 0 || statuses[0].Text != "pod shop/"+gone+" is gone" {
-				t.Fatalf("one refresh sent %d statuses and %d toasts, want the gone note alone:\n%s", len(statuses), len(toasts), tuitest.Describe(out))
+			want := views.ToastMsg{Level: status.Info, Text: "pod shop/" + gone + " is gone"}
+			if len(statuses) != 0 || len(toasts) != 1 || toasts[0] != want {
+				t.Fatalf("one refresh sent %d statuses and %d toasts, want the gone note alone as a toast:\n%s", len(statuses), len(toasts), tuitest.Describe(out))
 			}
 		})
 	}

@@ -107,9 +107,10 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 		}
 		m, gone = m.reflow()
 		// A suggestion that left was fixed or outranked: the cursor
-		// moving on says enough.
+		// moving on says enough. A poll raised the note, not a key, so it
+		// is a toast: it never replaces an error.
 		if gone != "" && m.mem.focus.panel != dash.PanelOverview {
-			note = statusCmd(status.Info, goneText(gone))
+			note = toastCmd(status.Info, goneText(gone))
 		}
 		// The status row shows one message, and the note answers where
 		// the user's cursor went: a toast that would go there yields to
