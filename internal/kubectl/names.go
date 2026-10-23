@@ -43,11 +43,15 @@ var nameFlags = map[string]string{
 	"--container": "container",
 }
 
-// checkArgs validates c's namespace and container flag values. Words after
-// "--" belong to the remote command and are left alone.
+// checkArgs validates c's namespace and container flag values and refuses
+// a session flag (CheckFlags). Words after "--" belong to the remote
+// command and are left alone.
 func checkArgs(c Cmd) error {
 	if c.IsZero() {
 		return ErrNoCommand
+	}
+	if err := CheckFlags(c); err != nil {
+		return err
 	}
 	args := c.Args
 	for i := 0; i < len(args) && args[i] != "--"; i++ {
