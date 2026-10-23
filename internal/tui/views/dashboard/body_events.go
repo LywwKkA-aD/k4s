@@ -78,10 +78,7 @@ func eventsList(f frame, w, h, ringN int) panelBody {
 		table, hidden = eventTable(f, w, items, h-len(head), t)
 	}
 	body.lines = slices.Concat(head, table)
-	listed := fmt.Sprintf("newest first · %d of %d", len(items), e.Total)
-	if e.Truncated {
-		listed = fmt.Sprintf("newest first · %d of ≥%d", len(items), e.Total)
-	}
+	listed := fmt.Sprintf("newest first · %d of %s", len(items), atLeast(e.Total, e.Truncated))
 	body.footer = f.listFooter(dash.PanelEvents, len(items)+ringN, hidden, listed)
 	return body
 }

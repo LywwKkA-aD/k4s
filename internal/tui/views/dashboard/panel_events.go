@@ -37,13 +37,12 @@ func eventMark(e dash.EventRow) mark {
 	return markInfo
 }
 
-// warningsCount is "10 warnings", "≥500 warnings" for a capped list.
+// warningsCount is "10 warnings", "2000+ warnings" for a capped list.
 func warningsCount(e dash.EventsPanel) string {
-	count := plural(e.Total, "warning", "warnings")
 	if e.Truncated {
-		count = "≥" + count
+		return atLeast(e.Total, true) + " warnings"
 	}
-	return count
+	return plural(e.Total, "warning", "warnings")
 }
 
 // eventsSummary is panel 5 on one line: the warnings of the last hour and

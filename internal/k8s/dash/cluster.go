@@ -212,7 +212,7 @@ func networkRow(st store, led Ledger, scope Scope) NetworkRow {
 		row.Services, row.ServicesKnown = len(st.services), led[LoadBalancers].State == StateOK || len(st.services) > 0
 		row.Cmd = approx(withScope(scope.Namespace, "get", "svc"))
 	case st.svcCountOK:
-		row.Services, row.ServicesKnown = st.svcCount, true
+		row.Services, row.ServicesKnown, row.ServicesApprox = st.svcCount, true, st.svcCountMore
 	}
 	row.LoadBalancers = len(lbs)
 	for _, s := range lbs {
