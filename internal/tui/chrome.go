@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -77,11 +78,28 @@ func fit(st lipgloss.Style, w int, s string) string {
 }
 
 // renderPopup draws the open overlay as a bordered card centred in the
-// body, its content cut to fit inside the card.
+// body, its content cut to fit inside the card. A card taller than the
+// body keeps its border: the content loses rows at the bottom instead,
+// the last row left saying so.
 func (m Model) renderPopup(width, height int) string {
 	inner := width - styles.PopupBox.GetHorizontalFrameSize()
-	box := styles.PopupBox.Render(m.overlay.View(inner))
+	room := max(height-styles.PopupBox.GetVerticalFrameSize(), 1)
+	box := styles.PopupBox.Render(cutRows(m.overlay.View(inner), room))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// cutRows is s cut to its first n rows, the last of them "…" when any
+// were cut; a single row is kept as it is.
+func cutRows(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) <= n {
+		return s
+	}
+	kept := slices.Clone(lines[:n])
+	if n > 1 {
+		kept[n-1] = "…"
+	}
+	return strings.Join(kept, "\n")
 }
 
 // renderHeader is one line over a rule. The line is fitted to the width

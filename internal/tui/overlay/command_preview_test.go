@@ -121,7 +121,7 @@ func TestOverlaysWithoutACommand(t *testing.T) {
 	for _, o := range []overlay.Overlay{
 		nil,
 		overlay.NewCommand(),
-		overlay.NewHelp(nil),
+		overlay.NewHelp(overlay.HelpPage{}),
 		overlay.NewRestore(1, now),
 		overlay.NewForward(views.ForwardRequestMsg{Kind: "pod", Name: "p"}, nil),
 	} {
@@ -148,7 +148,7 @@ func TestTakesText(t *testing.T) {
 		{name: "forward", o: overlay.NewForward(views.ForwardRequestMsg{Kind: "pod", Name: "p"}, nil), want: true},
 		{name: "container", o: overlay.NewContainer(pickerRequest())},
 		{name: "restore", o: overlay.NewRestore(1, now)},
-		{name: "help", o: overlay.NewHelp(nil)},
+		{name: "help", o: overlay.NewHelp(overlay.HelpPage{})},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

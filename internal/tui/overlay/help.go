@@ -17,23 +17,33 @@ type HelpEntry struct {
 	Desc string
 }
 
-// HelpSection is a titled group of entries; its descriptions line up.
+// HelpSection is a titled group of entries; its descriptions line up. A
+// section without a title has no title row. An Inline one is a single
+// row: its title, then each entry's keys and description.
 type HelpSection struct {
 	Title   string
 	Entries []HelpEntry
+	Inline  bool
+}
+
+// HelpPage is what the help popup lists: its sections, with a blank row
+// between them unless Tight.
+type HelpPage struct {
+	Sections []HelpSection
+	Tight    bool
 }
 
 // help lists what the user can press right now.
 type help struct {
-	sections []HelpSection
-	closeOn  []key.Binding
+	page    HelpPage
+	closeOn []key.Binding
 }
 
-// NewHelp opens the help popup. Esc and the closeOn bindings close it; any
-// other key or a paste closes it and is passed on (see Passes), so ':' with
-// help open opens the command bar.
-func NewHelp(sections []HelpSection, closeOn ...key.Binding) Overlay {
-	return help{sections: sections, closeOn: closeOn}
+// NewHelp opens the help popup on page. Esc and the closeOn bindings close
+// it; any other key or a paste closes it and is passed on (see Passes), so
+// ':' with help open opens the command bar.
+func NewHelp(page HelpPage, closeOn ...key.Binding) Overlay {
+	return help{page: page, closeOn: closeOn}
 }
 
 // Update closes on any key or paste.
@@ -68,32 +78,50 @@ func (h help) closes(k tea.KeyPressMsg) bool {
 	return false
 }
 
-// View is the title, each section with a blank line between, and the keys
-// that close it.
+// View is the title with the keys that close it, then the sections. The
+// close hint is on the first row, so a popup cut at the bottom to fit a
+// short terminal still says how to close it.
 func (h help) View(width int) string {
-	lines := []string{styles.PopupTitle.Render("help"), ""}
-	for i, sec := range h.sections {
-		lines = append(lines, formatSection(sec))
-		if i != len(h.sections)-1 {
+	lines := []string{styles.PopupTitle.Render("help") + "   " + styles.Hint.Render("? / Esc close")}
+	for _, sec := range h.page.Sections {
+		if !h.page.Tight {
 			lines = append(lines, "")
 		}
+		lines = append(lines, formatSection(sec))
 	}
-	lines = append(lines, "", styles.Hint.Render("? / Esc close"))
 	return rows(width, lines...)
 }
 
 // formatSection prints the title and the entries, padding the keys column
-// so the descriptions align within the section.
+// so the descriptions align within the section; an inline section on one
+// row.
 func formatSection(sec HelpSection) string {
+	if sec.Inline {
+		return inlineSection(sec)
+	}
 	width := 0
 	for _, e := range sec.Entries {
 		width = max(width, lipgloss.Width(e.Keys))
 	}
 	lines := make([]string, 0, len(sec.Entries)+1)
-	lines = append(lines, styles.Title.Render(sec.Title))
+	if sec.Title != "" {
+		lines = append(lines, styles.Title.Render(sec.Title))
+	}
 	for _, e := range sec.Entries {
 		pad := strings.Repeat(" ", width-lipgloss.Width(e.Keys))
 		lines = append(lines, "  "+e.Keys+pad+"  "+styles.Hint.Render(e.Desc))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// inlineSection is sec on one row: "global  q quit  ^c force quit".
+func inlineSection(sec HelpSection) string {
+	parts := make([]string, 0, len(sec.Entries)+1)
+	if sec.Title != "" {
+		parts = append(parts, styles.Title.Render(sec.Title))
+	}
+	for _, e := range sec.Entries {
+		parts = append(parts, e.Keys+" "+styles.Hint.Render(e.Desc))
+	}
+	return strings.Join(parts, "  ")
 }
