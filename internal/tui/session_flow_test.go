@@ -19,7 +19,7 @@ import (
 // startedWith is started with options.
 func startedWith(t *testing.T, c *k8s.Client, loadErr error, opts ...tui.Option) tui.Model {
 	t.Helper()
-	m, _ := tuitest.Mount(t, tui.New(c, loadErr, opts...), screenW, screenH)
+	m, _ := tuitest.Mount(t, tui.New(c, loadErr, append(opts, instantFrames())...), screenW, screenH)
 	return m
 }
 

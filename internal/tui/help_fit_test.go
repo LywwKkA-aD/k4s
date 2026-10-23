@@ -28,7 +28,7 @@ func TestHelpKeepsItsSectionsOnSmallTerminals(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("%dx%d", tc.width, tc.height), func(t *testing.T) {
 			t.Parallel()
-			m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil), tc.width, tc.height)
+			m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil, instantFrames()), tc.width, tc.height)
 			m, _ = tuitest.Drive(t, m, tuitest.Press("?"))
 			requireScreen(t, m, tc.wants...)
 		})

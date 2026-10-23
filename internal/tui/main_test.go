@@ -5,7 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 )
 
 // Contexts in the kubeconfig TestMain writes. The first is current;
@@ -34,6 +36,12 @@ func TestMain(m *testing.M) {
 		os.Exit(code)
 	}
 	os.Exit(runIsolated(m))
+}
+
+// instantFrames feeds the dashboard's motion frames as soon as they are
+// armed, in the order tea.Tick would: the driver would wait 50ms for each.
+func instantFrames() Option {
+	return WithDashboardOptions(dashboard.WithFrames(asynctest.Instant{}))
 }
 
 func runIsolated(m *testing.M) int {

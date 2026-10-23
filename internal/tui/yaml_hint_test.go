@@ -42,7 +42,7 @@ func TestYAMLKeyHint(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil), wideW, screenH)
+			m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil, instantFrames()), wideW, screenH)
 			m, _ = tuitest.Drive(t, m, tc.input...)
 			hints := hintsRow(m)
 			if got := strings.HasSuffix(hints, "  ·  o yaml"); got != tc.shown {
@@ -74,7 +74,7 @@ func TestViewHintsComeBeforeTheYAMLHint(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil), tc.width, screenH)
+			m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil, instantFrames()), tc.width, screenH)
 			m, _ = tuitest.Drive(t, m, tc.input...)
 			hints := hintsRow(m)
 			if !strings.Contains(hints, tc.want) {

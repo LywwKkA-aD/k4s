@@ -36,7 +36,7 @@ func knownVersion(d cluster.Distro, gitVersion string) startup.Session {
 // headerAt mounts the root at width columns and returns the header line.
 func headerAt(t *testing.T, c *k8s.Client, s startup.Session, width int) string {
 	t.Helper()
-	m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(s)), width, 24)
+	m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(s), instantFrames()), width, 24)
 	return header(m)
 }
 
@@ -221,7 +221,7 @@ func TestHeaderNamespaceIsInert(t *testing.T) {
 	t.Parallel()
 
 	c := clusterAt(t, "lab", "https://10.0.0.5:6443").WithNamespace(escapingNamespace)
-	m, _ := tuitest.Mount(t, tui.New(c, nil), 80, 24)
+	m, _ := tuitest.Mount(t, tui.New(c, nil, instantFrames()), 80, 24)
 	raw, _, _ := strings.Cut(tuitest.Frame(m), "\n")
 	if strings.ContainsRune(raw, '\a') || strings.Contains(raw, "\x1b]") {
 		t.Errorf("header carries the namespace's control bytes: %q", raw)
@@ -254,7 +254,7 @@ func TestWindowTitle(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			m, _ := tuitest.Mount(t, tui.New(tc.client(t), nil), 80, 24)
+			m, _ := tuitest.Mount(t, tui.New(tc.client(t), nil, instantFrames()), 80, 24)
 			if got := m.View().WindowTitle; got != tc.want {
 				t.Fatalf("WindowTitle = %q, want %q", got, tc.want)
 			}
@@ -277,7 +277,7 @@ func TestHeaderFetchesTheServerVersion(t *testing.T) {
 	t.Parallel()
 
 	c := versionedClient("default", "v1.36.5+k3s1")
-	m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(startup.Session{Distro: cluster.Other})), 120, 24)
+	m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(startup.Session{Distro: cluster.Other}), instantFrames()), 120, 24)
 	if h, want := header(m), "k4s · k3s v1.36.5 · ctx default · ns ALL · dashboard"; h != want {
 		t.Fatalf("header = %q, want %q", h, want)
 	}
@@ -288,7 +288,7 @@ func TestHeaderMarkupNeverWraps(t *testing.T) {
 
 	c := clusterAt(t, "default", "https://10.0.0.5:6443")
 	for _, width := range []int{30, 50, 80} {
-		m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(knownVersion(cluster.K3s, "v1.36.5+k3s1"))), width, 24)
+		m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(knownVersion(cluster.K3s, "v1.36.5+k3s1")), instantFrames()), width, 24)
 		ls := lines(m)
 		if !isRule(ls[1]) {
 			t.Errorf("%d columns: the header takes more than one line:\n%s", width, tuitest.Screen(m))

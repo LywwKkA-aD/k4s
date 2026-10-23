@@ -32,7 +32,7 @@ func TestDashboardShowsTheHeadersVersion(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"major":"1","minor":"36","gitVersion":"v1.36.5+k3s1"}`))
 	}))
-	m, _ := tuitest.Mount(t, tui.New(c, nil), screenW, screenH)
+	m, _ := tuitest.Mount(t, tui.New(c, nil, instantFrames()), screenW, screenH)
 	requireScreen(t, m, "v1.36.5+k3s1")
 	if got := versions.Load(); got != 1 {
 		t.Fatalf("/version asked %d times, want 1", got)
@@ -47,6 +47,6 @@ func TestDashboardHintsFollowTheSessionsDistro(t *testing.T) {
 
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "minikube"}}
 	c := tuitest.NewFakeClient(t, tuitest.WithContext("minikube"), tuitest.WithObjects(node), tuitest.WithMetricsStatus(http.StatusNotFound))
-	m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(startup.Session{Distro: cluster.Minikube})), 207, 58)
+	m, _ := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(startup.Session{Distro: cluster.Minikube}), instantFrames()), 207, 58)
 	requireScreen(t, m, cluster.MetricsHint(cluster.Minikube))
 }

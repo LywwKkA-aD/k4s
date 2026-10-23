@@ -25,7 +25,7 @@ func TestDescribeRunsTheFooterCommand(t *testing.T) {
 	// the footer names both.
 	c.KubeconfigPaths = []string{filepath.FromSlash("/k4s-test/cluster.yaml")}
 	c.CurrentContext = "elsewhere"
-	m, _ := tuitest.Mount(t, New(c, nil, WithRunnerConfig(cfg)), 160, 40)
+	m, _ := tuitest.Mount(t, New(c, nil, WithRunnerConfig(cfg), instantFrames()), 160, 40)
 
 	req := views.DescribeRequestMsg{Kind: "pod", Namespace: tuitest.NamespaceDemo, Name: tuitest.PodWeb1}
 	m, _ = tuitest.DriveWith(t, subprocess, m, req)
@@ -51,7 +51,7 @@ func TestDescribeWithoutKubeconfigFilesIsBuiltIn(t *testing.T) {
 	t.Parallel()
 
 	cfg, argvFile := fakeKubectl(t)
-	m, _ := tuitest.Mount(t, New(tuitest.NewFakeClient(t), nil, WithRunnerConfig(cfg)), 160, 40)
+	m, _ := tuitest.Mount(t, New(tuitest.NewFakeClient(t), nil, WithRunnerConfig(cfg), instantFrames()), 160, 40)
 	req := views.DescribeRequestMsg{Kind: "pod", Namespace: tuitest.NamespaceDemo, Name: tuitest.PodWeb1}
 	m, _ = tuitest.DriveWith(t, subprocess, m, req)
 	if screen := tuitest.Screen(m); !strings.Contains(screen, "built-in") || strings.Contains(screen, fakeDescribed) {

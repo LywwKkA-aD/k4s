@@ -9,7 +9,9 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
+	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
 )
 
 // The root tests look at the model only through messages in, messages out
@@ -24,8 +26,14 @@ const (
 // initialised, the way tea.Program starts it.
 func started(t *testing.T, c *k8s.Client) tui.Model {
 	t.Helper()
-	m, _ := tuitest.Mount(t, tui.New(c, nil), screenW, screenH)
+	m, _ := tuitest.Mount(t, tui.New(c, nil, instantFrames()), screenW, screenH)
 	return m
+}
+
+// instantFrames feeds the dashboard's motion frames as soon as they are
+// armed, in the order tea.Tick would: the driver would wait 50ms for each.
+func instantFrames() tui.Option {
+	return tui.WithDashboardOptions(dashboard.WithFrames(asynctest.Instant{}))
 }
 
 // colon returns the keys that run ":name" from the command bar.

@@ -32,7 +32,7 @@ func TestFirstFrameWaitsForTheBackground(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			m, _ := tuitest.Drive(t, New(tuitest.NewFakeClient(t), nil, WithBackgroundQuery(true)), tuitest.Resize(80, 24))
+			m, _ := tuitest.Drive(t, New(tuitest.NewFakeClient(t), nil, WithBackgroundQuery(true), instantFrames()), tuitest.Resize(80, 24))
 			held := m.View()
 			if held.Content != "" || !held.AltScreen {
 				t.Fatalf("the first frame was drawn before the background was known: %q", held.Content)
@@ -83,7 +83,7 @@ func TestInitAsksForTheBackgroundOnlyWhenTold(t *testing.T) {
 func TestMountedModelShowsAfterTheHold(t *testing.T) {
 	t.Parallel()
 
-	m, _ := tuitest.Mount(t, New(tuitest.NewFakeClient(t), nil, WithBackgroundQuery(true)), 80, 24)
+	m, _ := tuitest.Mount(t, New(tuitest.NewFakeClient(t), nil, WithBackgroundQuery(true), instantFrames()), 80, 24)
 	if m.View().Content == "" {
 		t.Fatal("the frame is still held after Init settled")
 	}
