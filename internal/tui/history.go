@@ -128,6 +128,24 @@ func pushEntry(h []historyEntry, e historyEntry) []historyEntry {
 	return append(out, e)
 }
 
+// fellBack is h with its newest entry of view moved to namespace, in a new
+// backing array, after that list fell back from every namespace; h itself
+// when there is no such entry or it is in a namespace already.
+func fellBack(h []historyEntry, view, namespace string) []historyEntry {
+	for i := len(h) - 1; i >= 0; i-- {
+		if h[i].view != view {
+			continue
+		}
+		if h[i].namespace != "" {
+			return h
+		}
+		out := slices.Clone(h)
+		out[i].namespace = namespace
+		return out
+	}
+	return h
+}
+
 // stateOf is v's State, the zero State for a view that keeps none.
 func stateOf(v views.View) views.State {
 	if s, ok := v.(views.Stateful); ok {

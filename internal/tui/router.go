@@ -126,12 +126,24 @@ func (m Model) onNamespaceSelected(msg views.NamespaceSelectedMsg) (tea.Model, t
 	return m, m.relayoutCmd()
 }
 
-// onNamespaceFallback follows a list that fell back from every namespace
-// to msg.Namespace: the header and every history entry pushed from now on
-// name it, and the view, which already lists it, stays. A fallback that
-// arrives once the root is in a namespace, or the list is gone, is stale.
+// onNamespaceFallback follows the list msg.View, which fell back from
+// every namespace to msg.Namespace. On screen, the root moves there too:
+// the header and every history entry pushed from now on name it, and the
+// view, which already lists it, stays. Left before the message landed (a
+// describe opened on a row, another list typed), the list is the newest
+// history entry of its view, which gets the namespace instead, so Esc
+// does not ask for every namespace again; the view on screen keeps its
+// own. A fallback for a list the root has since moved to a namespace is
+// stale.
 func (m Model) onNamespaceFallback(msg views.NamespaceFallbackMsg) Model {
-	if m.namespace != "" || !isNamespacedList(m.current.Title()) {
+	if !isNamespacedList(msg.View) {
+		return m
+	}
+	if m.current.Title() != msg.View {
+		m.history = fellBack(m.history, msg.View, msg.Namespace)
+		return m
+	}
+	if m.namespace != "" {
 		return m
 	}
 	return m.enterNamespace(msg.Namespace)

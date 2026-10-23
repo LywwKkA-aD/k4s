@@ -106,8 +106,8 @@ func TestFallbackNamesTheNamespaceInTheRoot(t *testing.T) {
 			if got := tuitest.HeaderNamespace(m); got != tuitest.NamespaceDemo {
 				t.Fatalf("header namespace after the fallback = %q, want demo:\n%s", got, tuitest.Screen(m))
 			}
-			if got := tuitest.All[views.NamespaceFallbackMsg](out); len(got) != 1 {
-				t.Errorf("fallback messages = %+v, want one", got)
+			if got := tuitest.All[views.NamespaceFallbackMsg](out); len(got) != 1 || got[0].View != tc.view {
+				t.Errorf("fallback messages = %+v, want one from %s", got, tc.view)
 			}
 			// The dashboard may have asked too; what counts is that Esc
 			// does not.
@@ -132,26 +132,70 @@ func TestFallbackNamesTheNamespaceInTheRoot(t *testing.T) {
 	}
 }
 
-// TestFallbackFromAnotherViewIsIgnored: a fallback that arrives once the
-// list is gone, or while the root is in one namespace, changes nothing.
+// TestFallbackFromAnotherViewIsIgnored: a fallback for a list that is
+// neither on screen nor in the history, or that the root has since moved
+// to a namespace, changes nothing.
 func TestFallbackFromAnotherViewIsIgnored(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		name  string
 		setup []tea.Msg
-		want  string
+		// view is the list the fallback is from.
+		view string
+		want string
 	}{
-		{name: "not a namespaced list", setup: colon("ctx"), want: "ALL"},
-		{name: "already in a namespace", setup: colon("ns shop"), want: "shop"},
+		{name: "a list never opened", setup: colon("ctx"), view: "pods", want: "ALL"},
+		{name: "already in a namespace", setup: colon("ns shop"), view: "pods", want: "shop"},
+		{name: "not a namespaced list", setup: colon("no"), view: "nodes", want: "ALL"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), tc.setup...)
-			m, _ = tuitest.Drive(t, m, views.NamespaceFallbackMsg{Namespace: tuitest.NamespaceDemo})
+			m, _ = tuitest.Drive(t, m, views.NamespaceFallbackMsg{View: tc.view, Namespace: tuitest.NamespaceDemo})
 			if got := tuitest.HeaderNamespace(m); got != tc.want {
 				t.Errorf("header namespace = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestFallbackAfterLeavingTheList: a fallback that lands after the user
+// left the list (a describe opened on a row, another list typed) goes to
+// the list's history entry, so Esc lists the namespace and not every one
+// again; the view on screen keeps its own namespace.
+func TestFallbackAfterLeavingTheList(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		away []tea.Msg
+		// stays is the command row of the view left on screen.
+		stays string
+	}{
+		{name: "a describe opened on a row", away: []tea.Msg{tuitest.Enter()}, stays: "kubectl describe pod"},
+		{name: "another list", away: colon("svc"), stays: "kubectl get services -A"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), then(colon("pods"), tc.away)...)
+			if tuitest.HeaderView(m) == "pods" {
+				t.Fatalf("still on pods after leaving it:\n%s", tuitest.Screen(m))
+			}
+			m, _ = tuitest.Drive(t, m, views.NamespaceFallbackMsg{View: "pods", Namespace: tuitest.NamespaceDemo})
+			if got := commandRow(m); !strings.Contains(got, tc.stays) {
+				t.Errorf("command row after the fallback = %q, want %q in it", got, tc.stays)
+			}
+
+			m, _ = tuitest.Drive(t, m, tuitest.Esc())
+			requireView(t, m, "pods")
+			if got := tuitest.HeaderNamespace(m); got != tuitest.NamespaceDemo {
+				t.Errorf("header namespace after Esc = %q, want demo", got)
+			}
+			if got := commandRow(m); !strings.Contains(got, "kubectl get pods -n demo") {
+				t.Errorf("command row after Esc = %q, want the pods of demo", got)
 			}
 		})
 	}

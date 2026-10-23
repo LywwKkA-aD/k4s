@@ -32,5 +32,5 @@ func (m Model) fallBack(err error) (Model, tea.Cmd, bool) {
 	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	m.tok = m.tok.Next()
 	m.poll = m.poll.Restart(m.tok)
-	return m, tea.Batch(say, m.list(k8s.FromCache()), views.NamespaceFallback(ns)), true
+	return m, tea.Batch(say, m.list(k8s.FromCache()), views.NamespaceFallback(m.Title(), ns)), true
 }

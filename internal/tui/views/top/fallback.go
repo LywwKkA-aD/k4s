@@ -28,5 +28,5 @@ func (m Model) fallBack(err error) (Model, tea.Cmd, bool) {
 	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	m.mint = m.mint.Next()
 	m.poll = m.poll.Restart(m.mint)
-	return m, tea.Batch(say, m.fetch(), views.NamespaceFallback(ns)), true
+	return m, tea.Batch(say, m.fetch(), views.NamespaceFallback(m.Title(), ns)), true
 }
