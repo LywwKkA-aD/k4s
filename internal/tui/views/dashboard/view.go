@@ -60,6 +60,7 @@ func (m Model) frame() frame {
 		focus:    m.mem.focus,
 		since:    m.mem.since,
 		ctx:      clean(m.client.Context),
+		distro:   m.hintDistro(),
 		session:  m.session,
 		hint:     hint,
 		retry:    m.next,

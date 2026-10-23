@@ -32,7 +32,7 @@ func TestDegradedStates(t *testing.T) {
 				"— nodes: list forbidden for shop-dev", "kubectl auth can-i list nodes",
 				"pods per node (ns shop) still shown in 3 pods",
 				"○ no metrics-server: metrics.k8s.io is not in discovery",
-				"install: kubernetes-sigs/metrics-server", "re-checked every 60s and on r",
+				"install metrics-server: kubectl apply -f https://github.com/kubernetes-sigs/", "re-checked every 60s and on r",
 				"— ns         forbidden · :ns <name> to switch",
 				"● storage    4/4 pvc Bound (ns shop)",
 				"● network    12 svc in ns shop · no LoadBalancer",
@@ -53,7 +53,7 @@ func TestDegradedStates(t *testing.T) {
 			base: noMetricsK3s, w: wideW, h: wideH,
 			want: []string{
 				"○ no metrics-server: metrics.k8s.io is not in discovery",
-				"bundled with k3s; --disable=metrics-server?",
+				"metrics-server is bundled with k3s; disabled with --disable=metrics-server?",
 				"re-checked every 60s and on r",
 			},
 			not: []string{"cluster cpu", "≈5m"},

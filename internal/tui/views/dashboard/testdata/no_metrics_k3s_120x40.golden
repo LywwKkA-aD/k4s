@@ -8,7 +8,7 @@
 │   age      212d (namespace kube-system)                  ││ ● k3s-agent-2  <none>              Ready    32/110  98d  │
 │   ns       33 · 0 terminating                            ││                                                          │
 │ ● storage  26/26 pvc Bound                               ││   ○ no metrics-server: metrics.k8s.io is not in discovery│
-│ ○ network  102 svc · 1 LoadBalancer <pending>            ││     bundled with k3s; --disable=metrics-server?          │
+│ ○ network  102 svc · 1 LoadBalancer <pending>            ││     metrics-server is bundled with k3s; disabled with --…│
 │   server   https://10.0.0.5:6443                         ││     re-checked every 60s and on r                        │
 ╰─────────────────────────────────────────────── ctx fake ─╯╰─────────────────────────────────── kubelet v1.36.3+k3s1 ─╯
 ╭─┤ 3 pods ├───────────────────────────────────────────────────────────────────────────────────────────── 185 · 33 ns ─╮

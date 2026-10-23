@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	apiversion "k8s.io/apimachinery/pkg/version"
 
+	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
@@ -35,6 +36,18 @@ type config struct {
 	// the root's request runs.
 	given   bool
 	version *apiversion.Info
+	distro  cluster.Distro
+}
+
+// WithDistro names the cluster's distribution as the root detected it, so
+// a missing metrics-server gets its hint (cluster.MetricsHint): k3s
+// bundles it, so there it was switched off rather than never installed.
+// Other or none falls back to what the server version says.
+func WithDistro(d cluster.Distro) Option {
+	return func(c config) config {
+		c.distro = d
+		return c
+	}
 }
 
 // WithServerVersion says the root asks /version (for the header) and hands

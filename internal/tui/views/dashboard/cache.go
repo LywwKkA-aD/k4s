@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 )
@@ -43,6 +44,7 @@ type renderKey struct {
 	notOKAt     time.Time
 	topByMemory bool
 	theme       string
+	distro      cluster.Distro
 }
 
 // layoutKey is what a layout is built from.
@@ -61,7 +63,7 @@ func keyOf(f frame, l layout) renderKey {
 		since: f.since, changed: f.changed, paused: f.paused, pausedAt: f.pausedAt,
 		staleSince: f.staleSince, retry: f.retry, hint: f.hint, beat: f.beat, prog: f.prog, glow: f.glow,
 		toast: f.toast.tok, ringLen: len(f.ring), fresh: len(f.fresh),
-		histAt: f.hist.sampledAt, notOKAt: f.hist.notOKAt, topByMemory: f.topByMemory,
+		histAt: f.hist.sampledAt, notOKAt: f.hist.notOKAt, topByMemory: f.topByMemory, distro: f.distro,
 		// Two glyphs in the active theme's styles stand for the theme: a
 		// new theme repaints even where nothing else changed.
 		theme: f.ds.OK.Render(markGlyphs[markOK]) + f.ds.Title.Render(markGlyphs[markFact]),

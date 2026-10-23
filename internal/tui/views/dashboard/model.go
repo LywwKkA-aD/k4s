@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	apiversion "k8s.io/apimachinery/pkg/version"
 
+	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
@@ -45,8 +46,10 @@ type Model struct {
 	now     func() time.Time
 	fetch   FetchFunc
 	session kubectl.Session
-	// version is the root's answer to /version (see WithServerVersion).
+	// version is the root's answer to /version (see WithServerVersion),
+	// distro its distribution (see WithDistro).
 	version *apiversion.Info
+	distro  cluster.Distro
 
 	mem  Memory
 	poll async.Poller
@@ -112,6 +115,7 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 		fetch:   fetch,
 		session: cfg.session,
 		version: cfg.version,
+		distro:  cfg.distro,
 		mem:     mem,
 		blurred: cfg.blurred,
 		lastKey: now,

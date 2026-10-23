@@ -7,7 +7,7 @@
 │   age      3h (namespace kube-system)                    ││ ● kind-worker2        <none>         Ready   5/110  3h   │
 │   ns       6 · 0 terminating                             ││                                                          │
 │ ○ storage  no pvc                                        ││   ○ no metrics-server: metrics.k8s.io is not in discovery│
-│ ● network  4 svc · no LoadBalancer                       ││     install: kubernetes-sigs/metrics-server              │
+│ ● network  4 svc · no LoadBalancer                       ││     install metrics-server: kubectl apply -f https://git…│
 │   server   https://127.0.0.1:39117                       ││     re-checked every 60s and on r                        │
 ╰─────────────────────────────────────────────── ctx fake ─╯╰──────────────────────────────────────── kubelet v1.35.1 ─╯
 ╭─┤ 3 pods ├─────────────────────────────────────────────────────────────────────────────────────────────── 20 · 6 ns ─╮
