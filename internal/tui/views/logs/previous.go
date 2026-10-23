@@ -129,7 +129,7 @@ func (m Model) onPreviousOpened(msg previousOpenedMsg) (views.View, tea.Cmd) {
 	}
 	m.opening = opening{}
 	if msg.err != nil {
-		return m, previousFailed(m.namespace, m.pods[0], m.container, msg.err)
+		return m, previousFailed(m.pods[0], m.container, msg.err)
 	}
 	m.previous = true
 	m.follow, _ = m.follow.WithActive(false)
@@ -145,17 +145,16 @@ func (m Model) onPreviousOpened(msg previousOpenedMsg) (views.View, tea.Cmd) {
 }
 
 // previousFailed says why the previous instance's log could not be
-// opened, in words a user can act on.
-func previousFailed(ns, pod, container string, err error) tea.Cmd {
-	text := sanitize.Line(apiMessage(err))
+// opened, in words a user can act on: a container that never restarted
+// and a pod that is gone in the view's own, any other error as
+// k8s.Classify words it, a refusal with the can-i that asks about it.
+func previousFailed(pod, container string, err error) tea.Cmd {
+	pod, container = sanitize.Line(pod), sanitize.Line(container)
 	switch {
-	case apierrors.IsBadRequest(err) && strings.Contains(text, "previous terminated container"):
+	case apierrors.IsBadRequest(err) && strings.Contains(apiMessage(err), "previous terminated container"):
 		return statusCmd(status.Warn, noPrevious(pod, container))
 	case apierrors.IsNotFound(err):
 		return statusCmd(status.Warn, "pod "+pod+" is gone")
-	case apierrors.IsForbidden(err):
-		return statusCmd(status.Error, "forbidden: cannot read the logs of pod "+pod+" in "+ns+
-			" (kubectl auth can-i get pods --subresource=log -n "+ns+")")
 	}
 	return statusCmd(status.Error, "previous logs of pod "+pod+": "+errText(err))
 }
