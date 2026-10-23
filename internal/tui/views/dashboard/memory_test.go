@@ -123,7 +123,7 @@ func TestCursorFollowsItsObject(t *testing.T) {
 
 	f.set(reorder(true))
 	m, out := tuitest.Drive(t, m, f.clock.Advance(5*time.Second)...)
-	msg, ok := tuitest.Find[views.StatusMsg](out)
+	msg, ok := tuitest.Find[views.ToastMsg](out)
 	if !ok || msg.Text != "pod shop/payments-worker-6c9f7d8b5-xk2lp is gone" {
 		t.Fatalf("a vanished row should be named:\n%s", tuitest.Describe(out))
 	}
