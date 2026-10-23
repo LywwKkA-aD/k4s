@@ -4,6 +4,7 @@ package tui
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -175,15 +176,22 @@ func newDescriber(c *k8s.Client, r *kubectl.Runner, session kubectl.Session) des
 
 // Init starts the active view, asks the server for the header's version
 // and the terminal for its background, and reports a failed preflight and
-// a saved-forwards file that could not be read. A preflight that failed
-// for want of a login offers the terminal login :ctx offers (login.go).
+// a saved-forwards file that could not be read, in one warning: the
+// status row holds one message, and of two sent at once only the later
+// would stay. A preflight that failed for want of a login offers the
+// terminal login :ctx offers (login.go).
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.current.Init(), m.fetchVersion(), m.askBackground()}
+	var warnings []string
 	if err := m.startup.PreflightErr; err != nil {
-		cmds = append(cmds, m.preflightLogin(err), warnCmd(preflightText(err)))
+		cmds = append(cmds, m.preflightLogin(err))
+		warnings = append(warnings, preflightText(err))
 	}
 	if notice := forwardsNotice(m.forwardMgr); notice != "" {
-		cmds = append(cmds, warnCmd(notice))
+		warnings = append(warnings, notice)
+	}
+	if len(warnings) > 0 {
+		cmds = append(cmds, warnCmd(strings.Join(warnings, " · ")))
 	}
 	return tea.Batch(cmds...)
 }

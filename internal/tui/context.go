@@ -56,31 +56,17 @@ func (m Model) switchClient(name string) (*k8s.Client, error) {
 // client's Manager is built After that stop and refuses to register or
 // start a forward until the old sessions are down or timed out, since a
 // new forward could otherwise lose its local port to an old one. A state
-// file the new Manager could not read is reported over the stop, which
-// says how it went once it ends.
+// file the new Manager could not read is reported over the stop, and
+// again in the stop's own report once it ends, which replaces it.
 func (m Model) resetForwards(client *k8s.Client) (Model, tea.Cmd) {
 	var stop *forwards.Stopping
 	if m.forwardMgr != nil {
 		stop = m.forwardMgr.BeginStopAll()
 	}
-	var waitCmd tea.Cmd
-	stopping := ""
-	if stop != nil && stop.Count() > 0 {
-		stopping = fmt.Sprintf("%d forwards", stop.Count())
-		if stop.Count() == 1 {
-			stopping = "1 forward"
-		}
-		waitCmd = func() tea.Msg {
-			if err := stop.Wait(); err != nil {
-				return views.StatusMsg{Level: status.Warn, Text: "forwards: " + err.Error()}
-			}
-			return views.StatusMsg{Level: status.OK, Text: "stopped " + stopping}
-		}
-	}
-
 	mgr, err := forwards.NewManager(client, forwards.After(stop))
 	m.forwardMgr = mgr
 	notice := forwardsNotice(mgr)
+	stopping, waitCmd := stopReport(stop, notice)
 	var statusCmd tea.Cmd
 	switch {
 	case err != nil:
@@ -91,4 +77,28 @@ func (m Model) resetForwards(client *k8s.Client) (Model, tea.Cmd) {
 		m, statusCmd = m.setStatus(status.Info, "stopping "+stopping+"…")
 	}
 	return m, tea.Batch(statusCmd, waitCmd)
+}
+
+// stopReport is how many forwards stop is stopping and the Cmd that waits
+// for it and says how it went; "" and nil when it stops none. The status
+// row holds one message, so a notice shown while the stop ran rides on
+// the report, which would otherwise replace it unread.
+func stopReport(stop *forwards.Stopping, notice string) (string, tea.Cmd) {
+	if stop == nil || stop.Count() == 0 {
+		return "", nil
+	}
+	stopping := fmt.Sprintf("%d forwards", stop.Count())
+	if stop.Count() == 1 {
+		stopping = "1 forward"
+	}
+	return stopping, func() tea.Msg {
+		report := views.StatusMsg{Level: status.OK, Text: "stopped " + stopping}
+		if err := stop.Wait(); err != nil {
+			report = views.StatusMsg{Level: status.Warn, Text: "forwards: " + err.Error()}
+		}
+		if notice == "" {
+			return report
+		}
+		return views.StatusMsg{Level: status.Warn, Text: report.Text + " · " + notice}
+	}
 }

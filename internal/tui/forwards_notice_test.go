@@ -4,6 +4,7 @@ package tui_test
 // and do not run in parallel.
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/startup"
 	"github.com/LywwKkA-aD/k4s/internal/tui"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
@@ -78,4 +80,24 @@ func TestACorruptStateFileIsReportedAfterAContextSwitch(t *testing.T) {
 	if again := corruptNotices(out); len(again) != 0 {
 		t.Errorf(":pf reported the corrupt file again: %+v", again)
 	}
+}
+
+// TestACorruptStateFileAndAFailedPreflightShowTogether: both are warnings
+// at the start, and the status row holds one message, so they are one
+// status that says both.
+func TestACorruptStateFileAndAFailedPreflightShowTogether(t *testing.T) {
+	corruptState(t, isolatedState(t))
+
+	const preflight = "preflight: no answer from 10.0.0.5:6443 within 30s"
+	c := tuitest.NewFakeClient(t)
+	session := startup.Session{Client: c, PreflightErr: errors.New(preflight)}
+	m, out := tuitest.Mount(t, tui.New(c, nil, tui.WithSession(session)), screenW, screenH)
+	warnings := tuitest.All[views.StatusMsg](out)
+	if len(warnings) != 1 || warnings[0].Level != status.Warn {
+		t.Fatalf("statuses at the start = %+v, want one warning", warnings)
+	}
+	if got := warnings[0].Text; !strings.HasPrefix(got, preflight+" · "+corruptNotice) {
+		t.Errorf("warning = %q, want the preflight, then the notice", got)
+	}
+	requireScreen(t, m, preflight, "saved forwards were unreadable")
 }
