@@ -38,13 +38,16 @@ func k3sItems(s dash.Snapshot) []k3sItem {
 	}
 	out := make([]k3sItem, 0, len(k.Components)+3)
 	for _, c := range k.Components {
+		// An off component has no object to describe: its line lists what
+		// kube-system runs instead, the panel's command.
 		it := k3sItem{
-			row:   row{key: "k3s/" + c.Key.String(), cmd: c.Cmd, target: c.Key, placed: c.Present && c.Key.Namespace != ""},
+			row:   row{key: "k3s/" + c.Key.String(), cmd: k.Cmd},
 			mark:  markOff,
 			label: clean(c.Key.Name),
 			value: "off",
 		}
 		if c.Present {
+			it.row = row{key: it.key, cmd: c.Cmd, target: c.Key, placed: c.Key.Namespace != ""}
 			it.mark = markOf(c.Sev)
 			it.value = padRight(shortKind(c.Key.Kind), kindColW) + "  " + fmt.Sprintf("%d/%d", c.Ready, c.Desired)
 		}

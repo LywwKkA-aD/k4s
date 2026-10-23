@@ -72,12 +72,13 @@ type placedComponent struct {
 }
 
 // component builds one component row. A missing component is "off": dim,
-// never red, since k3s lets each one be disabled.
+// never red, since k3s lets each one be disabled. There is nothing to
+// describe then, so its command lists what kube-system runs, as the
+// panel's does.
 func component(name string, byName map[string]placedComponent) Component {
 	c, ok := byName[name]
 	if !ok {
-		return Component{Key: ObjectKey{Kind: "deployment", Namespace: kubeSystem, Name: name},
-			Cmd: describe("deployment", name, kubeSystem)}
+		return Component{Key: ObjectKey{Kind: "deployment", Namespace: kubeSystem, Name: name}, Cmd: k3sPanelCmd()}
 	}
 	comp := Component{
 		Key:     ObjectKey{Kind: c.kind, Namespace: kubeSystem, Name: name},
@@ -92,8 +93,12 @@ func component(name string, byName map[string]placedComponent) Component {
 	return comp
 }
 
+// k3sPanelCmd lists kube-system's deployments and daemonsets, where the
+// bundled components run.
+func k3sPanelCmd() Cmd { return kubectl("get", "deploy,ds", "-n", kubeSystem) }
+
 func deriveK3s(st store, led Ledger, scope Scope, distro string, now time.Time) K3sPanel {
-	p := K3sPanel{Cmd: kubectl("get", "deploy,ds", "-n", kubeSystem)}
+	p := K3sPanel{Cmd: k3sPanelCmd()}
 	if distro != "k3s" {
 		p.Hidden = "not k3s"
 		return p

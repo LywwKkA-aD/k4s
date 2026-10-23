@@ -2,6 +2,18 @@ package dash
 
 import "testing"
 
+// TestAnAbsentComponentListsKubeSystem: describe of a component k3s runs
+// without would fail, so its row lists what kube-system runs, as the
+// panel does.
+func TestAnAbsentComponentListsKubeSystem(t *testing.T) {
+	t.Parallel()
+
+	c := component("traefik", map[string]placedComponent{})
+	if got := c.Cmd.String(); c.Present || got != "kubectl get deploy,ds -n kube-system" {
+		t.Fatalf("absent component: present %v, cmd %q", c.Present, got)
+	}
+}
+
 func TestServiceLBCommandFollowsTheScope(t *testing.T) {
 	t.Parallel()
 
