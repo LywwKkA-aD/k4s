@@ -100,7 +100,7 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 		var gone string
 		var changes []change
 		first, prev := !m.mem.loaded, m.mem.snap
-		m.mem = m.mem.with(givenVersion(msg.Value.snap, m.version))
+		m.mem = m.mem.with(givenVersion(msg.Value.snap, m.version, m.versionErr))
 		if !first {
 			changes = changesBetween(prev, m.mem.snap)
 			m.mem.ring = refreshed(withRing(m.mem.ring, changes), m.mem.snap)

@@ -33,10 +33,11 @@ type config struct {
 	frames  async.Clock
 	profile colorprofile.Profile
 	// given is set by WithServerVersion; version is its answer, nil while
-	// the root's request runs.
-	given   bool
-	version *apiversion.Info
-	distro  cluster.Distro
+	// the root's request runs, and versionErr its failure.
+	given      bool
+	version    *apiversion.Info
+	versionErr error
+	distro     cluster.Distro
 }
 
 // WithDistro names the cluster's distribution as the root detected it, so
@@ -57,6 +58,16 @@ func WithDistro(d cluster.Distro) Option {
 func WithServerVersion(info *apiversion.Info) Option {
 	return func(c config) config {
 		c.given, c.version = true, info
+		return c
+	}
+}
+
+// WithServerVersionError is WithServerVersion(nil) for a root whose
+// /version request failed with err: the dashboard shows the failure as it
+// shows one of its own requests' until VersionMsg brings the answer.
+func WithServerVersionError(err error) Option {
+	return func(c config) config {
+		c.given, c.versionErr = true, err
 		return c
 	}
 }
