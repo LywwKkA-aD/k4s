@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
+	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -150,8 +151,10 @@ func TestToastInTheStatusLine(t *testing.T) {
 	f.set(busyK3s)
 	var out []tea.Msg
 	m, out = tuitest.Drive(t, m, f.clock.Advance(tickStep)...)
+	// Failing has no status level of its own: the toast goes as info, the
+	// one level the root adds no glyph to, with its ▲.
 	msg, ok := tuitest.Find[views.StatusMsg](out)
-	if !ok || msg.Text != "▲ pod shop/payments-worker-6c9f7d8b5-r8vqn → CrashLoopBackOff · +1" {
+	if !ok || msg.Level != status.Info || msg.Text != "▲ pod shop/payments-worker-6c9f7d8b5-r8vqn → CrashLoopBackOff · +1" {
 		t.Fatalf("status toast:\n%s", tuitest.Describe(out))
 	}
 	if f.frames.Pending() != 0 {
