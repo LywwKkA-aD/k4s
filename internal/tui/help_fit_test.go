@@ -116,3 +116,28 @@ func requireWholePopup(t *testing.T, m tui.Model) {
 		t.Fatalf("the popup is not whole (top %d, title %d, bottom %d):\n%s", top, title, bottom, screen)
 	}
 }
+
+// TestHelpRefitsOnResize: help open while the terminal is resized picks
+// the page that fits the new body, in both directions.
+func TestHelpRefitsOnResize(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		from, to    int
+		wants, nots []string
+	}{
+		{name: "shrinks", from: 70, to: 24, wants: []string{commandsRow}, nots: []string{commandsFull, dashMap}},
+		{name: "grows", from: 24, to: 70, wants: []string{commandsFull, dashMap}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, _ := tuitest.Mount(t, tui.New(tuitest.NewFakeClient(t), nil, instantFrames()), 80, tc.from)
+			m, _ = tuitest.Drive(t, m, tuitest.Press("?"), tea.WindowSizeMsg{Width: 80, Height: tc.to})
+			requireWholePopup(t, m)
+			requireScreen(t, m, tc.wants...)
+			refuteScreen(t, m, tc.nots...)
+		})
+	}
+}
