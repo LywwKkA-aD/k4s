@@ -14,6 +14,12 @@ import (
 // answeredWith answers the dashboard's refreshes from the fake cluster c,
 // each snapshot then passed through edit: the fake serves no Tables, so a
 // test fills in by hand what the panels that read them would show.
+//
+// The root hands the dashboard its own /version answer, which the first
+// refresh, started before it, does not carry; the dashboard then derives
+// that snapshot again from what was fetched, and an edit made before would
+// be lost. The same answer is folded in first, as every later refresh
+// carries it.
 func answeredWith(t *testing.T, c *k8s.Client, edit func(dash.Snapshot) dash.Snapshot) tui.Option {
 	t.Helper()
 	src, err := dash.NewSource(c)
@@ -21,8 +27,13 @@ func answeredWith(t *testing.T, c *k8s.Client, edit func(dash.Snapshot) dash.Sna
 		t.Fatal(err)
 	}
 	fetch := dash.NewFetcher(src).Fetch
+	info, verr := c.ServerVersion(t.Context())
 	return tui.WithDashboardOptions(dashboard.WithFetch(func(ctx context.Context, p dash.Plan, prev dash.Snapshot) dash.Snapshot {
-		return edit(fetch(ctx, p, prev))
+		s := fetch(ctx, p, prev)
+		if verr != nil {
+			return edit(s.GiveVersionError(verr))
+		}
+		return edit(s.GiveVersion(info.GitVersion, info.Minor))
 	}))
 }
 
