@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"syscall"
 	"testing"
@@ -12,6 +13,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
+// TestClassify: states follow the shared classifier (k8s.Classify), so a
+// credential plugin that fails, an unknown host or no route to the API
+// read as the other views read them, not as a bare failure.
 func TestClassify(t *testing.T) {
 	t.Parallel()
 
@@ -20,6 +24,10 @@ func TestClassify(t *testing.T) {
 		err  error
 		want State
 	}{
+		{errors.New("getting credentials: exec: executable aws failed with exit code 255"), StateUnauthorized},
+		{errors.New("getting credentials: exec: standard input is unavailable"), StateUnauthorized},
+		{&url.Error{Op: "Get", URL: "https://x", Err: syscall.EHOSTUNREACH}, StateStale},
+		{&url.Error{Op: "Get", URL: "https://k3s.lan:6443", Err: &net.DNSError{Err: "no such host", Name: "k3s.lan", IsNotFound: true}}, StateStale},
 		{nil, StateOK},
 		{errNoREST, StateAbsent},
 		{apierrors.NewForbidden(gr, "", errors.New("no")), StateForbidden},
