@@ -33,14 +33,15 @@ func ringShown(total int, kind layoutKind, zoom dash.Panel, h int) int {
 	return max(min(total, limit, room), 0)
 }
 
-// ringRows are the cursor stops of the changes shown: each describes its
-// object.
+// ringRows are the cursor stops of the changes shown, each with the data
+// layer's command for its object, and none for an object that is gone.
 func ringRows(changes []change) []row {
 	seen := map[string]int{}
 	out := make([]row, 0, len(changes))
 	for _, c := range changes {
 		key := distinct(seen, fmt.Sprintf("ring/%d/%s", c.at.Unix(), c.obj.String()))
-		out = append(out, row{key: key, cmd: c.cmd(), target: c.obj, placed: c.obj.Namespace != ""})
+		placed := c.resolved && !c.gone && c.obj.Namespace != ""
+		out = append(out, row{key: key, cmd: c.cmd, target: c.obj, placed: placed, gone: c.gone})
 	}
 	return out
 }

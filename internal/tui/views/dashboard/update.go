@@ -102,7 +102,7 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 		m.mem = m.mem.with(givenVersion(msg.Value.snap, m.version))
 		if !first {
 			changes := changesBetween(prev, m.mem.snap)
-			m.mem.ring = withRing(m.mem.ring, changes)
+			m.mem.ring = refreshed(withRing(m.mem.ring, changes), m.mem.snap)
 			m, raised = m.raise(changes)
 		}
 		m, gone = m.reflow()
@@ -301,8 +301,13 @@ func (m Model) onEnter() (views.View, tea.Cmd) {
 	if to := m.mem.snap.Verdict.Focus; f.panel == dash.PanelOverview && to != dash.PanelOverview {
 		return m.jump(to)
 	}
-	if r, ok := f.selected(m.rows(f.panel)); ok && describable(r) {
-		return m, describeCmd(r.target)
+	if r, ok := f.selected(m.rows(f.panel)); ok {
+		switch {
+		case r.gone:
+			return m, statusCmd(status.Info, goneObject(r.target))
+		case describable(r):
+			return m, describeCmd(r.target)
+		}
 	}
 	return m, statusCmd(status.Info, noViewText)
 }
@@ -320,10 +325,21 @@ func (m Model) onLogs() (views.View, tea.Cmd) {
 		return m, statusCmd(status.Info, "no logs for this suggestion · y copies the command")
 	}
 	f := m.mem.focus
-	if r, ok := f.selected(m.rows(f.panel)); ok && r.pod() {
-		return m, logsCmd(r.target, r.container)
+	if r, ok := f.selected(m.rows(f.panel)); ok {
+		switch {
+		case r.gone:
+			return m, statusCmd(status.Info, goneObject(r.target))
+		case r.pod():
+			return m, logsCmd(r.target, r.container)
+		}
 	}
 	return m, statusCmd(status.Info, "no logs here: l reads the logs of a pod row")
+}
+
+// goneObject is the status for Enter or l on a row whose object is gone:
+// "node k3s-agent-2 is gone".
+func goneObject(k dash.ObjectKey) string {
+	return change{obj: k}.object() + " is gone"
 }
 
 // enterHint is the enter hint for the footer, "" where Enter only says
