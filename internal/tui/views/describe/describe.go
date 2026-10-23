@@ -139,12 +139,12 @@ type output struct {
 // fetch describes the object under the current Token: kubectl first, the
 // built-in describer when kubectl cannot and knows the kind.
 func (m Model) fetch() tea.Cmd {
-	k, c, kind, ns, name, cmd := m.kubectl, m.client, m.kind, m.namespace, m.name, m.command()
+	k, c, kind, ns, name := m.kubectl, m.client, m.kind, m.namespace, m.name
 	limit := m.builtInTimeout
 	return async.Run(m.tok, kubectlTimeout+limit, func(ctx context.Context) (output, error) {
 		var kubectlErr error
 		if k.enabled() {
-			text, version, err := k.describe(ctx, string(kind), name, cmd)
+			text, version, err := k.describe(ctx, kind, ns, name)
 			if err == nil {
 				return output{text: text, version: version}, nil
 			}
@@ -292,13 +292,31 @@ func (m Model) Command() kubectl.Cmd {
 	return c
 }
 
-// command is `kubectl describe <kind> <name> -n <ns>`, without -n for a
-// cluster-scoped object such as a node.
+// command is describeCommand for the view's object, the zero Cmd for a
+// name kubectl would not take as written.
 func (m Model) command() kubectl.Cmd {
-	if m.namespace == "" {
-		return kubectl.New("describe", string(m.kind), m.name)
+	c, _ := describeCommand(m.kind, m.namespace, m.name)
+	return c
+}
+
+// describeCommand is `kubectl describe <kind> <name> -n <ns>`, without -n
+// for a cluster-scoped object such as a node. It refuses a kind, name or
+// namespace kubectl would not take as written: they come from the
+// cluster, and one such as --server=… would read as a flag.
+func describeCommand(kind Kind, ns, name string) (kubectl.Cmd, error) {
+	if err := kubectl.CheckSubdomain("kind", string(kind)); err != nil {
+		return kubectl.Cmd{}, err
 	}
-	return kubectl.New("describe", string(m.kind), m.name, "-n", m.namespace)
+	if err := kubectl.CheckSubdomain(string(kind), name); err != nil {
+		return kubectl.Cmd{}, err
+	}
+	if ns == "" {
+		return kubectl.New("describe", string(kind), name), nil
+	}
+	if err := kubectl.CheckLabel("namespace", ns); err != nil {
+		return kubectl.Cmd{}, err
+	}
+	return kubectl.New("describe", string(kind), name, "-n", ns), nil
 }
 
 // Help implements views.View.
