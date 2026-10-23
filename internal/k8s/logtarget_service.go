@@ -29,7 +29,7 @@ func (c *Client) ServiceLogTarget(ctx context.Context, namespace, name string) (
 	}
 	t := servicePods(LogTarget{Kind: LogKindService, Namespace: namespace, Name: name, Selector: selector}, pods.Items)
 	if len(t.Pods) > 0 {
-		t.Containers = t.Pods[0].Containers
+		t.Containers, t.Init = t.Pods[0].Containers, t.Pods[0].Init
 	}
 	return t, nil
 }

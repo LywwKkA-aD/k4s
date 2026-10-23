@@ -59,12 +59,14 @@ func (c *Client) DeploymentLogTarget(ctx context.Context, namespace, name string
 			owners = again
 		}
 	}
+	cs := containersOf(dep.Spec.Template.Spec)
 	t := LogTarget{
 		Kind:       LogKindDeployment,
 		Namespace:  namespace,
 		Name:       name,
 		Selector:   selector,
-		Containers: containerNames(&dep.Spec.Template.Spec),
+		Containers: cs.Names(),
+		Init:       cs.InitNames(),
 		UID:        dep.UID,
 	}
 	return owners.split(t, byName(pods.Items)), nil
