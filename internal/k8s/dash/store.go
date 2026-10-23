@@ -30,6 +30,7 @@ type store struct {
 	jobs         []jobInfo
 	readyz       readyzInfo
 	version      versionInfo
+	versionGiven bool // the caller hands the version over (GiveVersion)
 	user         string
 	metricsOK    bool // metrics.k8s.io/v1beta1 is in discovery
 	nodeMetrics  []usageRow

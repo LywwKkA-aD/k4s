@@ -37,6 +37,8 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		return m.onSpinDue(msg)
 	case toastDoneMsg:
 		return m.onToastDone(msg)
+	case VersionMsg:
+		return m.onVersion(msg), nil
 	case tea.ColorProfileMsg:
 		m.profile = msg.Profile
 		if m.still() {
@@ -97,7 +99,7 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 	if msg.Err == nil {
 		var gone string
 		first, prev := !m.mem.loaded, m.mem.snap
-		m.mem = m.mem.with(msg.Value.snap)
+		m.mem = m.mem.with(givenVersion(msg.Value.snap, m.version))
 		if !first {
 			changes := changesBetween(prev, m.mem.snap)
 			m.mem.ring = withRing(m.mem.ring, changes)

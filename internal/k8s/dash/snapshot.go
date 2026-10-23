@@ -64,6 +64,22 @@ func (s Snapshot) Rescope(scope Scope) Snapshot {
 	return derive(out)
 }
 
+// GiveVersion returns s with the server version its caller asked /version
+// for (the root does, for the header), so a context costs one request:
+// from now on the plan leaves /version out, even on r. An empty gitVersion
+// means the answer is still on its way; minor is version.Info.Minor.
+func (s Snapshot) GiveVersion(gitVersion, minor string) Snapshot {
+	out := s
+	out.st.versionGiven = true
+	if gitVersion != "" {
+		info := versionInfo{git: gitVersion, minor: minorOf(minor)}
+		out.st.version = info
+		out.st.lbFallback = out.st.lbFallback || (info.minor > 0 && info.minor < lbFieldSelectorMinor)
+		out.Ledger[Version] = Usage{Fetched: true, At: s.Now, State: StateOK, Rows: 1, Answered: true}
+	}
+	return derive(out)
+}
+
 // PlanInput is the input for the plan after s. now is the caller's
 // elapsed time; watch, force and focus come from the view.
 func (s Snapshot) PlanInput(now time.Duration, watch, force bool, focus Focus) PlanInput {
@@ -103,7 +119,10 @@ func sum(v any) uint64 {
 }
 
 func capsOf(st store) Caps {
-	c := Caps{Metrics: st.metricsOK, K3s: distroOf(st.version.git) == "k3s", LBFallback: st.lbFallback}
+	c := Caps{
+		Metrics: st.metricsOK, K3s: distroOf(st.version.git) == "k3s",
+		LBFallback: st.lbFallback, VersionGiven: st.versionGiven,
+	}
 	for _, n := range st.nodes {
 		c.Etcd = c.Etcd || n.etcd
 	}

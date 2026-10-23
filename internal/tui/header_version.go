@@ -45,6 +45,12 @@ func (m Model) fetchVersion() tea.Cmd {
 	return m.askVersion(0)
 }
 
+// ownsVersion reports whether the session knows the active client's server
+// version or asks it (see fetchVersion), so the dashboard need not ask.
+func (m Model) ownsVersion() bool {
+	return m.startup.ServerVersion != nil || (m.client != nil && !m.client.NeedsLogin())
+}
+
 // askVersion is ask number attempt under the client's token, or nil when
 // there is nothing to ask (see fetchVersion).
 func (m Model) askVersion(attempt int) tea.Cmd {
@@ -78,11 +84,12 @@ func versionRetryable(err error) bool {
 	return true
 }
 
-// apply records the active client's server version. A failure leaves the
-// header as it is, since the dashboard reports an unreachable server, and
-// asks again after a wait that grows to a minute, for as long as the
-// server stays away, so a cluster that was down at the start still gets
-// named. A reply for a client k4s has switched away from is dropped.
+// apply records the active client's server version and hands it to the
+// dashboard on screen. A failure leaves the header as it is, since the
+// dashboard reports an unreachable server, and asks again after a wait
+// that grows to a minute, for as long as the server stays away, so a
+// cluster that was down at the start still gets named. A reply for a
+// client k4s has switched away from is dropped.
 func (v versionMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if m.client == nil || !m.ident.version.Accept(v.res.Token) {
 		return m, nil
@@ -90,7 +97,7 @@ func (v versionMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if info := v.res.Value; v.res.Err == nil && info != nil {
 		m.startup.ServerVersion = info
 		m.startup.Distro = cluster.Detect(info.GitVersion, m.client.Context, nil)
-		return m, nil
+		return m.tellDashboard(info)
 	}
 	wait, ok := versionRetryAfter(v.attempt)
 	if !ok || !versionRetryable(v.res.Err) {
