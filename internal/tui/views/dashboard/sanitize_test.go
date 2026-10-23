@@ -19,9 +19,9 @@ func TestClean(t *testing.T) {
 		{name: "osc with string terminator", in: "a\x1b]0;title\x1b\\b", want: "ab"},
 		{name: "csi colour and cursor moves", in: "\x1b[31mred\x1b[0m\x1b[2J\x1b[H", want: "red"},
 		{name: "escape pair is a sequence too", in: "a\x1bcb\x07c", want: "abc"},
-		{name: "newlines and tabs become spaces", in: "line one\nline\ttwo\r", want: "line one line two "},
-		{name: "c1 controls and delete", in: "a\u0085b\u009bc\x7fd", want: "abcd"},
-		{name: "bidi overrides", in: "evil\u202egnp.exe\u2066x\u2069", want: "evilgnp.exex"},
+		{name: "newlines and tabs become spaces", in: "line one\nline\ttwo\r\n", want: "line one line two "},
+		{name: "c1 csi opens a sequence, c1 and delete go", in: "a\u0085b\u009b1mc\x7fd", want: "abcd"},
+		{name: "bidi overrides and isolates", in: "evil\u202egnp.exe\u2066x\u2069", want: "evilgnp.exex"},
 		{name: "invalid utf-8", in: "a\xffb", want: "a\uFFFDb"},
 		{name: "empty", in: "", want: ""},
 	}
@@ -35,15 +35,17 @@ func TestClean(t *testing.T) {
 	}
 }
 
-func TestCleanNeverLeavesControls(t *testing.T) {
+// TestCleanLeavesOneInertLine: whatever the cluster sends, a value is one
+// line with no control a terminal could act on and no bidi control.
+func TestCleanLeavesOneInertLine(t *testing.T) {
 	t.Parallel()
 
 	var b strings.Builder
-	for r := rune(0); r < 0x300; r++ {
+	for r := rune(0); r < 0x2100; r++ {
 		b.WriteRune(r)
 	}
 	for _, r := range clean(b.String()) {
-		if isControl(r) {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
 			t.Fatalf("clean left control %U", r)
 		}
 	}
