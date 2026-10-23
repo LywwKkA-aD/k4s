@@ -35,7 +35,7 @@ func TestYAMLKeyHint(t *testing.T) {
 		{name: "deployments", input: colon("deploy"), shown: true},
 		{name: "namespaces", input: colon("ns"), shown: true},
 		{name: "describe", input: []tea.Msg{views.DescribeRequestMsg{Kind: "pod", Namespace: tuitest.NamespaceDemo, Name: tuitest.PodWeb1}}, shown: true},
-		{name: "dashboard"},
+		{name: "dashboard", shown: true},
 		{name: "contexts", input: colon("ctx")},
 		{name: "top", input: colon("top")},
 	}

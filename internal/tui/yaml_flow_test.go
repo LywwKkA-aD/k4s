@@ -128,7 +128,7 @@ func TestOWithoutAnObjectSaysSo(t *testing.T) {
 		view   string
 		status string
 	}{
-		{name: "dashboard", client: true, keys: tuitest.Keys("o"), view: "dashboard", status: "yaml: nothing to show here"},
+		{name: "the dashboard's banner", client: true, keys: tuitest.Keys("o"), view: "dashboard", status: "yaml: no row selected"},
 		{name: "the <all> namespace row", client: true, keys: then(colon("ns"), tuitest.Keys("o")), view: "namespaces", status: "yaml: no row selected"},
 		{name: "an empty filter", client: true, keys: then(colon("pods"), tuitest.FilterBy("zzz"), tuitest.Keys("o")), view: "pods", status: "yaml: no row selected"},
 		{name: "no kubeconfig", keys: then(colon("pods"), tuitest.Keys("o")), view: "pods", status: "no kubeconfig"},
