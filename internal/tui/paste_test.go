@@ -48,7 +48,7 @@ func TestPasteGoesWhereTypingGoes(t *testing.T) {
 		{
 			name:  "logs search",
 			input: []tea.Msg{logs, tuitest.Press("/"), tuitest.Paste("needle"), tuitest.Enter()},
-			view:  "logs · " + tuitest.PodWeb1 + " · /needle · no match",
+			view:  "pod · " + tuitest.PodWeb1 + " · logs · /needle · no match",
 		},
 	}
 	for _, tc := range cases {

@@ -19,7 +19,7 @@ func TestLogsRequestForThePreviousInstance(t *testing.T) {
 		Target: views.ResourceRef{Kind: "pod", Namespace: tuitest.NamespaceDemo, Name: tuitest.PodWeb1}, Previous: true,
 	}
 	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), req)
-	requireView(t, m, "logs · web-1 / nginx · previous")
+	requireView(t, m, "pod · web-1 / nginx · logs · previous")
 	if got, want := commandRow(m), "kubectl logs web-1 --tail=100 -n demo -c nginx --previous"; got != want {
 		t.Fatalf("command row = %q, want %q", got, want)
 	}

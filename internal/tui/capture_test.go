@@ -41,17 +41,17 @@ func TestLogsSearchReceivesGlobalKeys(t *testing.T) {
 
 	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), colon("pods")...)
 	m, _ = tuitest.Drive(t, m, views.LogsRequestMsg{Namespace: tuitest.NamespaceDemo, Pods: []string{tuitest.PodWeb1}, Tail: 10})
-	requireView(t, m, "logs · web-1")
+	requireView(t, m, "pod · web-1 · logs")
 
 	m, out := tuitest.Drive(t, m, tuitest.Press("/"), tuitest.Type("fake"), tuitest.Press("q"))
 	if hasQuit(out) {
 		t.Fatal("q in the search prompt quit")
 	}
-	requireView(t, m, "logs · web-1")
+	requireView(t, m, "pod · web-1 · logs")
 	requireScreen(t, m, "/fakeq")
 
 	m, _ = tuitest.Drive(t, m, tuitest.Press("backspace"), tuitest.Enter())
-	requireView(t, m, "logs · web-1 · /fake · 1/1 · paused")
+	requireView(t, m, "pod · web-1 · logs · /fake · 1/1 · paused")
 
 	// Esc with no prompt open goes back again.
 	m, _ = tuitest.Drive(t, m, tuitest.Esc())

@@ -265,7 +265,7 @@ func TestIsRebuildableView(t *testing.T) {
 			t.Errorf("%q should be rebuildable", name)
 		}
 	}
-	if isRebuildableView("logs · pod-x") {
+	if isRebuildableView("pod · pod-x · logs") {
 		t.Error("dynamic log title should not be rebuildable")
 	}
 	if isRebuildableView("pod · nginx") {

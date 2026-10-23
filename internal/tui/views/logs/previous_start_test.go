@@ -20,7 +20,7 @@ func TestWithPreviousOpensThePreviousInstance(t *testing.T) {
 	c := tuitest.NewFakeClient(t, in.option())
 	m, _ := tuitest.Mount(t, logs.New(c, tuitest.NamespaceDemo, []string{tuitest.PodWeb1}, 100, tuitest.ContainerNginx, logs.WithPrevious()), 100, 20)
 	t.Cleanup(func() { _ = m.Close() })
-	requireTitle(t, m, "logs · web-1 / nginx · previous")
+	requireTitle(t, m, "pod · web-1 / nginx · logs · previous")
 	if got := m.Command().String(); got != "kubectl logs web-1 --tail=100 -n demo -c nginx --previous" {
 		t.Errorf("command = %q", got)
 	}
@@ -28,7 +28,7 @@ func TestWithPreviousOpensThePreviousInstance(t *testing.T) {
 		t.Errorf("want the previous instance only:\n%s", screen)
 	}
 	m, _ = tuitest.Drive(t, m, tuitest.Press("p"))
-	requireTitle(t, m, "logs · web-1 / nginx")
+	requireTitle(t, m, "pod · web-1 / nginx · logs")
 }
 
 // TestWithPreviousWithoutOneKeepsTheCurrentLog: a container that never

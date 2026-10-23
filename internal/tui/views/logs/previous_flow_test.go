@@ -64,17 +64,17 @@ func TestPreviousTogglesTheInstance(t *testing.T) {
 		title, command, shows, hides string
 	}{
 		{
-			title:   "logs · web-1 / nginx",
+			title:   "pod · web-1 / nginx · logs",
 			command: "kubectl logs -f web-1 --tail=100 -n demo -c nginx",
 			shows:   "serving", hides: "panic: boom",
 		},
 		{
-			title:   "logs · web-1 / nginx · previous",
+			title:   "pod · web-1 / nginx · logs · previous",
 			command: "kubectl logs web-1 --tail=100 -n demo -c nginx --previous",
 			shows:   "panic: boom", hides: "serving",
 		},
 		{
-			title:   "logs · web-1 / nginx",
+			title:   "pod · web-1 / nginx · logs",
 			command: "kubectl logs -f web-1 --tail=100 -n demo -c nginx",
 			shows:   "serving", hides: "panic: boom",
 		},
