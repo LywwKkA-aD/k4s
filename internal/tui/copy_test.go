@@ -156,3 +156,20 @@ func TestCopyIsListedInHintsAndHelp(t *testing.T) {
 	m, _ = tuitest.Drive(t, m, tuitest.Press("?"))
 	requireScreen(t, m, "copy the kubectl command", "set -g set-clipboard on")
 }
+
+// TestCopyRefusesControlCharacters: a namespace from a hostile cluster can
+// hold bytes that end a bracketed paste; quoting does not stop them, so y
+// copies nothing and says why.
+func TestCopyRefusesControlCharacters(t *testing.T) {
+	t.Parallel()
+
+	setup := []tea.Msg{views.NamespaceSelectedMsg{Namespace: "a\x1b[201~b"}}
+	m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), setup...)
+	m, out := tuitest.Drive(t, m, tuitest.Press("y"))
+	if got, ok := tuitest.Clipboard(out); ok {
+		t.Fatalf("y copied %q", got)
+	}
+	if row := statusRow(footer(m)); !strings.HasPrefix(row, "not copied: ") {
+		t.Errorf("status row = %q", row)
+	}
+}

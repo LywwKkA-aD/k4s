@@ -146,8 +146,12 @@ func (d shellDoneMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if d.shell == views.WindowsShell {
 		return m.setError("exec: no " + d.shell + " in " + podLabel(d.req) + exitLabel(d.err))
 	}
+	debug := debugCommand(d.req)
+	if debug.IsZero() {
+		return m.setError("exec: no " + d.shell + " in " + podPath(d.req) + exitLabel(d.err))
+	}
 	text := "no " + d.shell + " in " + podPath(d.req) + " · y copies the kubectl debug command" + exitLabel(d.err)
-	return m.setStatusAbout(status.Error, text, debugCommand(d.req))
+	return m.setStatusAbout(status.Error, text, debug)
 }
 
 // missingShell reports a shell that could not start: the runtime says the
@@ -166,8 +170,16 @@ func (d shellDoneMsg) missingShell() bool {
 }
 
 // debugCommand is `kubectl debug -it -n <ns> <pod> --image=busybox:1.36
-// --target=<c>` for req. The footer decorates it like every command.
+// --target=<c>` for req. The footer decorates it like every command. It
+// is zero for names kubectl would not take: they come from the cluster,
+// and pasted they could read as a flag or end a bracketed paste.
 func debugCommand(req views.ExecRequestMsg) kubectl.Cmd {
+	if kubectl.CheckLabel("namespace", req.Namespace) != nil || kubectl.CheckSubdomain("pod", req.Pod) != nil {
+		return kubectl.Cmd{}
+	}
+	if req.Container != "" && kubectl.CheckLabel("container", req.Container) != nil {
+		return kubectl.Cmd{}
+	}
 	args := []string{"debug", "-it", "-n", req.Namespace, req.Pod, "--image=" + debugImage}
 	if req.Container != "" {
 		args = append(args, "--target="+req.Container)

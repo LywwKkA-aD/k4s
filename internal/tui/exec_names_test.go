@@ -34,7 +34,8 @@ func TestExecStatusNamesAreInert(t *testing.T) {
 		{
 			name: "no shell",
 			msg:  shellDoneMsg{req: req, shell: "sh", err: missing},
-			want: "no sh in demo/web · y copies the kubectl debug command",
+			// Names kubectl would not take get no debug command to copy.
+			want: "exec: no sh in demo/web",
 		},
 		{
 			name: "no shell in a windows pod",

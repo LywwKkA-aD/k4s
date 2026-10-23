@@ -250,6 +250,20 @@ func TestShellDoneHintsAtKubectlDebug(t *testing.T) {
 			name: "windows has no busybox", done: shellDoneMsg{req: web, shell: "cmd.exe", err: exitErr(t, "127")},
 			want: "exec: no cmd.exe in web-1/app · exit 127",
 		},
+		{
+			// A hostile API server's names would end a bracketed paste or
+			// read as a flag once pasted; no command is offered for them.
+			name: "a name kubectl would not take", done: shellDoneMsg{
+				req: views.ExecRequestMsg{Namespace: "demo", Pod: "x\x1b[201~;id", Container: "app"}, shell: "sh", err: exitErr(t, "127"),
+			},
+			want: "exec: no sh in demo/x;id · exit 127",
+		},
+		{
+			name: "a pod name that reads as a flag", done: shellDoneMsg{
+				req: views.ExecRequestMsg{Namespace: "demo", Pod: "--image=evil", Container: "app"}, shell: "sh", err: exitErr(t, "127"),
+			},
+			want: "exec: no sh in demo/--image=evil · exit 127",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

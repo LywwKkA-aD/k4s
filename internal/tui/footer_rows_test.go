@@ -83,8 +83,8 @@ func TestLongFooterRowsEndInAnEllipsis(t *testing.T) {
 }
 
 // TestFooterCommandRowIsInert: the namespace in the command row comes from
-// the kubeconfig or -n and is drawn as text, its escape sequence gone,
-// while y still copies the command a shell needs to reach it.
+// the kubeconfig or -n and is drawn as text, its escape sequence gone. y
+// copies nothing: pasted, the bytes would reach the terminal again.
 func TestFooterCommandRowIsInert(t *testing.T) {
 	t.Parallel()
 
@@ -96,9 +96,11 @@ func TestFooterCommandRowIsInert(t *testing.T) {
 	if row := commandRow(m); row != "kubectl get pods -n 'ab'" {
 		t.Errorf("command row = %q, want the namespace as 'ab'", row)
 	}
-	_, out := tuitest.Drive(t, m, tuitest.Press("y"))
-	want := "kubectl get pods -n '" + escapingNamespace + "'"
-	if got, ok := tuitest.Clipboard(out); !ok || got != want {
-		t.Errorf("clipboard = %q, %v; want %q", got, ok, want)
+	m, out := tuitest.Drive(t, m, tuitest.Press("y"))
+	if got, ok := tuitest.Clipboard(out); ok {
+		t.Errorf("y copied %q", got)
+	}
+	if row := statusRow(footer(m)); !strings.HasPrefix(row, "not copied: ") {
+		t.Errorf("status row = %q", row)
 	}
 }

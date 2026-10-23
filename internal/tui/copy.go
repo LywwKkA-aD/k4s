@@ -4,6 +4,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 )
 
@@ -23,6 +24,11 @@ func (m Model) copyCommand() (Model, tea.Cmd) {
 	text := cmd.String()
 	if text == "" {
 		return m.setStatus(status.Info, "nothing to copy")
+	}
+	// Quoting keeps a name one argument, but not inert in a terminal: a
+	// name from a hostile cluster could end a bracketed paste.
+	if sanitize.Line(text) != text {
+		return m.setStatus(status.Warn, "not copied: the command holds control characters")
 	}
 	verb := "copied"
 	if cmd.Approx {
