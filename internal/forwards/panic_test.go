@@ -118,13 +118,13 @@ func TestAStartPanicBecomesAnInternalError(t *testing.T) {
 	t.Parallel()
 	log := &panicLog{}
 	m := newTestManager(t, deps{tunnel: panicTunneler{}, logf: log.logf})
-	mustRegister(t, m, testForward("f1", "pod", 18090))
+	mustRegister(t, m, testForward("boom", "pod", 18090))
 
-	err := m.Start(context.Background(), "f1")
+	err := m.Start(context.Background(), "boom")
 	if !errors.Is(err, k8s.ErrInternal) {
 		t.Fatalf("Start = %v, want the internal error", err)
 	}
-	if a := waitStatus(t, m, "f1", StatusError); !errors.Is(a.Err, k8s.ErrInternal) {
+	if a := waitStatus(t, m, "boom", StatusError); !errors.Is(a.Err, k8s.ErrInternal) {
 		t.Errorf("forward Err = %v, want the internal error", a.Err)
 	}
 	if got := log.text(); !strings.Contains(got, "dial broke") || !strings.Contains(got, "goroutine") {
