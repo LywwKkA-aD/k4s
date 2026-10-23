@@ -37,6 +37,9 @@ type row struct {
 	placed bool
 	// container is the pod's container l reads, "" for kubectl's default.
 	container string
+	// gone marks a ring row whose object left the cluster: it has no
+	// command, and Enter and l open nothing for it.
+	gone bool
 }
 
 // pod reports a row that stands for a pod placed in its namespace: one l

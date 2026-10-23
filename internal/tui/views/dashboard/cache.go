@@ -39,6 +39,7 @@ type renderKey struct {
 	toast       async.Token
 	ringLen     int
 	ringAt      time.Time
+	ringPlaced  int
 	fresh       int
 	histAt      time.Time
 	notOKAt     time.Time
@@ -70,6 +71,12 @@ func keyOf(f frame, l layout) renderKey {
 	}
 	if len(f.ring) > 0 {
 		k.ringAt = f.ring[0].at
+	}
+	// A ring entry placed by a later poll is drawn with its namespace.
+	for _, c := range f.ring {
+		if c.resolved {
+			k.ringPlaced++
+		}
 	}
 	return k
 }
