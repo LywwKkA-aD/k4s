@@ -98,18 +98,24 @@ func (m Model) onRefresh(msg async.Result[refresh]) (views.View, tea.Cmd) {
 	var note, motion, raised tea.Cmd
 	if msg.Err == nil {
 		var gone string
+		var changes []change
 		first, prev := !m.mem.loaded, m.mem.snap
 		m.mem = m.mem.with(givenVersion(msg.Value.snap, m.version))
 		if !first {
-			changes := changesBetween(prev, m.mem.snap)
+			changes = changesBetween(prev, m.mem.snap)
 			m.mem.ring = refreshed(withRing(m.mem.ring, changes), m.mem.snap)
-			m, raised = m.raise(changes)
 		}
 		m, gone = m.reflow()
 		// A suggestion that left was fixed or outranked: the cursor
 		// moving on says enough.
 		if gone != "" && m.mem.focus.panel != dash.PanelOverview {
 			note = statusCmd(status.Info, goneText(gone))
+		}
+		// The status row shows one message, and the note answers where
+		// the user's cursor went: a toast that would go there yields to
+		// it, kept in the ring.
+		if note == nil || m.lay.kind == kindWide {
+			m, raised = m.raise(changes)
 		}
 		m, motion = m.moved(first, prev, m.mem.snap)
 	}
