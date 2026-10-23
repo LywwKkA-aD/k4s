@@ -85,11 +85,13 @@ func versionRetryable(err error) bool {
 }
 
 // apply records the active client's server version and hands it to the
-// dashboard on screen. A failure leaves the header as it is, since the
-// dashboard reports an unreachable server, and asks again after a wait
-// that grows to a minute, for as long as the server stays away, so a
-// cluster that was down at the start still gets named. A reply for a
-// client k4s has switched away from is dropped.
+// dashboard on screen. A failure leaves the header as it is and goes to
+// the dashboard, which shows it on its version row as it shows a failure
+// of its own requests (a denial with its can-i probe). Unless the server
+// refused for good, the header asks again after a wait that grows to a
+// minute, for as long as the server stays away, so a cluster that was down
+// at the start still gets named. A reply for a client k4s has switched
+// away from is dropped.
 func (v versionMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if m.client == nil || !m.ident.version.Accept(v.res.Token) {
 		return m, nil
@@ -97,14 +99,20 @@ func (v versionMsg) apply(m Model) (tea.Model, tea.Cmd) {
 	if info := v.res.Value; v.res.Err == nil && info != nil {
 		m.startup.ServerVersion = info
 		m.startup.Distro = cluster.Detect(info.GitVersion, m.client.Context, nil)
-		return m.tellDashboard(info)
+		m.ident.versionErr = nil
+		return m.tellDashboard(info, nil)
+	}
+	var told tea.Cmd
+	if v.res.Err != nil {
+		m.ident.versionErr = v.res.Err
+		m, told = m.tellDashboard(nil, v.res.Err)
 	}
 	wait, ok := versionRetryAfter(v.attempt)
 	if !ok || !versionRetryable(v.res.Err) {
-		return m, nil
+		return m, told
 	}
 	retry := versionRetryMsg{token: v.res.Token, attempt: v.attempt + 1}
-	return m, tea.Tick(wait, func(time.Time) tea.Msg { return retry })
+	return m, tea.Batch(told, tea.Tick(wait, func(time.Time) tea.Msg { return retry }))
 }
 
 // apply asks again unless the client changed or the version is known.
