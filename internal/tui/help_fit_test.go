@@ -11,7 +11,9 @@ import (
 // TestHelpKeepsItsSectionsOnSmallTerminals: the popup is cut to the
 // body, so a row added to the global keys costs the sections under them.
 // With o listed, the view's section still starts on a 60x20 terminal and
-// the commands still start on an 80x24 one, as before o was listed.
+// the dashboard's navigation keys still show on an 80x24 one. The
+// dashboard lists five keys of its own, so its commands start from 30
+// rows.
 func TestHelpKeepsItsSectionsOnSmallTerminals(t *testing.T) {
 	t.Parallel()
 
@@ -20,7 +22,8 @@ func TestHelpKeepsItsSectionsOnSmallTerminals(t *testing.T) {
 		wants         []string
 	}{
 		{width: 60, height: 20, wants: []string{"o       YAML of the selected object", "view: dashboard"}},
-		{width: 80, height: 24, wants: []string{"o       YAML of the selected object", "view: dashboard", "w  watch", "commands"}},
+		{width: 80, height: 24, wants: []string{"o       YAML of the selected object", "view: dashboard", "↑↓       row"}},
+		{width: 80, height: 30, wants: []string{"o       YAML of the selected object", "view: dashboard", "r        refresh", "commands"}},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("%dx%d", tc.width, tc.height), func(t *testing.T) {
