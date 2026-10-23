@@ -122,13 +122,21 @@ func writeEvents(w describeWriter, ev eventList, now time.Time) {
 			// newer than any shown.
 			of += " read; more exist"
 		}
+		if cmd := ev.subject.eventsCommand(); cmd != "" {
+			of += ": " + cmd
+		}
 		w.flush()
-		w.write(1, "… showing the newest %d of %s: %s\n", len(ev.items), of, ev.subject.eventsCommand())
+		w.write(1, "… showing the newest %d of %s\n", len(ev.items), of)
 	}
 }
 
-// eventsCommand is the `kubectl events` that lists every event about s.
+// eventsCommand is the `kubectl events` that lists every event about s,
+// "" when its name or namespace, which come from the cluster, is not one
+// kubectl takes as written.
 func (s eventSubject) eventsCommand() string {
+	if kubectl.CheckSubdomain(s.kind, s.name) != nil || (s.namespace != "" && kubectl.CheckLabel("namespace", s.namespace) != nil) {
+		return ""
+	}
 	args := []string{"events", "--for", strings.ToLower(s.kind) + "/" + s.name}
 	if s.namespace != "" {
 		args = append(args, "-n", s.namespace)

@@ -81,14 +81,22 @@ func TestDescribeEventsNoteScope(t *testing.T) {
 	}{
 		{subject: eventSubject{kind: "Pod", namespace: "demo", name: "web-1"}, want: "kubectl events --for pod/web-1 -n demo"},
 		{subject: eventSubject{kind: "Node", name: "k3s-server"}, want: "kubectl events --for node/k3s-server\n"},
+		// A name or namespace kubectl would not take gives a note without
+		// a command.
+		{subject: eventSubject{kind: "Pod", namespace: "demo", name: "--server=https://evil"}, want: "\n"},
+		{subject: eventSubject{kind: "Service", namespace: "--kubeconfig=/tmp/evil", name: "web"}, want: "\n"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.subject.kind, func(t *testing.T) {
+		t.Run(tc.subject.kind+" "+tc.subject.name, func(t *testing.T) {
 			t.Parallel()
 			out := tabbed(func(w describeWriter) {
 				writeEvents(w, eventList{items: []corev1.Event{ev}, total: 600, subject: tc.subject}, describeNow)
 			})
-			if !strings.Contains(out, "… showing the newest 1 of 600: "+tc.want) {
+			note := "… showing the newest 1 of 600: " + tc.want
+			if tc.want == "\n" {
+				note = "… showing the newest 1 of 600\n"
+			}
+			if !strings.Contains(out, note) {
 				t.Errorf("note:\n%s", out)
 			}
 		})
