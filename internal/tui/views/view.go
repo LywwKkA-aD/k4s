@@ -172,6 +172,10 @@ type TailPromptRequestMsg struct {
 // LogsRequestMsg is dispatched (by the root, after the tail prompt closes)
 // to actually open the streaming logs view. Target and Logs come from the
 // TailPromptRequestMsg it answers.
+//
+// Previous opens one pod's logs on the previous instance of its container
+// (kubectl logs --previous), as p in the logs view does; a view sends it
+// directly, without the tail prompt, since that log has ended.
 type LogsRequestMsg struct {
 	Namespace string
 	Pods      []string
@@ -179,6 +183,7 @@ type LogsRequestMsg struct {
 	Container string
 	Target    ResourceRef
 	Logs      k8s.LogTarget
+	Previous  bool
 }
 
 // ContainerPromptRequestMsg asks the root model to open the container picker
