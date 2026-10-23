@@ -25,8 +25,10 @@ func (m Model) helpSections() []overlay.HelpSection {
 }
 
 // globalHelp lists the bindings the root model owns: quit/home, command bar,
-// back, force-quit, help itself, YAML and copy, with the tmux setting copy
-// needs.
+// back, force-quit, YAML and copy, with the tmux setting copy needs. ? has
+// no row: the popup's own last line says it closes the help, and the
+// popup is cut to the body, so each global row costs a row of the view's
+// section on a small terminal.
 func globalHelp(m Model) []overlay.HelpEntry {
 	quitDesc := "quit"
 	if m.current.Title() != viewDashboard {
@@ -37,7 +39,6 @@ func globalHelp(m Model) []overlay.HelpEntry {
 		{Keys: m.keys.ForceQuit.Help().Key, Desc: "force quit"},
 		{Keys: m.keys.Back.Help().Key, Desc: "back"},
 		{Keys: m.keys.Command.Help().Key, Desc: "command bar"},
-		{Keys: m.keys.Help.Help().Key, Desc: "this help"},
 		{Keys: m.keys.YAML.Help().Key, Desc: "YAML of the selected object"},
 		{Keys: m.keys.Copy.Help().Key, Desc: "copy the kubectl command below (OSC 52)"},
 		{Desc: "in tmux: set -g set-clipboard on"},
