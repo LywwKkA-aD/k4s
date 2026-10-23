@@ -18,11 +18,12 @@ const maxReasonLen = 300
 
 // disconnectedView explains why there is no cluster connection. loadErr comes
 // from the kubeconfig loader, whose messages carry file paths and context
-// names but never credential values.
+// names but never credential values; they can quote the file, so the
+// reason is made inert (clean) before it is drawn.
 func disconnectedView(loadErr error, home string) string {
 	reason := "no kubeconfig loaded"
 	if loadErr != nil {
-		reason = "not connected: " + oneLine(tildeHome(loadErr.Error(), home))
+		reason = "not connected: " + oneLine(clean(tildeHome(loadErr.Error(), home)))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		styles.Warn.Render(reason),

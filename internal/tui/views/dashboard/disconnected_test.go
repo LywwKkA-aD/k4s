@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,6 +139,34 @@ func TestOneLine(t *testing.T) {
 			t.Parallel()
 			if got := oneLine(tc.in); got != tc.want {
 				t.Fatalf("oneLine(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDisconnectedReasonIsInert: the load error quotes the kubeconfig,
+// whose context names and fragments can carry escape sequences.
+func TestDisconnectedReasonIsInert(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name, err, want string
+	}{
+		{name: "OSC 52", err: "context \"a\x1b]52;c;ZXZpbA==\a\" not found", want: "context \"a\" not found"},
+		{name: "clear screen", err: "yaml: line 3:\x1b[2J\n bad", want: "yaml: line 3: bad"},
+		{name: "bidi override", err: "context \"\u202eabc\" not found", want: "context \"abc\" not found"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			out := disconnectedView(errors.New(tc.err), "")
+			for _, bad := range []string{"\x1b]", "\a", "\x1b[2J", "\u202e"} {
+				if strings.Contains(out, bad) {
+					t.Errorf("view carries %q: %q", bad, out)
+				}
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("view lacks %q: %q", tc.want, out)
 			}
 		})
 	}
