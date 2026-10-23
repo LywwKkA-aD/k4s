@@ -284,6 +284,8 @@ func TestRunnerValidatesBeforeLookingUp(t *testing.T) {
 		{"bad container", kubectl.New("logs", "web", "-n", "shop", "-c", "x y"), kubectl.ErrInvalidName},
 		{"bad long container", kubectl.New("logs", "web", "--container=--previous"), kubectl.ErrInvalidName},
 		{"dangling flag", kubectl.New("logs", "web", "-n"), kubectl.ErrInvalidName},
+		{"name that sets the server", kubectl.New("describe", "pod", "--server=https://evil", "-n", "ns"), kubectl.ErrSessionFlag},
+		{"name that sets the kubeconfig", kubectl.New("describe", "pod", "--kubeconfig=/tmp/evil"), kubectl.ErrSessionFlag},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
