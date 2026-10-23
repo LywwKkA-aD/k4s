@@ -8,8 +8,10 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/tui"
@@ -111,5 +113,20 @@ func TestNamespaceSwitchKeepsTheEventsView(t *testing.T) {
 	requireRootView(t, m, "events")
 	if got := kubectlRow(m); got != "kubectl events -n demo --types=Warning" {
 		t.Errorf("kubectl row = %q", got)
+	}
+}
+
+// TestEnterDescribesANodeWithoutANamespace: the describe opened from a
+// node's event runs without -n, even when the event named a namespace for
+// the node.
+func TestEnterDescribesANodeWithoutANamespace(t *testing.T) {
+	t.Parallel()
+
+	node := corev1.ObjectReference{APIVersion: "v1", Kind: "Node", Namespace: "default", Name: "node-1"}
+	e := ev("default", "node-1.rebooted", "Warning", "Rebooted", "Node node-1 has been rebooted", node, 1, time.Minute, time.Minute)
+	c := tuitest.NewFakeClient(t, tuitest.WithObjects(e))
+	m, _ := tuitest.Drive(t, startedRoot(t, c), slices.Concat(tuitest.Colon("ev"), []tea.Msg{tuitest.Enter()})...)
+	if got := kubectlRow(m); got != "kubectl describe node node-1" {
+		t.Errorf("Enter described %q, want kubectl describe node node-1", got)
 	}
 }

@@ -62,3 +62,44 @@ func TestEnterOnAnObjectWithoutANamespace(t *testing.T) {
 		})
 	}
 }
+
+// TestEnterOnAClusterScopedObjectNeverAddsANamespace: whoever writes an
+// event may fill involvedObject.namespace for an object that lives
+// outside namespaces. A kind k4s knows to be cluster-scoped is described
+// without one all the same, so neither the request nor its kubectl
+// describe carries -n.
+func TestEnterOnAClusterScopedObjectNeverAddsANamespace(t *testing.T) {
+	t.Parallel()
+
+	ref := func(apiVersion, kind, name string) corev1.ObjectReference {
+		return corev1.ObjectReference{APIVersion: apiVersion, Kind: kind, Namespace: "kube-system", Name: name}
+	}
+	cases := []struct {
+		name string
+		obj  corev1.ObjectReference
+		want views.DescribeRequestMsg
+	}{
+		{name: "node", obj: ref("v1", "Node", "k3s-server"), want: views.DescribeRequestMsg{Kind: "node", Name: "k3s-server"}},
+		{name: "namespace", obj: ref("v1", "Namespace", "kube-system"), want: views.DescribeRequestMsg{Kind: "namespace", Name: "kube-system"}},
+		{name: "persistent volume", obj: ref("v1", "PersistentVolume", "pv-1"), want: views.DescribeRequestMsg{Kind: "persistentvolume", Name: "pv-1"}},
+		{
+			name: "cluster role", obj: ref("rbac.authorization.k8s.io/v1", "ClusterRole", "admin"),
+			want: views.DescribeRequestMsg{Kind: "clusterrole.rbac.authorization.k8s.io", Name: "admin"},
+		},
+		{
+			name: "a namespaced kind keeps its namespace", obj: ref("v1", "Pod", "coredns-1"),
+			want: views.DescribeRequestMsg{Kind: "pod", Namespace: "kube-system", Name: "coredns-1"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			e := ev("default", "odd.1", "Normal", "Odd", "odd", tc.obj, 1, time.Hour, time.Hour)
+			m, _ := mounted(t, tuitest.NewFakeClient(t, tuitest.WithObjects(e)), "")
+			_, out := tuitest.Drive(t, m, tuitest.Enter())
+			if got, ok := tuitest.Find[views.DescribeRequestMsg](out); !ok || got != tc.want {
+				t.Errorf("Enter asked %+v, want %+v:\n%s", got, tc.want, tuitest.Describe(out))
+			}
+		})
+	}
+}

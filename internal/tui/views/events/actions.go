@@ -86,20 +86,23 @@ func objectRef(e k8s.Event) (views.ResourceRef, error) {
 }
 
 // objectNamespace is the namespace of the object e is about, kind as
-// kubectl takes it. An involvedObject may leave it out: a namespaced kind
-// then lives in the event's own namespace and a cluster-scoped one in
-// none. A kind k4s does not know, such as most custom resources', cannot
-// be placed: describing it in the context's namespace would describe
-// another object or none, so the error names the kubectl describe that
-// works if the kind is cluster-scoped.
+// kubectl takes it. A kind k4s knows to be cluster-scoped lives in none,
+// whatever the involvedObject says: whoever wrote the event may have
+// filled one in. An involvedObject may leave it out: a namespaced kind
+// then lives in the event's own namespace. A kind k4s does not know, such
+// as most custom resources', cannot be placed: describing it in the
+// context's namespace would describe another object or none, so the
+// error names the kubectl describe that works if the kind is
+// cluster-scoped.
 func objectNamespace(e k8s.Event, group, kind string) (string, error) {
 	o := e.Object
+	scope := k8s.KindScope(group, o.Kind)
+	if scope == k8s.ScopeCluster {
+		return "", nil
+	}
 	ns := o.Namespace
 	if ns == "" {
-		switch k8s.KindScope(group, o.Kind) {
-		case k8s.ScopeCluster:
-			return "", nil
-		case k8s.ScopeUnknown:
+		if scope == k8s.ScopeUnknown {
 			return "", fmt.Errorf("%s/%s without a namespace; if it is cluster-scoped: %s",
 				o.Kind, o.Name, kubectl.New("describe", kind, o.Name).String())
 		}
