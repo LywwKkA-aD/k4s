@@ -36,7 +36,8 @@ const (
 //     sequences) are removed together with their payload, so application
 //     colours go too;
 //   - every other C0 and C1 control is dropped, tab excepted, and so are
-//     CR, LF and the bidi embedding, override and isolate controls;
+//     CR, LF and the invisible format characters (bidi controls,
+//     zero-width characters, tags; see invisible);
 //   - invalid UTF-8 becomes U+FFFD;
 //   - text over MaxLine bytes is cut there and noted with "…[+N bytes]".
 func Line(s string) string {
@@ -123,17 +124,33 @@ func skipSequence(s string, i int, r rune, size int, keepLF bool) (int, bool) {
 }
 
 // printable reports whether r is text: tab, or anything but a C0 or C1
-// control, DEL and the bidi controls.
+// control, DEL and the invisible format characters.
 func printable(r rune) bool {
-	return r == '\t' || (r >= 0x20 && r != 0x7f && (r < 0x80 || r > 0x9f) && !bidiControl(r))
+	return r == '\t' || (r >= 0x20 && r != 0x7f && (r < 0x80 || r > 0x9f) && !invisible(r))
 }
 
-// bidiControl reports the embedding, override and isolate controls
-// (U+202A-U+202E, U+2066-U+2069): a name or a log line carrying one can
-// make the terminal show its text in another order than it is read, so a
-// pasted command would not be the one seen.
-func bidiControl(r rune) bool {
-	return (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
+// invisible reports the format characters a terminal draws as nothing or
+// as a reordering of the text around them:
+//   - the bidi marks, embeddings, overrides and isolates (U+061C,
+//     U+200E-U+200F, U+202A-U+202E, U+2066-U+2069): a name carrying one
+//     shows its text in another order than it is read, so a pasted
+//     command would not be the one seen;
+//   - the zero-width characters (U+200B-U+200D, U+2060-U+2064, U+FEFF),
+//     the soft hyphen (U+00AD), the line and paragraph separators
+//     (U+2028-U+2029), the deprecated format controls (U+206A-U+206F),
+//     the interlinear annotations (U+FFF9-U+FFFB) and the tags
+//     (U+E0000-U+E007F): they make two names that read alike differ, or
+//     hide text in one.
+func invisible(r rune) bool {
+	switch {
+	case r < 0xad:
+		return false
+	case r == 0xad, r == 0x61c, r == 0xfeff:
+		return true
+	}
+	return (r >= 0x200b && r <= 0x200f) || (r >= 0x2028 && r <= 0x202e) ||
+		(r >= 0x2060 && r <= 0x2064) || (r >= 0x2066 && r <= 0x206f) ||
+		(r >= 0xfff9 && r <= 0xfffb) || (r >= 0xe0000 && r <= 0xe007f)
 }
 
 // skipEscape returns the index after the sequence whose ESC ended at i.

@@ -40,7 +40,14 @@ func TestLine(t *testing.T) {
 		{name: "raw 8-bit CSI byte is invalid UTF-8", in: "a\x9b31mb", want: "a�31mb"},
 		{name: "bidi embeddings and overrides are dropped", in: "a\u202ab\u202bc\u202cd\u202de\u202ef", want: "abcdef"},
 		{name: "bidi isolates are dropped", in: "evil\u2066x\u2067y\u2068z\u2069.exe", want: "evilxyz.exe"},
-		{name: "marks next to the bidi ranges are kept", in: "a\u2029b\u206ac", want: "a\u2029b\u206ac"},
+		{name: "zero-width and directional marks are dropped", in: "a\u200bb\u200cc\u200dd\u200ee\u200ff\u061cg", want: "abcdefg"},
+		{name: "line and paragraph separators are dropped", in: "a\u2028b\u2029c", want: "abc"},
+		{name: "invisible operators are dropped", in: "a\u2060b\u2061c\u2062d\u2063e\u2064f", want: "abcdef"},
+		{name: "deprecated format characters are dropped", in: "a\u206ab\u206bc\u206cd\u206de\u206ef\u206fg", want: "abcdefg"},
+		{name: "byte order mark and annotations are dropped", in: "\ufeffa\ufff9b\ufffac\ufffbd", want: "abcd"},
+		{name: "tag characters are dropped", in: "a\U000e0000b\U000e0041c\U000e007fd", want: "abcd"},
+		{name: "soft hyphen is dropped", in: "kube\u00adctl", want: "kubectl"},
+		{name: "neighbours of the dropped ranges are kept", in: "\u00ac\u00ae\u061b\u200a\u2010\u2027\u2030\u205f\u2070\ufefc\ufffc\U000e0100", want: "\u00ac\u00ae\u061b\u200a\u2010\u2027\u2030\u205f\u2070\ufefc\ufffc\U000e0100"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -123,7 +130,7 @@ func TestLineReturnsCleanInputUnchanged(t *testing.T) {
 }
 
 func FuzzLine(f *testing.F) {
-	for _, s := range []string{"", "plain", "\x1b[31mred", "\x1b]52;c;aGk=\a", "\u009b1m", "\xff\xfe", "a\r\nb\x00"} {
+	for _, s := range []string{"", "plain", "\x1b[31mred", "\x1b]52;c;aGk=\a", "\u009b1m", "\xff\xfe", "a\r\nb\x00", "a\u200d\ufeff\U000e0041\u00adb"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, in string) {
@@ -143,6 +150,9 @@ func checkInert(t *testing.T, out string, newlines bool) {
 		case r == '\n' && newlines:
 		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
 			t.Fatalf("control %U in %q", r, out)
+		case r == 0xad, r == 0x61c, r == 0xfeff, r >= 0x200b && r <= 0x200f, r >= 0x2028 && r <= 0x202e,
+			r >= 0x2060 && r <= 0x2064, r >= 0x2066 && r <= 0x206f, r >= 0xfff9 && r <= 0xfffb, r >= 0xe0000 && r <= 0xe007f:
+			t.Fatalf("invisible format character %U in %q", r, out)
 		}
 	}
 }
