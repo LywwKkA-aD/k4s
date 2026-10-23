@@ -2,6 +2,7 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	apiversion "k8s.io/apimachinery/pkg/version"
 
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views/dashboard"
@@ -10,14 +11,29 @@ import (
 // newDashboard builds the dashboard in the active namespace, with what the
 // last dashboard learned, the terminal's focus and colour profile as last
 // reported and the session the footer decorates with, so commands printed
-// in its body paste as the footer's do.
+// in its body paste as the footer's do. When the root asks /version for the
+// header, the dashboard takes that answer instead of asking again.
 func (m Model) newDashboard() views.View {
-	return dashboard.New(m.client, m.loadErr,
+	opts := []dashboard.Option{
 		dashboard.WithNamespace(m.namespace),
 		dashboard.WithMemory(m.dashMem),
 		dashboard.WithBlurred(m.blurred),
 		dashboard.WithColorProfile(m.profile),
-		dashboard.WithSession(m.kubectlSession))
+		dashboard.WithSession(m.kubectlSession),
+	}
+	if m.ownsVersion() {
+		opts = append(opts, dashboard.WithServerVersion(m.startup.ServerVersion))
+	}
+	return dashboard.New(m.client, m.loadErr, opts...)
+}
+
+// tellDashboard hands the server version to the dashboard on screen; one
+// built later takes it from the session (see newDashboard).
+func (m Model) tellDashboard(info *apiversion.Info) (tea.Model, tea.Cmd) {
+	if _, ok := m.current.(dashboard.Model); !ok {
+		return m, nil
+	}
+	return m.forwardToView(dashboard.VersionMsg{Info: info})
 }
 
 // keepDashboard takes v's memory when v is a dashboard about to be

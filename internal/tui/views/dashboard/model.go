@@ -19,6 +19,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
+	apiversion "k8s.io/apimachinery/pkg/version"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
@@ -44,6 +45,8 @@ type Model struct {
 	now     func() time.Time
 	fetch   FetchFunc
 	session kubectl.Session
+	// version is the root's answer to /version (see WithServerVersion).
+	version *apiversion.Info
 
 	mem  Memory
 	poll async.Poller
@@ -90,6 +93,10 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 	cfg := newConfig(opts)
 	now := cfg.now()
 	mem := cfg.mem.adopt(client, cfg.ns, now)
+	if cfg.given && client != nil && !mem.snap.Caps.VersionGiven {
+		mem.snap = mem.snap.GiveVersion("", "")
+	}
+	mem.snap = givenVersion(mem.snap, cfg.version)
 	fetch := mem.fetch
 	if cfg.fetch != nil && client != nil {
 		fetch = cfg.fetch
@@ -104,6 +111,7 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 		now:     cfg.now,
 		fetch:   fetch,
 		session: cfg.session,
+		version: cfg.version,
 		mem:     mem,
 		blurred: cfg.blurred,
 		lastKey: now,

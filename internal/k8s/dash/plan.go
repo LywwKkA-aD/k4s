@@ -17,6 +17,9 @@ type Caps struct {
 	K3s        bool // the server version carries +k3s
 	Etcd       bool // a node carries node-role.kubernetes.io/etcd
 	LBFallback bool // the server rejects the spec.type field selector (before 1.31)
+	// VersionGiven is set when the caller asks /version and hands the
+	// answer over (Snapshot.GiveVersion): the plan never asks it, not on r.
+	VersionGiven bool
 }
 
 // PlanInput is everything Plan needs. It carries no clock: Now is the
@@ -112,6 +115,8 @@ func relevant(e Endpoint, in PlanInput) bool {
 		return in.Caps.K3s && in.Caps.Etcd
 	case ServiceCount:
 		return !in.Caps.LBFallback
+	case Version:
+		return !in.Caps.VersionGiven
 	default:
 		return true
 	}

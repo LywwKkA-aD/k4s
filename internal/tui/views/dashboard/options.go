@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/colorprofile"
+	apiversion "k8s.io/apimachinery/pkg/version"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
@@ -30,6 +31,21 @@ type config struct {
 	session kubectl.Session
 	frames  async.Clock
 	profile colorprofile.Profile
+	// given is set by WithServerVersion; version is its answer, nil while
+	// the root's request runs.
+	given   bool
+	version *apiversion.Info
+}
+
+// WithServerVersion says the root asks /version (for the header) and hands
+// the answer over, so a context costs one request: the dashboard never
+// asks it. info is the answer, or nil while it is on its way; VersionMsg
+// delivers it later. Without this option the dashboard asks itself.
+func WithServerVersion(info *apiversion.Info) Option {
+	return func(c config) config {
+		c.given, c.version = true, info
+		return c
+	}
 }
 
 // WithSession is how a pasted command reaches the cluster k4s shows (see
