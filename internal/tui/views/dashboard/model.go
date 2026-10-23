@@ -184,8 +184,8 @@ func (m Model) Help() []key.Binding {
 	if desc := m.enterHint(); desc != "" {
 		out = append(out, key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", desc)))
 	}
-	if m.logsHint() {
-		out = append(out, m.keys.logs)
+	if desc := m.logsHint(); desc != "" {
+		out = append(out, key.NewBinding(key.WithKeys("l"), key.WithHelp("l", desc)))
 	}
 	if desc := m.zoomHint(); desc != "" {
 		out = append(out, key.NewBinding(key.WithKeys("z"), key.WithHelp("z", desc)))

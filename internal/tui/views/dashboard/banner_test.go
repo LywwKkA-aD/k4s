@@ -61,8 +61,9 @@ func TestNextCycles(t *testing.T) {
 }
 
 // TestEnterOnASuggestion: Enter does what the suggestion's action says;
-// l opens logs only where the suggestion reads them. --previous is not in
-// k4s's logs view yet, so it opens the current logs and says so.
+// l opens logs only where the suggestion reads them. A crash loop's
+// --previous opens the logs view on the previous instance of the crashing
+// container at once: that log has ended, so there is no tail to ask.
 func TestEnterOnASuggestion(t *testing.T) {
 	t.Parallel()
 
@@ -72,6 +73,11 @@ func TestEnterOnASuggestion(t *testing.T) {
 			Target: views.ResourceRef{Kind: "pod", Namespace: ns, Name: name},
 		}
 	}
+	previous := views.LogsRequestMsg{
+		Namespace: "shop", Pods: []string{"payments-worker-6c9f7d8b5-xk2lp"}, Container: "worker",
+		Target:   views.ResourceRef{Kind: "pod", Namespace: "shop", Name: "payments-worker-6c9f7d8b5-xk2lp"},
+		Previous: true,
+	}
 	tests := []struct {
 		name   string
 		downs  int
@@ -79,8 +85,8 @@ func TestEnterOnASuggestion(t *testing.T) {
 		want   any
 		status string
 	}{
-		{name: "logs --previous", downs: 1, key: "enter", want: tail("shop", "payments-worker-6c9f7d8b5-xk2lp", "worker"), status: "--previous"},
-		{name: "l on logs --previous", downs: 1, key: "l", want: tail("shop", "payments-worker-6c9f7d8b5-xk2lp", "worker"), status: "--previous"},
+		{name: "logs --previous", downs: 1, key: "enter", want: previous},
+		{name: "l on logs --previous", downs: 1, key: "l", want: previous},
 		{name: "describe a pod", downs: 2, key: "enter", want: views.DescribeRequestMsg{Kind: "pod", Namespace: "staging", Name: "api-7f6d9c4b8-2mzqt"}},
 		{name: "l on describe", downs: 2, key: "l", status: "no logs"},
 		{name: "logs of a probe", downs: 3, key: "enter", want: tail("monitoring", "grafana-5d8f7c6b9-wq2lx", "grafana")},
@@ -136,7 +142,7 @@ func TestHintsOnSuggestions(t *testing.T) {
 		downs    int
 		enter, l string
 	}{
-		{downs: 1, enter: "logs", l: "logs"},
+		{downs: 1, enter: "previous logs", l: "previous logs"},
 		{downs: 2, enter: "describe"},
 		{downs: 4},
 	}

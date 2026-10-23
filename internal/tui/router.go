@@ -190,8 +190,12 @@ func (m Model) onYAMLRequest(msg views.YAMLRequestMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onLogsRequest(msg views.LogsRequestMsg) (tea.Model, tea.Cmd) {
+	opts := []logs.Option{logs.WithTarget(msg.Logs)}
+	if msg.Previous {
+		opts = append(opts, logs.WithPrevious())
+	}
 	m = m.pushHistory()
-	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods, msg.Tail, msg.Container, logs.WithTarget(msg.Logs)))
+	m = m.swap(logs.New(m.client, msg.Namespace, msg.Pods, msg.Tail, msg.Container, opts...))
 	return m, m.relayoutCmd()
 }
 

@@ -23,10 +23,6 @@ const (
 	nextKeyPrefix = "next/"
 	// dailyKey is the command of the day's row.
 	dailyKey = "daily"
-	// previousNote is the status that goes with logs asked for with
-	// --previous: k4s's logs view streams the current container until
-	// M5.5 lands.
-	previousNote = "k4s shows the current logs; y copies the --previous command"
 )
 
 // suggestions are the banner's suggestions: the next ones, else the
@@ -98,14 +94,22 @@ func (m Model) runSuggestion(sg dash.Suggestion) tea.Cmd {
 	return statusCmd(status.Info, noViewText)
 }
 
-// logsOfSuggestion opens the tail prompt for the suggestion's pod and
-// container, and says that --previous is not in k4s yet.
+// logsOfSuggestion opens the suggestion's pod and container: the tail
+// prompt for its logs, or, for --previous, the logs view on the previous
+// instance at once, since that log has ended and has no tail to ask.
 func logsOfSuggestion(sg dash.Suggestion) tea.Cmd {
-	cmd := logsCmd(sg.Target, sg.Container)
-	if sg.Action == dash.ActionLogsPrevious {
-		return tea.Batch(cmd, statusCmd(status.Info, previousNote))
+	if sg.Action != dash.ActionLogsPrevious {
+		return logsCmd(sg.Target, sg.Container)
 	}
-	return cmd
+	pod := sg.Target
+	req := views.LogsRequestMsg{
+		Namespace: pod.Namespace,
+		Pods:      []string{pod.Name},
+		Container: sg.Container,
+		Target:    views.ResourceRef{Kind: "pod", Namespace: pod.Namespace, Name: pod.Name},
+		Previous:  true,
+	}
+	return func() tea.Msg { return req }
 }
 
 // readsLogs reports a suggestion that Enter and l open logs for.
@@ -119,11 +123,19 @@ func readsLogs(sg dash.Suggestion) bool {
 func suggestionHint(sg dash.Suggestion) string {
 	switch {
 	case readsLogs(sg):
-		return "logs"
+		return logsWord(sg)
 	case sg.Action == dash.ActionDescribe && describable(row{target: sg.Target, placed: sg.Target.Namespace != ""}):
 		return "describe"
 	}
 	return ""
+}
+
+// logsWord is what l and Enter open on a suggestion that reads logs.
+func logsWord(sg dash.Suggestion) string {
+	if sg.Action == dash.ActionLogsPrevious {
+		return "previous logs"
+	}
+	return "logs"
 }
 
 // logsCmd asks the root for the tail prompt of one pod, container "" for

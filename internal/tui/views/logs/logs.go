@@ -111,9 +111,11 @@ type Model struct {
 	// startup is what Init sends besides the first read.
 	startup tea.Cmd
 	// previous is set while the stream shows the previous instance of the
-	// container; opening is the request for it in flight, if any.
-	previous bool
-	opening  opening
+	// container; opening is the request for it in flight, if any;
+	// askPrevious asks for it at the start (WithPrevious).
+	previous    bool
+	opening     opening
+	askPrevious bool
 
 	viewport viewport.Model
 	rawLines []logLine
@@ -232,7 +234,7 @@ func New(client *k8s.Client, namespace string, pods []string, tail int64, contai
 		opt(&m)
 	}
 	m.mint = async.New().Next()
-	return m.begin(pods)
+	return m.begin(pods).startPrevious()
 }
 
 // withSource streams from src instead of the client, for tests.

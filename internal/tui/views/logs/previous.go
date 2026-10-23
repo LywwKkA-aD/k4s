@@ -72,6 +72,26 @@ func (m Model) togglePrevious() (Model, tea.Cmd) {
 	return m, openPrevious(ctx, cancel, m.mint, m.sessionOf(pod), opts)
 }
 
+// WithPrevious opens the view on the previous instance of the pod's
+// container (kubectl logs --previous), as p would right after it opened:
+// the current log streams until the previous one is answered, and stays
+// with a status saying why when there is none.
+func WithPrevious() Option {
+	return func(m *Model) { m.askPrevious = true }
+}
+
+// startPrevious asks for the previous instance when the view was built
+// WithPrevious; the request goes out with Init.
+func (m Model) startPrevious() Model {
+	if !m.askPrevious {
+		return m
+	}
+	m.askPrevious = false
+	next, cmd := m.togglePrevious()
+	next.startup = tea.Batch(next.startup, cmd)
+	return next
+}
+
 // sessionOf is what a session for pod's previous log needs from the view.
 func (m Model) sessionOf(pod string) previousSpec {
 	return previousSpec{src: m.src, namespace: m.namespace, pod: pod, crash: m.crash}

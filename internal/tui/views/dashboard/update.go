@@ -345,14 +345,19 @@ func (m Model) enterHint() string {
 	return ""
 }
 
-// logsHint reports whether l opens logs where the cursor is.
-func (m Model) logsHint() bool {
+// logsHint is the l hint where the cursor is, "" where l opens no logs.
+func (m Model) logsHint() string {
 	if sg, ok := m.suggestionAt(); ok {
-		return readsLogs(sg)
+		if readsLogs(sg) {
+			return logsWord(sg)
+		}
+		return ""
 	}
 	f := m.mem.focus
-	r, ok := f.selected(m.rows(f.panel))
-	return ok && r.pod()
+	if r, ok := f.selected(m.rows(f.panel)); ok && r.pod() {
+		return "logs"
+	}
+	return ""
 }
 
 func statusCmd(level status.Level, text string) tea.Cmd {
