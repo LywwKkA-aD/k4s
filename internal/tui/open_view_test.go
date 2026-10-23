@@ -58,6 +58,30 @@ func TestOpenViewOfNoView(t *testing.T) {
 	requireScreen(t, m, "no k4s view for secrets")
 }
 
+// TestOpenViewRefusesAnInvalidNamespace: the namespace comes from a row
+// the cluster named, past command.Parse; one kubectl would not take opens
+// nothing and says so.
+func TestOpenViewRefusesAnInvalidNamespace(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct{ name, namespace string }{
+		{name: "reads as a flag", namespace: "--server=https://evil"},
+		{name: "upper case", namespace: "Demo"},
+		{name: "escape sequence", namespace: "a\x1b[2Jb"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, _ := tuitest.Drive(t, started(t, tuitest.NewFakeClient(t)), views.OpenViewMsg{Name: "pods", Namespace: tc.namespace})
+			requireView(t, m, "dashboard")
+			requireScreen(t, m, "no k4s view for pods: invalid name: namespace")
+			if got := tuitest.HeaderNamespace(m); got != "ALL" {
+				t.Errorf("header namespace = %q, want ALL", got)
+			}
+		})
+	}
+}
+
 // TestDashboardEnterOpensThePanelsList: Enter on a dashboard panel opens
 // the k4s list its command stands for; Esc comes back to the dashboard.
 func TestDashboardEnterOpensThePanelsList(t *testing.T) {
