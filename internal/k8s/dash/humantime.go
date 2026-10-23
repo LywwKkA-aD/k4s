@@ -1,6 +1,7 @@
 package dash
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ const (
 
 // parseAge reads kubectl's HumanDuration format ("45s", "2m30s", "5d4h",
 // "3y45d"), which server-side Tables use for AGE and the RESTARTS suffix.
+// A cell past what a Duration holds is rejected, not wrapped negative.
 func parseAge(s string) (time.Duration, bool) {
 	if s == "" {
 		return 0, false
@@ -28,10 +30,14 @@ func parseAge(s string) (time.Duration, bool) {
 			return 0, false
 		}
 		unit, ok := ageUnit(s[i])
-		if !ok {
+		if !ok || int64(n) > math.MaxInt64/int64(unit) {
 			return 0, false
 		}
-		total += time.Duration(n) * unit
+		part := time.Duration(n) * unit
+		if total > math.MaxInt64-part {
+			return 0, false
+		}
+		total += part
 		s = s[i+1:]
 	}
 	return total, true

@@ -53,6 +53,51 @@ func TestParseAgeRejectsGarbage(t *testing.T) {
 	}
 }
 
+// TestParseAgeRejectsOverflow: a cell past what a Duration holds is not
+// an age. Read as one it would wrap to a negative age, a pod created in
+// the future.
+func TestParseAgeRejectsOverflow(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name, in string
+	}{
+		{name: "years past int64", in: "9999999999y"},
+		{name: "seconds past int64", in: "9300000000000000000s"},
+		{name: "days past int64", in: "106752d"},
+		{name: "a sum past int64", in: "292y292y"},
+		{name: "a sum past int64 in two units", in: "292y106000d"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if d, ok := parseAge(tc.in); ok {
+				t.Fatalf("parseAge(%q) = %v, want failure", tc.in, d)
+			}
+		})
+	}
+}
+
+func TestParseAgeKeepsTheLargestAge(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		in   string
+		want time.Duration
+	}{
+		{in: "292y", want: 292 * 365 * 24 * time.Hour},
+		{in: "106751d", want: 106751 * 24 * time.Hour},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			t.Parallel()
+			if d, ok := parseAge(tc.in); !ok || d != tc.want {
+				t.Fatalf("parseAge(%q) = %v, %v; want %v", tc.in, d, ok, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseRestarts(t *testing.T) {
 	t.Parallel()
 
