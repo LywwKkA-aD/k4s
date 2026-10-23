@@ -23,6 +23,19 @@ func (m *Manager) recoverSupervisor(id string, attempt uint64, sess *k8s.PortFor
 	m.fail(id, attempt, sess, internalError(), k8s.TunnelError{})
 }
 
+// recoverStart is recoverSupervisor for Start, which callers run on their
+// own goroutines: a panic while the tunnel opens ends this attempt with
+// the internal error, on the forward and in *err.
+func (m *Manager) recoverStart(id string, attempt uint64, err *error) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	m.logf("port-forward start of forward %s panicked: %v\n%s", id, r, debug.Stack())
+	*err = internalError()
+	m.fail(id, attempt, nil, *err, k8s.TunnelError{})
+}
+
 // internalError is what a forward shows after a bug in k4s ended it.
 func internalError() error {
 	return fmt.Errorf("%w (see %s)", k8s.ErrInternal, logPath())

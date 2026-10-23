@@ -16,7 +16,7 @@ import (
 // returned error is the same one the forward's status shows, except
 // ErrStopping while the Manager is Blocked, which leaves the forward as it
 // was.
-func (m *Manager) Start(ctx context.Context, id string) error {
+func (m *Manager) Start(ctx context.Context, id string) (err error) {
 	if err := m.Blocked(); err != nil {
 		return err
 	}
@@ -24,6 +24,7 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	defer m.recoverStart(id, attempt, &err)
 
 	sess, err := m.openTunnel(ctx, fwd)
 	if err != nil {

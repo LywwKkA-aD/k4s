@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 )
 
@@ -90,5 +92,42 @@ func TestLogPath(t *testing.T) {
 		if got := logPath(); got != tc.want {
 			t.Errorf("XDG_STATE_HOME=%q: logPath = %q, want %q", tc.stateHome, got, tc.want)
 		}
+	}
+}
+
+// panicTunneler panics as it opens a tunnel, the way a bug in client-go's
+// dial or in k4s's resolve would.
+type panicTunneler struct{}
+
+func (panicTunneler) StartPodPortForward(context.Context, string, string, uint16, uint16) (*k8s.PortForwardSession, error) {
+	panic("dial broke")
+}
+
+func (panicTunneler) ResolveServiceToPod(context.Context, string, string, int32) (*corev1.Pod, int32, error) {
+	panic("resolve broke")
+}
+
+func (panicTunneler) ResolveDeploymentToPod(context.Context, string, string) (string, error) {
+	panic("resolve broke")
+}
+
+// Start runs on a goroutine Bubble Tea does not guard: a panic while it
+// opens the tunnel ends that start with an internal error on the forward
+// and the stack in the k4s log, not the process.
+func TestAStartPanicBecomesAnInternalError(t *testing.T) {
+	t.Parallel()
+	log := &panicLog{}
+	m := newTestManager(t, deps{tunnel: panicTunneler{}, logf: log.logf})
+	mustRegister(t, m, testForward("f1", "pod", 18090))
+
+	err := m.Start(context.Background(), "f1")
+	if !errors.Is(err, k8s.ErrInternal) {
+		t.Fatalf("Start = %v, want the internal error", err)
+	}
+	if a := waitStatus(t, m, "f1", StatusError); !errors.Is(a.Err, k8s.ErrInternal) {
+		t.Errorf("forward Err = %v, want the internal error", a.Err)
+	}
+	if got := log.text(); !strings.Contains(got, "dial broke") || !strings.Contains(got, "goroutine") {
+		t.Errorf("the log lacks the panic and its stack:\n%s", got)
 	}
 }
