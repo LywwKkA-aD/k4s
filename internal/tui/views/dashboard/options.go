@@ -62,9 +62,10 @@ func WithServerVersion(info *apiversion.Info) Option {
 	}
 }
 
-// WithServerVersionError is WithServerVersion(nil) for a root whose
-// /version request failed with err: the dashboard shows the failure as it
-// shows one of its own requests' until VersionMsg brings the answer.
+// WithServerVersionError hands over the failure of the root's /version
+// request (see WithServerVersion): the dashboard shows it as it shows a
+// failure of its own requests, until VersionMsg brings the answer. A nil
+// err is no failure.
 func WithServerVersionError(err error) Option {
 	return func(c config) config {
 		c.given, c.versionErr = true, err

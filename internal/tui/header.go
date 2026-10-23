@@ -34,6 +34,9 @@ type identity struct {
 	// version fences the reply to the header's /version request: one sent
 	// for a client k4s has since switched away from is dropped.
 	version async.Token
+	// versionErr is that request's last failure while it has no answer,
+	// for a dashboard built later (see newDashboard).
+	versionErr error
 }
 
 func newIdentity(c *k8s.Client) identity {

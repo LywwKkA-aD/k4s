@@ -13,7 +13,8 @@ import (
 // reported and the session the footer decorates with, so commands printed
 // in its body paste as the footer's do. When the root asks /version for the
 // header, the dashboard takes that answer instead of asking again; the
-// distribution the root detected words the dashboard's hints, as top's.
+// distribution the root detected words the dashboard's hints, as top's. A
+// failed request is handed over too, so the dashboard shows the failure.
 func (m Model) newDashboard() views.View {
 	opts := []dashboard.Option{
 		dashboard.WithNamespace(m.namespace),
@@ -24,19 +25,22 @@ func (m Model) newDashboard() views.View {
 		dashboard.WithDistro(m.startup.Distro),
 	}
 	if m.ownsVersion() {
-		opts = append(opts, dashboard.WithServerVersion(m.startup.ServerVersion))
+		opts = append(opts, dashboard.WithServerVersion(m.startup.ServerVersion), dashboard.WithServerVersionError(m.ident.versionErr))
 	}
 	return dashboard.New(m.client, m.loadErr, opts...)
 }
 
-// tellDashboard hands the server version and the distribution detected
-// from it to the dashboard on screen; one built later takes both from the
-// session (see newDashboard).
-func (m Model) tellDashboard(info *apiversion.Info) (tea.Model, tea.Cmd) {
-	if _, ok := m.current.(dashboard.Model); !ok {
+// tellDashboard hands the server version, or err when the request for it
+// failed, and the distribution detected to the dashboard on screen; one
+// built later takes them from the session (see newDashboard).
+func (m Model) tellDashboard(info *apiversion.Info, err error) (Model, tea.Cmd) {
+	d, ok := m.current.(dashboard.Model)
+	if !ok {
 		return m, nil
 	}
-	return m.forwardToView(dashboard.VersionMsg{Info: info, Distro: m.startup.Distro})
+	var cmd tea.Cmd
+	m.current, cmd = d.Update(dashboard.VersionMsg{Info: info, Distro: m.startup.Distro, Err: err})
+	return m, cmd
 }
 
 // keepDashboard takes v's memory when v is a dashboard about to be
