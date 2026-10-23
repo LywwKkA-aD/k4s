@@ -3,7 +3,6 @@ package pods
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -158,7 +157,7 @@ func (m Model) resolving() bool {
 // (offered).
 func (m Model) resolve(tok async.Token, t podTarget, a action) tea.Cmd {
 	c := m.client
-	return async.Run(tok, async.DefaultTimeout, func(ctx context.Context) ([]string, error) {
+	return async.Run(tok, async.DefaultTimeout, func(ctx context.Context) (k8s.Containers, error) {
 		cs, err := c.PodContainers(ctx, t.namespace, t.name)
 		if err != nil {
 			return nil, err
@@ -167,46 +166,18 @@ func (m Model) resolve(tok async.Token, t podTarget, a action) tea.Cmd {
 	})
 }
 
-// initMark heads an init container's or native sidecar's label, as the
-// container picker shows it. A container name is a DNS label, which has no
-// colon, so a label reads back as one name only.
-const initMark = "init:"
-
-// offered labels the containers a offers, in picker order: logs offer
-// every container, since a pod stuck in Init says why in its init
-// containers' logs; exec offers the ones a shell runs in, the app
-// containers and native sidecars; port-forward needs none.
-func offered(a action, cs k8s.Containers) []string {
+// offered is the containers a offers, in picker order: logs offer every
+// container, since a pod stuck in Init says why in its init containers'
+// logs; exec offers the ones a shell runs in, the app containers and
+// native sidecars; port-forward needs none.
+func offered(a action, cs k8s.Containers) k8s.Containers {
 	switch a {
 	case actLogs:
+		return cs
 	case actExec:
-		cs = cs.ForExec()
-	default:
-		return nil
+		return cs.ForExec()
 	}
-	out := make([]string, 0, len(cs))
-	for _, c := range cs {
-		if c.Init {
-			out = append(out, initMark+c.Name)
-			continue
-		}
-		out = append(out, c.Name)
-	}
-	return out
-}
-
-// unmark reads offered's labels back: every container's name, in order,
-// and the names of those marked init.
-func unmark(labels []string) (names, init []string) {
-	names = make([]string, 0, len(labels))
-	for _, l := range labels {
-		name, marked := strings.CutPrefix(l, initMark)
-		names = append(names, name)
-		if marked {
-			init = append(init, name)
-		}
-	}
-	return names, init
+	return nil
 }
 
 func (m Model) noticeAfter(tok async.Token, a action) tea.Cmd {
@@ -227,7 +198,7 @@ func (m Model) onResolving(msg resolvingMsg) tea.Cmd {
 
 // onResolved takes the reply of the action it answers; a reply for a
 // replaced lookup, or for another view, answers none and is dropped.
-func (m Model) onResolved(msg async.Result[[]string]) (Model, tea.Cmd) {
+func (m Model) onResolved(msg async.Result[k8s.Containers]) (Model, tea.Cmd) {
 	for a := range actionCount {
 		acts, ok := m.acts.End(a.key(), msg.Token)
 		if !ok {
@@ -242,14 +213,14 @@ func (m Model) onResolved(msg async.Result[[]string]) (Model, tea.Cmd) {
 // dispatch turns a lookup into the request it was for. A single container
 // skips the picker. When the cursor has left the row meanwhile the prompt
 // still opens, marked Detached, so the user sees whose logs they get.
-func (m Model) dispatch(a action, t podTarget, res async.Result[[]string]) tea.Cmd {
+func (m Model) dispatch(a action, t podTarget, res async.Result[k8s.Containers]) tea.Cmd {
 	if res.Err != nil {
 		return lookupFailed(a, t, res.Err)
 	}
 	if a == actForward {
 		return send(views.ForwardRequestMsg{Kind: "pod", Namespace: t.namespace, Name: t.name})
 	}
-	containers, init := unmark(res.Value)
+	containers, init := res.Value.Names(), res.Value.InitNames()
 	if len(containers) == 0 {
 		return statusCmd(status.Warn, "pod "+t.name+" has no containers")
 	}

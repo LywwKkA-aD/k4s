@@ -108,7 +108,7 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		return m.onTick(msg)
 	case async.Result[[]k8s.Pod]:
 		return m.onList(msg)
-	case async.Result[[]string]:
+	case async.Result[k8s.Containers]:
 		return m.onResolved(msg)
 	case resolvingMsg:
 		return m, m.onResolving(msg)

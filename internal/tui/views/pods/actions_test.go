@@ -3,6 +3,7 @@ package pods_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stesting "k8s.io/client-go/testing"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async/asynctest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
@@ -184,6 +187,38 @@ func TestLookupOffersContainersByAction(t *testing.T) {
 			_, out := tuitest.Drive(t, mounted(t, c, demo), tuitest.Press(tc.key))
 			if reqs := tuitest.Requests(out); len(reqs) != 1 || !tuitest.Contains(reqs, tc.want) {
 				t.Fatalf("want %+v, got:\n%s", tc.want, tuitest.Describe(reqs))
+			}
+		})
+	}
+}
+
+// TestLookupRepliesWithTheContainers: the lookup's reply is the typed
+// containers the action offers, so nothing reads an init flag out of a
+// name.
+func TestLookupRepliesWithTheContainers(t *testing.T) {
+	t.Parallel()
+
+	app := k8s.Container{Name: "app"}
+	shipper := k8s.Container{Name: "log-shipper", Init: true, Sidecar: true}
+	migrate := k8s.Container{Name: "migrate", Init: true}
+	cases := []struct {
+		key  string
+		want k8s.Containers
+	}{
+		{key: "l", want: k8s.Containers{app, shipper, migrate}},
+		{key: "e", want: k8s.Containers{app, shipper}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			t.Parallel()
+			c := tuitest.NewFakeClient(t, tuitest.WithObjects(tuitest.Namespace(demo), initPod("init-0", true)))
+			_, out := tuitest.Drive(t, mounted(t, c, demo), tuitest.Press(tc.key))
+			reply, ok := tuitest.Find[async.Result[k8s.Containers]](out)
+			if !ok {
+				t.Fatalf("no typed lookup reply:\n%s", tuitest.Describe(out))
+			}
+			if reply.Err != nil || !slices.Equal(reply.Value, tc.want) {
+				t.Errorf("reply = %+v, %v; want %+v", reply.Value, reply.Err, tc.want)
 			}
 		})
 	}
