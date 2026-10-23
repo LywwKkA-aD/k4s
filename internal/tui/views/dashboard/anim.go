@@ -114,10 +114,10 @@ func (mo motion) beatGlyph(beat int) string {
 }
 
 // still reports motion switched off: a terminal without colour (the
-// ASCII or NoTTY profile), a terminal in the background, or renders that
-// ran slow this session.
+// ASCII or NoTTY profile), a terminal in the background, or renders of
+// this dashboard that run slow, for as long as they do.
 func (m Model) still() bool {
-	return stillProfile(m.profile) || m.blurred || m.mem.slowView
+	return stillProfile(m.profile) || m.blurred || m.perf.slow()
 }
 
 func stillProfile(p colorprofile.Profile) bool {
@@ -146,9 +146,6 @@ func (m Model) onFrame(msg animFrameMsg) (views.View, tea.Cmd) {
 		return m, nil
 	}
 	m.mo.armed = async.Token{}
-	if m.perf.slow() {
-		m.mem.slowView = true
-	}
 	if m.still() {
 		m.mo = m.mo.halt()
 		return m, nil

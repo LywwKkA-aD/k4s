@@ -37,8 +37,6 @@ type Memory struct {
 	changed  time.Time
 	// topByMemory is panel 7 sorted by memory (s), not CPU.
 	topByMemory bool
-	// slowView is set once renders ran slow: motion stays off until :ctx.
-	slowView bool
 	// beat is the heartbeat's step: one per snapshot that changed.
 	beat int
 	// fresh holds the problem rows that appeared after the first snapshot,
