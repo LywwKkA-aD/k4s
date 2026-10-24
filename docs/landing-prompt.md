@@ -76,27 +76,29 @@ osmosis**.
 
 **MVP feature set (already shipped):**
 
-- Pods, namespaces, deployments, services — list views
-- `describe` view in kubectl style with events
-- Multi-pod streaming logs with per-pod FNV colour tag, search,
-  smart auto-follow, two-step clear
+- A dashboard home screen: a verdict line, `▸ next` suggestions and
+  numbered panels, each with its read-only `kubectl` command
+- Pods, namespaces, deployments, services, events, nodes — list views
+- `describe` through `kubectl describe`, with a built-in fallback
+- YAML view of the selected object (`o`)
+- Multi-pod streaming logs with per-pod colour tags, search,
+  smart auto-follow, two-step clear; new pods of a rollout join
 - `exec` into a pod via `kubectl exec`
 - `top` for pods and nodes via the metrics.k8s.io REST API
-- Live `/` substring filter on every list view
+- Live `/` substring filter in the resource lists
 - Kubeconfig context switcher
-- 5s auto-refresh (`w` toggle, footer shows `--watch`)
+- 5s auto-refresh (`w` toggle; the key hints show the cadence, footer
+  commands carry no `--watch`)
 - Centred help popup on `?`
 - Footer hints with the `kubectl` equivalent of every shortcut
 
 **Roadmap (in order):**
 
 1. Resource actions — delete pod / scale deployment / rollout restart
-2. YAML view with chroma syntax highlighting
-3. Events view (cluster-wide and per-resource)
-4. "All containers" option in the logs picker
-5. ConfigMaps and Secrets list views
-6. Homebrew tap (`brew install LywwKkA-aD/tap/k4s`)
-7. Linux deb/rpm packages
+2. "All containers" option in the logs picker
+3. ConfigMaps and Secrets list views
+4. Homebrew tap (`brew install LywwKkA-aD/tap/k4s`)
+5. Linux deb/rpm packages
 
 ---
 
@@ -210,21 +212,21 @@ Three small links beneath the visual:
 Each card: lucide icon + monospace title + 2-line description.
 
 1. **Multi-pod log streaming** — Stream every replica at once with
-   per-pod FNV colour tags, search, smart auto-follow, two-step clear.
-2. **Live filter** — `/` substring filter on any list view. Works in
-   pods, namespaces, deployments, services, contexts.
+   per-pod colour tags, search, smart auto-follow, two-step clear.
+2. **Live filter** — `/` substring filter in the resource lists. Works in
+   pods, namespaces, deployments, services, events, nodes.
 3. **kubectl footer hints** — Every shortcut prints its CLI equivalent.
    Learn `kubectl` by osmosis.
-4. **Describe view** — kubectl-style sections including events,
-   scrollable, syntax-aware.
+4. **Describe view** — runs `kubectl describe` (built-in fallback
+   without kubectl), scrollable, `/` search.
 5. **Exec** — Press `e`, drop into the pod shell via `tea.ExecProcess`.
    No reconnect dance.
 6. **Top** — `kubectl top pods/nodes` via the metrics.k8s.io REST API.
    No extra dependency on `k8s.io/metrics`.
 7. **Context switcher** — `:ctx` jumps between kubeconfig contexts. Drops
    stale navigation history automatically.
-8. **Watch** — 5s auto-refresh on every list view. Footer shows
-   `--watch`. Toggle with `w`.
+8. **Watch** — 5s auto-refresh, slower on a slow API. The key hints
+   show the cadence; footer commands carry no `--watch`. Toggle with `w`.
 9. **Centred help popup** — `?` lists global, view-specific and command
    bar bindings. No memorising the cheat sheet.
 
@@ -246,7 +248,7 @@ KUBECONFIG=$(pwd)/.kube/config make run
 
 **Homebrew (coming soon):**
 ```bash
-# brew install LywwKkA-aD/tap/k4s   # planned for v0.2
+# brew install LywwKkA-aD/tap/k4s   # planned
 ```
 
 Each code block has a copy-to-clipboard button (small, top-right corner,
@@ -282,12 +284,11 @@ Voice: first-person, direct, no fluff. Themes:
   forever.
 - I wanted a hybrid: full TUI for speed, but every shortcut surfaces the
   underlying `kubectl` so I leave each session knowing one more command.
-- Bubble Tea is a joy to write in. The Action abstraction makes every
-  operation auditable — a future where every Action emits an audit
-  event is on the roadmap.
-- k4s is opinionated. It picks what to expose, when to flash a
-  `--watch`, when to drop you back to home. The opinion *is* the
-  product.
+- Bubble Tea is a joy to write in. Every action is a `kubectl` argv:
+  the footer shows it, `y` copies it, and exec and describe run exactly
+  that command, never through a shell.
+- k4s is opinionated. It picks what to expose, how often to poll, when
+  to drop you back to home. The opinion *is* the product.
 - Made for k3s and k8s alike. Footers stay the same.
 
 End with: *"k4s won't replace k9s. It's for the people who use a TUI but
@@ -302,8 +303,8 @@ NAMESPACE   NAME                   READY   STATUS    RESTARTS   AGE
 k4s-demo    nginx-58bcfc684b-bcqpk 1/1     Running   0          14h
 k4s-demo    nginx-58bcfc684b-r56bp 1/1     Running   0          14h
 
-q quit · ^c quit · esc back · : command · ? help · enter describe · l logs
-≈ kubectl get pods -n k4s-demo --watch
+q home · ^c quit · esc back · : command · ? help · y copy · enter describe · l logs
+kubectl get pods -n k4s-demo
 ```
 
 Caption: *"Press `:ns` and the footer flashes `kubectl get namespaces`.
@@ -337,18 +338,17 @@ for accessibility + SEO.
 | ------------------------------------- | ------------ | ----------- | ----------- | -------- |
 | Single static binary                  | ✅           | ✅          | ✅          | ✅       |
 | Multi-pod log streaming               | ✅           | ✅          | ✅          | manual   |
-| Live `/` filter on every view         | ✅           | ✅          | partial     | grep     |
+| Live `/` filter in list views         | ✅           | ✅          | partial     | grep     |
 | **`kubectl` equivalent in footer**    | **✅ unique**| ❌          | ❌          | n/a      |
 | Container picker for exec / logs      | ✅           | ✅          | partial     | manual   |
 | Auto-refresh watch                    | ✅           | ✅          | ✅          | `-w`     |
 | Built-in `top` (metrics.k8s.io)       | ✅           | ✅          | ❌          | ✅       |
 | kubeconfig context switcher           | ✅           | ✅          | ✅          | ✅       |
-| Action abstraction (auditable verbs)  | ✅           | ❌          | ❌          | n/a      |
 | Maturity                              | early        | mature      | mature      | very mature |
 | Resource actions (delete/scale)       | roadmap      | ✅          | ✅          | ✅       |
 | Plugin / extension system             | ❌           | ✅          | ❌          | ✅       |
 | MIT licensed                          | ✅ MIT       | Apache 2.0  | MIT         | Apache 2.0 |
-| Footprint (binary)                    | ~38 MB       | ~50 MB      | ~25 MB      | varies   |
+| Footprint (binary)                    | ~35 MB       | ~50 MB      | ~25 MB      | varies   |
 
 Caption: *"Both k9s and lazykube are excellent — k4s exists for the niche
 where 'I want a TUI **and** I want to learn kubectl' overlap."*
@@ -423,17 +423,23 @@ heading; emit one `Question` JSON-LD entry per item.
 
 **Installation**
 
-8. **How do I install k4s on macOS?** — `go install
+8. **How do I install k4s on macOS?** — Download the prebuilt binary
+   from the GitHub releases page, or `go install
    github.com/LywwKkA-aD/k4s/cmd/k4s@latest` — you'll need Go 1.26+.
    A Homebrew tap is on the roadmap.
-9. **How do I install k4s on Linux?** — Same `go install` command.
-   Linux `.deb` and `.rpm` packages are on the roadmap.
-10. **Does k4s work on Windows?** — Untested. Bubble Tea supports
-    Windows terminals, but k4s has only been verified on macOS and Linux.
-11. **Does k4s require kubectl on PATH?** — Only for `exec` and the
-    "coming soon" Homebrew install. Pure TUI usage (lists, describe,
-    logs, top) goes through `client-go` directly and does not need
-    `kubectl` installed.
+9. **How do I install k4s on Linux?** — The same two ways; prebuilt
+   binaries cover amd64, arm64 and armv7 (Raspberry Pi). Linux `.deb`
+   and `.rpm` packages are on the roadmap.
+10. **Does k4s work on Windows?** — Every release since v1.1.5 ships a
+    Windows amd64 binary. Development and testing happen mostly on macOS
+    and Linux. A terminal that does not report its background gets the
+    dark theme; set `K4S_THEME=light` on a light one.
+11. **Does k4s require kubectl on PATH?** — For `exec`, and for the
+    login a credential plugin may ask for after `:ctx`, yes (`k3s
+    kubectl` works too). Describe uses it when it is there and falls
+    back to a built-in describer for pods, deployments and services.
+    Lists, logs, YAML, top and the dashboard go through `client-go`
+    directly.
 
 **Compatibility**
 
@@ -443,10 +449,14 @@ heading; emit one `Question` JSON-LD entry per item.
 13. **Does k4s support multiple kubeconfig contexts?** — Yes. Press
     `:ctx` to switch between contexts. k4s drops stale navigation history
     when you switch — list views are rebuilt against the new cluster.
-14. **Which Kubernetes versions does k4s support?** — k4s uses
-    `client-go` v0.36, which supports Kubernetes API versions 1.27
-    through 1.30. Newer and older versions usually work but are not
-    explicitly tested.
+14. **Which Kubernetes versions does k4s support?** — k4s is built on
+    `client-go` v0.37 (Kubernetes 1.37) and developed against k3s
+    v1.36. It reads stable APIs (core, apps and batch v1, server-side
+    Tables) plus metrics.k8s.io for `top`, so older clusters usually
+    work; where a server lacks something, such as the Service
+    `spec.type` field selector before 1.31 or SelfSubjectReview before
+    1.28, the dashboard falls back or leaves that row out. Versions other
+    than the development cluster's are not explicitly tested.
 
 **Design**
 
@@ -454,7 +464,7 @@ heading; emit one `Question` JSON-LD entry per item.
     Every TUI action shows you the `kubectl` command it would have run
     in the footer. Use the TUI for speed; absorb the CLI as a
     side-effect.
-16. **Why is the binary 38 MB?** — Most of it is `client-go` and its
+16. **Why is the binary about 35 MB?** — Most of it is `client-go` and its
     transitive dependencies. Static Go binaries trade size for zero
     runtime requirements.
 
@@ -465,7 +475,7 @@ heading; emit one `Question` JSON-LD entry per item.
 ## Page 5 — `/changelog/` (versions + roadmap)
 
 **`<title>`** — `k4s changelog & roadmap — release history | k4scli.io`
-**Meta description** — `Release notes and public roadmap for k4s, the kubectl-aware Kubernetes TUI. Resource actions, YAML view, events view and more coming soon.`
+**Meta description** — `Release notes and public roadmap for k4s, the kubectl-aware Kubernetes TUI. Resource actions, ConfigMaps and Secrets, a Homebrew tap and more coming soon.`
 **Canonical** — `https://k4scli.io/changelog/`
 **JSON-LD** — `Article` (latest release as a representative entry)
 
@@ -481,30 +491,27 @@ heading; emit one `Question` JSON-LD entry per item.
 Vertical timeline (left rail with dots in `--lavender`).
 
 ```
-2026-05-08  v0.1 release candidate
-            ─ help popup on '?'
-            ─ live '/' filter on every list view
-            ─ kubeconfig context switcher
-            ─ kubectl top pods / nodes view
+next        v1.2.0
+            ─ dashboard: verdict, next suggestions, numbered panels
+            ─ YAML view (o), events and nodes views
+            ─ logs that follow rollouts and say why a stream ended
+            ─ describe through kubectl, exit recap, high-contrast theme
 
-2026-05-07  MVP feature complete
-            ─ pods, namespaces, deployments, services
-            ─ kubectl-style describe + events
-            ─ multi-pod log streaming
-            ─ container picker, exec, auto-refresh
-
-2026-05-06  Project scaffold
-            ─ initial Bubble Tea TUI shell
-            ─ quality gate (golangci-lint v2 + govulncheck)
-            ─ docker-compose k3s + seed manifests
+2026-10-20  v1.1.5 — nothing drawn over the TUI, readable themes,
+            prebuilt binaries
+2026-10-20  v1.1.4 — security fixes, CI quality gate
+2026-08-25  v1.1.2, v1.1.3 — multi-pod log and port-forward fixes
+2026-05-11  v1.1.0, v1.1.1 — port-forward, logs from a service
+2026-05-08  v1.0.0 — first release: lists, describe, multi-pod logs,
+            exec, top, filter, context switcher, help
 ```
 
 #### 5.3 Roadmap — card grid (4 cards)
 
 1. **Resource actions** — delete pod, scale deployment, rollout restart.
-2. **YAML view** — raw manifest with chroma syntax highlighting.
-3. **Events view** — cluster-wide and per-resource.
-4. **ConfigMaps & Secrets** — read-only list views first.
+2. **ConfigMaps & Secrets** — read-only list views first.
+3. **Homebrew tap** — `brew install LywwKkA-aD/tap/k4s`.
+4. **Session history** — export the session's commands as a script.
 
 Each card has a `lucide-circle-dashed` icon; on hover the icon swaps to
 `lucide-circle-dot` with the `--lavender` accent.
@@ -600,10 +607,10 @@ Sitemap: https://k4scli.io/sitemap.xml
   "name": "k4s",
   "alternateName": ["k4scli", "k4s cli"],
   "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "macOS, Linux",
+  "operatingSystem": "macOS, Linux, Windows",
   "description": "Open-source TUI for Kubernetes and k3s. Every keystroke prints its kubectl equivalent in the footer. A k9s alternative.",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-  "softwareVersion": "0.1",
+  "softwareVersion": "1.2.0",
   "license": "https://opensource.org/licenses/MIT",
   "url": "https://k4scli.io/",
   "downloadUrl": "https://github.com/LywwKkA-aD/k4s/releases",
