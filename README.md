@@ -236,7 +236,7 @@ every key goes to it: `q`, `y` and `o` are just letters there.
 | `←` / `→`             | neighbouring panel                                           |
 | `↑` / `↓` (`k` / `j`) | rows of the focused panel; in the banner, the `▸ next` suggestions |
 | `enter`               | on a panel, its k4s view (`:pods`, `:deploy`, `:events` with only the warnings, ...); on a row, describe its object or open its list; on a suggestion, what it says; on the verdict, the most severe panel |
-| `l`                   | logs of a pod row; on a crash loop suggestion, the previous instance's |
+| `l`                   | logs of a pod row, or of a deployment row's pods; on a crash loop suggestion, the previous instance's |
 | `z`                   | zoom the focused panel to the whole screen, and back         |
 | `s`                   | in panel 7, sort the top pods by CPU or memory               |
 | `r`                   | refresh every source now                                     |

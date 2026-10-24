@@ -49,8 +49,9 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
   - The footer shows the kubectl command of the focused panel or row, and
     `y` copies it. Enter opens the matching k4s view (`:pods`, `:deploy`,
     `:events` with only the warnings, `:nodes`, `:ns`, `:svc`, `:top`) or
-    describes the row's object; `l` opens a pod row's logs, the previous
-    instance's for a crash loop suggestion; `o` opens the row's YAML; `z`
+    describes the row's object; `l` opens the logs of a pod row or of a
+    deployment row's pods, and the previous instance's for a crash loop
+    suggestion; `o` opens the row's YAML; `z`
     zooms a panel. `tab`/`shift+tab`, `0`-`7`, `←`/`→` and `↑`/`↓` move the
     focus, and `?` lists each panel with its key and command.
   - What k4s works out itself is marked `≈`: CPU and memory history, the
@@ -118,13 +119,18 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
     does not follow new pods, and the help says so.
   - Every stream that ends says why: the pod was deleted, completed or
     failed (`Evicted`, `Error (exit 1)`), its container restarted (the
-    stream reattaches), exited (it waits for the restart), or the stream
-    dropped (it reconnects after 1, 2, 4, 8, then 30 s without repeating a
-    line). The bare `stream closed` line is gone.
+    stream reattaches), exited (it waits for the restart), an init
+    container completed, or the stream dropped (it reconnects after 1, 2,
+    4, 8, then 30 s without repeating a line). The bare `stream closed`
+    line is gone.
   - `p` shows the previous instance of a single pod's container
     (`kubectl logs --previous`); `p` again goes back.
   - The container picker lists init containers and native sidecars as
-    `init:<name>`.
+    `init:<name>`, for a pod, a deployment and a service alike. A pod
+    that joins a deployment's or service's stream without the picked
+    container says which one it streams instead.
+  - The logs title names what it streams: `pod · web-1 / nginx · logs`,
+    `deployment · web · logs · 3 pods`.
   - At most 50 pods stream at once, and the footer asks kubectl for no
     more.
 - `s` in `:top` sorts by memory and back; the footer command always carries
@@ -222,6 +228,8 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
 
 ### Fixed
 
+- Enter on an event of a cluster-scoped object (a node, a namespace,
+  a PersistentVolume, ...) describes it without `-n`.
 - A panic in a log stream or a port-forward no longer ends k4s with the
   terminal in raw mode: that stream or forward ends with
   `internal error (see ~/.local/state/k4s/k4s.log)`, and the stack goes to
