@@ -314,6 +314,33 @@ func TestRunnerValidatesBeforeLookingUp(t *testing.T) {
 	}
 }
 
+// A flag left without its value is named quoted, as Go would print it.
+func TestRunnerNamesADanglingFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		flag string
+		want string
+	}{
+		{"-n", `invalid name: "-n" has no value`},
+		{"--namespace", `invalid name: "--namespace" has no value`},
+		{"-c", `invalid name: "-c" has no value`},
+		{"--container", `invalid name: "--container" has no value`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.flag, func(t *testing.T) {
+			t.Parallel()
+			r := kubectl.NewRunner(kubectl.RunnerConfig{LookPath: func(string) (string, error) {
+				return "/usr/bin/kubectl", nil
+			}})
+			_, err := r.Command(kubectl.New("logs", "web", tt.flag))
+			if !errors.Is(err, kubectl.ErrInvalidName) || err.Error() != tt.want {
+				t.Fatalf("Command() error = %v, want %s", err, tt.want)
+			}
+		})
+	}
+}
+
 // The flags k4s writes itself pass: -it is not read as -i plus a value,
 // and a valid attached value is checked, not refused.
 func TestRunnerAcceptsValidFlagForms(t *testing.T) {
