@@ -1,17 +1,22 @@
 package logs
 
 import (
+	"context"
 	"io"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ktesting "k8s.io/client-go/testing"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/k8s/k8stest"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/tuitest"
 )
@@ -133,5 +138,121 @@ func TestShortNames(t *testing.T) {
 		if got := shortHash(in); got != want {
 			t.Errorf("shortHash(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// migrateDeployment is the deployment web whose pods run the init
+// container migrate before app.
+func migrateDeployment() *appsv1.Deployment {
+	d := webDeployment()
+	d.Spec.Template.Spec.InitContainers = []corev1.Container{{Name: "migrate"}}
+	return d
+}
+
+// withMigrate gives p the init container migrate, running.
+func withMigrate(p *corev1.Pod) *corev1.Pod {
+	p.Spec.InitContainers = []corev1.Container{{Name: "migrate"}}
+	p.Status.InitContainerStatuses = []corev1.ContainerStatus{{
+		Name: "migrate", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: created}},
+	}}
+	return p
+}
+
+// followMigrate opens the logs of kind web in shop on the init container
+// migrate, as the picker leaves them.
+func followMigrate(t *testing.T, kind string, objs ...runtime.Object) *rig {
+	t.Helper()
+	c, cs := k8stest.NewFakeClient(objs...)
+	target, err := c.ResolveLogTarget(context.Background(), kind, shop, "web")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	return mountContainer(t, c, cs, "migrate", target.PodNames(), WithTarget(target))
+}
+
+// said counts the statuses so far that contain text.
+func (r *rig) said(text string) int {
+	n := 0
+	for _, s := range r.statuses() {
+		if strings.Contains(s, text) {
+			n++
+		}
+	}
+	return n
+}
+
+// TestAPodWithoutThePickedContainerSaysItFellBack: a pod that lacks the
+// container picked, one that joins or a service's pod other than the one
+// the picker read, streams its first app container, and the view says so
+// once.
+func TestAPodWithoutThePickedContainerSaysItFellBack(t *testing.T) {
+	t.Parallel()
+
+	const want = "pod web-h1-b has no container migrate: streaming app"
+	cases := []struct {
+		name string
+		open func(t *testing.T) *rig
+	}{
+		{
+			name: "a pod that joins",
+			open: func(t *testing.T) *rig {
+				r := followMigrate(t, k8s.LogKindDeployment, migrateDeployment(), webReplicaSet("h1", "1"), withMigrate(webPod("web-h1-a", "h1", 0)))
+				r.add(webPod("web-h1-b", "h1", 60))
+				r.advance(followInterval)
+				return r
+			},
+		},
+		{
+			name: "a service's other pod",
+			open: func(t *testing.T) *rig {
+				svc := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: shop},
+					Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "web"}},
+				}
+				return followMigrate(t, k8s.LogKindService, svc, withMigrate(webPod("web-h1-a", "h1", 0)), webPod("web-h1-b", "h1", 0))
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := tc.open(t)
+			if got := r.src.opened(t, "web-h1-b", 1).Container; got != "app" {
+				t.Errorf("the pod without migrate streams %q, want app", got)
+			}
+			r.advance(followInterval)
+			if n := r.said(want); n != 1 {
+				t.Errorf("statuses = %q, want %q once", r.statuses(), want)
+			}
+		})
+	}
+}
+
+func TestFallbackText(t *testing.T) {
+	t.Parallel()
+
+	b, c := fallback{pod: "web-b", container: "app"}, fallback{pod: "web-c", container: "app"}
+	cases := []struct {
+		name string
+		view string
+		fell []fallback
+		want string
+	}{
+		{name: "none", view: "migrate"},
+		{name: "one pod", view: "migrate", fell: []fallback{b}, want: "pod web-b has no container migrate: streaming app"},
+		{name: "two pods", view: "migrate", fell: []fallback{b, c}, want: "pod web-b has no container migrate: streaming app (and 1 more pod)"},
+		{name: "three pods", view: "migrate", fell: []fallback{b, c, c}, want: "pod web-b has no container migrate: streaming app (and 2 more pods)"},
+		{
+			name: "hostile names", view: "mig\x1b]0;x\x07rate", fell: []fallback{{pod: "web\x1b[2J-b", container: "a\x1b]52;c;eA==\x07pp"}},
+			want: "pod web-b has no container migrate: streaming app",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := (Model{container: tc.view}).fallbackText(tc.fell); got != tc.want {
+				t.Errorf("fallbackText = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

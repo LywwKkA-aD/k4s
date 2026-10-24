@@ -47,11 +47,13 @@ func (m Model) begin(pods []string) Model {
 	}
 	var reqs []attachReq
 	var opened, unknown []string
+	var fell []fallback
 	for _, pod := range streamed {
 		s := podStream{container: m.container, restarts: restartsUnknown}
 		ref, known := refs[pod]
 		if known {
 			s.container, s.created = m.containerFor(ref), ref.Created
+			fell = m.noteFallback(fell, pod, s.container)
 			c, _ := ref.State.Container(s.container)
 			s.restarts = c.Restarts
 			if v := judge(end{found: true, state: ref.State, container: s.container, waiting: true}); v.outcome == outWaiting {
@@ -83,7 +85,8 @@ func (m Model) begin(pods []string) Model {
 		// there reads as a drop and is reattached all the same.
 		unknown = nil
 	}
-	m.startup = tea.Batch(tick, m.baselineCmd(unknown), m.overCmd(len(pods)))
+	m.startup = tea.Batch(tick, m.baselineCmd(unknown), m.overCmd(len(pods)), m.fallbackCmd(fell))
+	m.join = m.join.toldFallbacks(fell)
 	if len(m.rawLines) > 0 {
 		m.syncViewport()
 	}
