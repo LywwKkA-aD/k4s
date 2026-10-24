@@ -34,7 +34,8 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
 
 - A dashboard as the home screen (`q`, `:dashboard`, `:home`):
   - The banner answers whether the cluster is healthy: a verdict
-    (`▲ attention` with what is wrong, or `● all clear since hh:mm` with
+    (`▲ attention` when something fails, `△ attention` when the worst is
+    waiting, followed by what is wrong; or `● all clear since hh:mm` with
     what k4s saw), up to five `▸ next` suggestions, each an exact read-only
     kubectl command with the question it answers, and a command of the day
     when nothing needs a fix.
@@ -146,8 +147,9 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
 
 - The footer is always two rows: key hints or a status message, then the
   kubectl command.
-- Footer commands can be pasted as they are: they carry `--context` after
-  `:ctx` or when k4s was started with `--context`, and `--kubeconfig` when
+- Footer commands can be pasted as they are: they carry `--context` when
+  k4s was started with `--context` or talks to another context than the
+  kubeconfig's current-context, and `--kubeconfig` when
   k4s reads a kubeconfig that plain `kubectl` would not (`--kubeconfig`,
   the k3s fallback). `≈` now marks only commands that differ from what k4s
   does.
@@ -188,8 +190,8 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
 - The question about saved port-forwards names the clusters it offers
   (`default · 127.0.0.1:6443`) and ignores keys pressed in its first
   400 ms.
-- Port-forwards connect as kubectl does (SPDY over WebSocket, else SPDY)
-  and give up after 15 s.
+- Port-forwards connect as kubectl does (SPDY over WebSocket, else SPDY).
+  A start gives up after 10 s; the dial itself is bounded at 15 s.
 - Help closes on `?`, Esc or `q`; any other key closes it and does what it
   does without help open. It always fits the screen, dropping detail on a
   small terminal.
