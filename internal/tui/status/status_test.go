@@ -162,8 +162,15 @@ func TestSetCleansTheText(t *testing.T) {
 		{name: "plain", in: "unknown command: nope", want: "unknown command: nope"},
 		{name: "newlines fold into one row", in: "exec: exit status 1\nstderr:\n  boom", want: "exec: exit status 1 stderr: boom"},
 		{name: "escape sequences are dropped", in: "\x1b[31mred\x1b[0m text", want: "red text"},
-		{name: "control characters become spaces", in: "a\x07b\tc", want: "a b c"},
+		{name: "controls go and a tab becomes a space", in: "a\x07b\tc", want: "ab c"},
+		{name: "carriage returns fold like newlines", in: "10%\r20%\r\n", want: "10% 20%"},
 		{name: "surrounding blanks go", in: "  padded  ", want: "padded"},
+		{name: "OSC 52 clipboard write is dropped", in: "pod \x1b]52;c;aGk=\x07web", want: "pod web"},
+		{name: "C1 sequence is dropped", in: "a\u009b2Jb\u009d0;t\u009cc", want: "abc"},
+		{name: "bidi override is dropped", in: "pod \u202eweb\u202c gone", want: "pod web gone"},
+		{name: "bidi isolates are dropped", in: "\u2066a\u2069b", want: "ab"},
+		{name: "zero-width characters are dropped", in: "w\u200be\u200db\ufeff", want: "web"},
+		{name: "tag characters are dropped", in: "web\U000E0041\U000E007F", want: "web"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
