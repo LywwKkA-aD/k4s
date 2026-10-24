@@ -36,6 +36,7 @@ func (c *Client) ReresolveLogTarget(ctx context.Context, t LogTarget) (LogTarget
 		Selector:   t.Selector,
 		Containers: t.Containers,
 		Init:       t.Init,
+		Replicas:   t.Replicas,
 		UID:        t.UID,
 	}
 	if t.Kind == LogKindService {

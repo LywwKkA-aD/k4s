@@ -111,6 +111,10 @@ type LogTarget struct {
 	// Init names the entries of Containers that are init containers or
 	// native sidecars (Containers.InitNames), which the picker labels.
 	Init []string
+	// Replicas is the deployment's spec.replicas, 1 when unset, so a
+	// target without pods tells a deployment scaled to zero from one
+	// whose pods are not up; 0 for a service.
+	Replicas int32
 	// OwnersGuessed is set when listing ReplicaSets was forbidden: a pod
 	// counted as the deployment's when its controller is a ReplicaSet
 	// named <deployment>-<pod-template-hash>.
