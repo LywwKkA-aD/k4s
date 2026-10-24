@@ -40,6 +40,9 @@ type Model struct {
 
 	table table.Model
 	raw   []k8s.Service
+	// shown are the services behind the table's rows, in row order. The
+	// rows hold cleaned text, so a row action reads its raw name here.
+	shown []k8s.Service
 	// health is the last list answer: an error over earlier rows is a stale
 	// view, one before any rows is the body.
 	health stale.Health
