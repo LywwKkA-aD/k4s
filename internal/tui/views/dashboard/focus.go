@@ -48,6 +48,12 @@ func (r row) pod() bool {
 	return r.placed && r.target.Kind == "pod"
 }
 
+// deployment reports a row that stands for a deployment placed in its
+// namespace and still there: l opens the logs of its pods.
+func (r row) deployment() bool {
+	return r.placed && !r.gone && r.target.Kind == "deployment"
+}
+
 // at focuses panel p at panel level. Focusing a panel opens it in the
 // accordion; the banner leaves the open panel as it is. Focusing another
 // panel leaves the zoom.
