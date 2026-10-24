@@ -244,3 +244,55 @@ func TestFlushMarksTruncatedOutput(t *testing.T) {
 		t.Fatalf("body length = %d, want %d", len(got), pluginStderrLimit)
 	}
 }
+
+// Plugin output is printed to the real terminal after k4s exits; a plugin,
+// or the server it talks to, must not drive that terminal.
+func TestHeldReportIsInert(t *testing.T) {
+	t.Parallel()
+
+	const header = "k4s: exec credential plugin output while k4s was running:\n"
+	const cutHeader = "k4s: exec credential plugin output while k4s was running (last 64 KiB):\n"
+	cases := []struct {
+		name      string
+		in        string
+		truncated bool
+		want      string
+	}{
+		{name: "nothing held", in: "", want: ""},
+		{name: "plain lines", in: "open https://login.example/device\ncode ABCD-EFGH\n", want: header + "open https://login.example/device\ncode ABCD-EFGH\n"},
+		{name: "a newline is added at the end", in: "code ABCD", want: header + "code ABCD\n"},
+		{name: "OSC 52 clipboard write", in: "code \x1b]52;c;aGk=\x07ABCD\n", want: header + "code ABCD\n"},
+		{name: "clear screen and colours", in: "\x1b[2J\x1b[31merror\x1b[0m: expired\n", want: header + "error: expired\n"},
+		{name: "bidi and zero-width characters", in: "user \u202eadmin\u202c\u200b\n", want: header + "user admin\n"},
+		{name: "CRLF becomes LF", in: "a\r\nb\r\n", want: header + "a\nb\n"},
+		{name: "only escapes print nothing", in: "\x1b[2J\x1b]0;t\x07", want: ""},
+		{name: "truncated output says so", in: "tail\n", truncated: true, want: cutHeader + "tail\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := heldReport([]byte(tc.in), tc.truncated); got != tc.want {
+				t.Fatalf("heldReport(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFlushWritesInertText(t *testing.T) {
+	fakeTerminal(t)
+	c := &stderrCapture{}
+	c.enable()
+	c.hold()
+	held := buildHoldingStderr(t, c, "")
+	const raw = "code \x1b]52;c;aGk=\x07ABCD\x1b[2J\n"
+	_, _ = io.WriteString(held, raw)
+	eventually(t, "held plugin output", func() bool { return heldBytes(c) == len(raw) })
+
+	var out bytes.Buffer
+	if err := c.flush(&out); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	if got := out.String(); strings.ContainsRune(got, '\x1b') || !strings.HasSuffix(got, "\ncode ABCD\n") {
+		t.Fatalf("flushed %q, want the header and an inert \"code ABCD\"", got)
+	}
+}

@@ -1,13 +1,15 @@
 package logsink
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 
 	"k8s.io/klog/v2"
+
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 )
 
 // pluginStderrLimit bounds the in-memory copy of plugin stderr.
@@ -36,11 +38,11 @@ func HoldPluginStderr() {
 	pluginStderr.hold()
 }
 
-// FlushPluginStderr writes what plugins printed while held to w, which
-// should be the real stderr once the TUI has released the terminal, and
-// lets later plugin output through to the real stderr again. It writes
-// nothing when plugins printed nothing. The pipe stays open: cached
-// authenticators keep writing to it.
+// FlushPluginStderr writes what plugins printed while held to w as inert
+// text (w should be the real stderr once the TUI has released the
+// terminal), and lets later plugin output through to the real stderr
+// again. It writes nothing when plugins printed nothing. The pipe stays
+// open: cached authenticators keep writing to it.
 func FlushPluginStderr(w io.Writer) error {
 	return pluginStderr.flush(w)
 }
@@ -116,24 +118,33 @@ func (c *stderrCapture) flush(w io.Writer) error {
 		return nil
 	}
 
-	data, truncated := route.release()
-	if len(data) == 0 {
+	report := heldReport(route.release())
+	if report == "" {
 		return nil
 	}
-	if !bytes.HasSuffix(data, []byte("\n")) {
-		data = append(data, '\n')
+	if _, err := io.WriteString(w, report); err != nil {
+		return fmt.Errorf("write plugin stderr: %w", err)
+	}
+	return nil
+}
+
+// heldReport is what flush prints for held plugin output: a header, then
+// the output as inert text (sanitize.Text), since it reaches the real
+// terminal once k4s has given it back. Nothing held, or nothing left once
+// inert, prints nothing.
+func heldReport(data []byte, truncated bool) string {
+	text := sanitize.Text(string(data))
+	if text == "" {
+		return ""
+	}
+	if !strings.HasSuffix(text, "\n") {
+		text += "\n"
 	}
 	header := "k4s: exec credential plugin output while k4s was running:\n"
 	if truncated {
 		header = "k4s: exec credential plugin output while k4s was running (last 64 KiB):\n"
 	}
-	if _, err := io.WriteString(w, header); err != nil {
-		return fmt.Errorf("write plugin stderr: %w", err)
-	}
-	if _, err := w.Write(data); err != nil {
-		return fmt.Errorf("write plugin stderr: %w", err)
-	}
-	return nil
+	return header + text
 }
 
 // routeWriter receives everything plugins write to the pipe and sends it
