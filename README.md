@@ -10,50 +10,51 @@ A fast, opinionated TUI for Kubernetes (k8s & k3s) — written in Go on top of
 > Hybrid TUI **and** kubectl companion. Every keystroke shows its `kubectl`
 > equivalent in the footer, so you build CLI muscle memory while you work.
 
-<!-- demo.gif: pre-v1.1 recording — re-record once port-forward and the
-     services 'l' shortcut have a tape of their own. -->
+<!-- demo.gif: pre-v1.1 recording, from before the dashboard — re-record
+     with docs/demo.tape once the 1.2 screens have a tape of their own. -->
 <p align="center">
   <img src="docs/demo.gif" alt="k4s demo" width="780">
 </p>
 
 ## Highlights
 
-- **Lists for the basics** — pods, namespaces, deployments, services
-- **Describe** — kubectl-style sections + events, scrollable
-- **Multi-pod log streaming** — per-pod colour tag, search (`/`),
-  smart auto-follow, two-step clear, 5000-line buffer. Drain-batch
-  render means `--tail=5000` snaps to the bottom instantly *(v1.1.0)*.
-  Pod colours come from a hue-separated palette, so neighbouring pods
-  never share a hue *(v1.1.3)*
-- **Soft-wrap + horizontal scroll** — `w` in logs view toggles wrap,
-  `←`/`→` pan when wrap is off *(v1.1.0)*
-- **Port-forward, persisted** — `f` in services / pods / deployments
-  opens an SPDY tunnel; intents are saved to
-  `~/.local/state/k4s/portforwards.json` so the next launch can
-  revive every forward with one keystroke. `:pf` / `:forwards` lists
-  active sessions *(v1.1.0)*
-- **Logs from `:svc` too** — `l` on a service tails every backing pod,
-  same flow as `:deploy` *(v1.1.1)*
-- **Time-merged multi-pod history** — `--tail` bursts from several pods
-  are sorted by timestamp instead of arriving pod-by-pod *(v1.1.2)*
-- **Exec** — `e` drops you into a pod shell via `kubectl exec`
-- **Top** — `kubectl top pods/nodes` straight from the metrics API
-- **Live filter** — `/` substring filter in the pods, namespaces,
-  deployments and services lists
-- **Context switcher** — `:ctx` to jump between kubeconfig contexts
-- **Watch by default** — `w` toggles 5s auto-refresh on the dashboard,
-  in `:top` and in the lists. k4s polls rather than holding a watch open,
-  so footer commands carry no `--watch`
-- **Readable on any theme** — dark / light background detection,
-  `K4S_THEME` and `NO_COLOR` *(v1.1.5)*
-- **Footer commands you can paste** — the footer shows the `kubectl`
-  command behind the current screen, with `--context` and `--kubeconfig`
-  whenever a plain `kubectl` in your shell would reach another cluster;
-  `y` copies it. `≈` marks the few commands that do a little more or less
-  than k4s
-- **Status row** — an action that cannot run says why in the footer
-  instead of doing nothing
-- **Centred help popup** — `?` shows global + view-specific bindings
+- **kubectl companion** — the footer always shows the exact `kubectl`
+  command behind the screen, or behind the panel or row under the cursor,
+  with `--context` and `--kubeconfig` added whenever a plain `kubectl` in
+  your shell would reach another cluster. `y` copies it, exec and describe
+  run that very argv, and on exit k4s prints the session's commands so they
+  stay in your scrollback. `≈` marks the few commands that do a little more
+  or less than k4s
+- **Dashboard** — the home screen answers three questions in order: is the
+  cluster OK (a verdict line), what do I run next (up to five `▸ next`
+  suggestions, each a read-only kubectl command), and where is the problem
+  (seven numbered panels: cluster, nodes, pods, workloads, events, k3s, top
+  pods). Every panel and row maps to one kubectl command; Enter opens the
+  matching k4s view
+- **Lists** — pods, deployments, services, namespaces, events and nodes,
+  with a `/` filter, auto-refresh, and Esc back to the list as you left it
+- **Describe and YAML** — `kubectl describe` through your own kubectl (a
+  built-in describer when there is none) and `o` for `kubectl get -o yaml`,
+  both searchable with `/`
+- **Logs you can trust** — every pod of a deployment or a service in one
+  stream, with per-pod colours; the pods of a rollout join on their own,
+  every stream that ends says why, `p` shows the previous instance, and
+  search is smart-case. Soft-wrap (`w`) and horizontal scroll (`←`/`→`)
+- **Exec, port-forward, top** — `e` opens a shell in a pod (`cmd.exe` in
+  Windows pods), `f` a port-forward that the next launch can revive, and
+  `:top` shows pods and nodes from the metrics API
+- **Any cluster, any RBAC** — a list forbidden across all namespaces falls
+  back to the context's namespace, and every error says in one line what
+  went wrong and which `kubectl auth can-i` asks the same
+- **Best on k3s** — the header names the distribution and release, the
+  dashboard checks k3s's bundled components, and on a k3s node k4s finds
+  `/etc/rancher/k3s/k3s.yaml` and `k3s kubectl` by itself
+- **Readable on any theme** — dark / light background detection, a
+  high-contrast theme, `K4S_THEME` and `NO_COLOR`; every state is a glyph
+  and a word, never colour alone
+- **Safe to point at any cluster** — text from the cluster is made inert
+  before it reaches your terminal, and `y` refuses a command in which a
+  name from the cluster would set `--server` or `--kubeconfig`
 
 ## Install
 
@@ -93,7 +94,12 @@ k4s --version
 go install github.com/LywwKkA-aD/k4s/cmd/k4s@latest
 ```
 
-Requires Go 1.26+. `kubectl` on `PATH` is needed only for exec (`e`).
+Requires Go 1.26+.
+
+`kubectl` on `PATH` (or `k3s kubectl` on a k3s node) is needed for exec
+(`e`) and for the terminal login of a credential plugin. Describe runs it
+too when it is there; without it k4s describes pods, deployments and
+services with a built-in describer.
 
 ## Usage
 
