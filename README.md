@@ -108,6 +108,8 @@ k4s                          # current context, starting in its namespace
 k4s --context staging -n web # another context and namespace
 k4s -A                       # all namespaces
 k4s --kubeconfig ./lab.yaml  # a kubeconfig of your choice
+k4s --theme high-contrast    # text at 7:1 or better
+k4s --no-recap               # print no kubectl commands on exit
 k4s --version                # print the version and exit
 k4s --help                   # list the flags and exit
 ```
@@ -118,8 +120,20 @@ k4s --help                   # list the flags and exit
 | `--context <name>`         | context to use instead of the kubeconfig's current-context           |
 | `-n`, `--namespace <name>` | namespace to start in                                                |
 | `-A`, `--all-namespaces`   | start in all namespaces                                              |
-| `--theme <mode>`           | `auto`, `dark`, `light` or `mono`; wins over `K4S_THEME` and `NO_COLOR` |
-| `--no-preflight`           | do not run the credential plugin before the TUI starts; also `K4S_NO_PREFLIGHT=1` |
+| `--theme <mode>`           | `auto`, `dark`, `light`, `mono` or `high-contrast`; wins over `K4S_THEME` and `NO_COLOR` |
+| `--no-preflight`           | do not run the credential plugin before the TUI starts               |
+| `--no-recap`               | do not print the session's kubectl commands on exit                  |
+| `-h`, `--help`             | show the flags and exit                                              |
+| `--version`                | print the version and exit                                           |
+
+| Environment        | Meaning                                                              |
+| ------------------ | -------------------------------------------------------------------- |
+| `KUBECONFIG`       | kubeconfig file list, as kubectl reads it                            |
+| `K4S_THEME`        | `auto` (default), `dark`, `light`, `mono` or `high-contrast`         |
+| `K4S_NO_PREFLIGHT` | anything but `0`, `false`, `no` or `off` acts as `--no-preflight`    |
+| `K4S_NO_RECAP`     | anything but `0`, `false`, `no` or `off` acts as `--no-recap`        |
+| `NO_COLOR`         | set: no colour, as `K4S_THEME=mono`                                  |
+| `XDG_STATE_HOME`   | where `k4s/k4s.log` and `k4s/portforwards.json` live when it is an absolute path (default `~/.local/state`) |
 
 A `--kubeconfig` or `--context` that cannot be loaded stops k4s before the
 TUI starts. Without `--kubeconfig`, k4s looks in this order:
@@ -140,7 +154,16 @@ shell k4s was started from: `--context` is added after `:ctx` or when you
 passed `--context`, and `--kubeconfig` when k4s reads a file a plain
 `kubectl` would not (an explicit `--kubeconfig`, the k3s fallback). `y`
 copies the command through the terminal (OSC 52), which also works over
-SSH; inside tmux it needs `set -g set-clipboard on`.
+SSH; inside tmux it needs `set -g set-clipboard on`. `y` copies nothing,
+and says why, when a word in the command would set a session flag such as
+`--server` (a hostile object name can carry one) or holds control
+characters.
+
+When k4s exits it prints the kubectl commands the session led to (the
+views you opened, describe, logs, exec and port-forward), each once, the 15
+most recently used, oldest first, as the footer showed them. They stay in
+your shell's scrollback after the TUI has gone; `--no-recap` or
+`K4S_NO_RECAP=1` turns this off.
 
 k4s never prints over the TUI. client-go errors and Kubernetes API warnings
 go to `$XDG_STATE_HOME/k4s/k4s.log` (default `~/.local/state/k4s/k4s.log`);
@@ -148,8 +171,12 @@ if anything was logged, k4s prints the count and the path when it exits.
 
 Contexts that log in through a credential plugin (EKS, GKE, OIDC/kubelogin)
 are contacted once before the TUI starts, so an SSO or device-code prompt
-shows up on the plain terminal. Plugin output while the TUI runs is kept in
-memory and printed after exit; it is never written to the log file.
+shows up on the plain terminal; it gives up after 30 s. Plugin output while
+the TUI runs is kept in memory and printed after exit; it is never written
+to the log file. When a plugin needs a login while k4s owns the terminal
+(after `:ctx`, or after a preflight that failed for want of one), k4s asks
+whether to log in; Enter runs `kubectl version` for that context on the
+plain terminal and comes back.
 
 ## Themes & accessibility
 
