@@ -181,6 +181,22 @@ func (r *rig) said(text string) int {
 	return n
 }
 
+// TestAPickedInitContainerSurvivesAJoin: a pod that joins streams the
+// init container the user picked, and says nothing about it.
+func TestAPickedInitContainerSurvivesAJoin(t *testing.T) {
+	t.Parallel()
+
+	r := followMigrate(t, k8s.LogKindDeployment, migrateDeployment(), webReplicaSet("h1", "1"), withMigrate(webPod("web-h1-a", "h1", 0)))
+	r.add(withMigrate(webPod("web-h1-b", "h1", 60)))
+	r.advance(followInterval)
+	if got := r.src.opened(t, "web-h1-b", 1).Container; got != "migrate" {
+		t.Errorf("the pod that joined streams %q, want migrate", got)
+	}
+	if n := r.said("has no container"); n != 0 {
+		t.Errorf("a pod with the container fell back: %q", r.statuses())
+	}
+}
+
 // TestAPodWithoutThePickedContainerSaysItFellBack: a pod that lacks the
 // container picked, one that joins or a service's pod other than the one
 // the picker read, streams its first app container, and the view says so
@@ -225,6 +241,22 @@ func TestAPodWithoutThePickedContainerSaysItFellBack(t *testing.T) {
 				t.Errorf("statuses = %q, want %q once", r.statuses(), want)
 			}
 		})
+	}
+}
+
+// TestAReresolveKeepsTheInitContainers: the target a re-resolve brings
+// still names the init containers, so the picker and a join see them.
+func TestAReresolveKeepsTheInitContainers(t *testing.T) {
+	t.Parallel()
+
+	r := followMigrate(t, k8s.LogKindDeployment, migrateDeployment(), webReplicaSet("h1", "1"), withMigrate(webPod("web-h1-a", "h1", 0)))
+	r.add(withMigrate(webPod("web-h1-b", "h1", 60)))
+	r.advance(followInterval)
+	if got := r.m.target.PodNames(); !slices.Equal(got, []string{"web-h1-a", "web-h1-b"}) {
+		t.Fatalf("pods after the re-resolve = %q", got)
+	}
+	if got := r.m.target; !slices.Equal(got.Containers, []string{"app", "migrate"}) || !slices.Equal(got.Init, []string{"migrate"}) {
+		t.Errorf("target after the re-resolve: Containers %q, Init %q; want [app migrate], [migrate]", got.Containers, got.Init)
 	}
 }
 
