@@ -55,11 +55,11 @@ func checkArgs(c Cmd) error {
 	}
 	args := c.Args
 	for i := 0; i < len(args) && args[i] != "--"; i++ {
-		flag, value, inline := strings.Cut(args[i], "=")
-		kind, ok := nameFlags[flag]
+		kind, value, inline, ok := nameFlag(args[i])
 		if !ok {
 			continue
 		}
+		flag := args[i]
 		if !inline {
 			if i+1 >= len(args) {
 				return fmt.Errorf("%w: %s has no value", ErrInvalidName, flag)
@@ -72,4 +72,19 @@ func checkArgs(c Cmd) error {
 		}
 	}
 	return nil
+}
+
+// nameFlag returns the kind of name word w sets (see nameFlags) and,
+// when w carries it, the value; ok is false for any other word. kubectl
+// reads -nX as -n X, so a single-dash word that starts with -n or -c sets
+// that flag, whatever follows.
+func nameFlag(w string) (kind, value string, inline, ok bool) {
+	flag, val, hasVal := strings.Cut(w, "=")
+	if k, found := nameFlags[flag]; found {
+		return k, val, hasVal, true
+	}
+	if len(w) > 2 && w[0] == '-' && (w[1] == 'n' || w[1] == 'c') {
+		return nameFlags[w[:2]], w[2:], true, true
+	}
+	return "", "", false, false
 }

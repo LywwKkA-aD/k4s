@@ -284,6 +284,12 @@ func TestRunnerValidatesBeforeLookingUp(t *testing.T) {
 		{"bad container", kubectl.New("logs", "web", "-n", "shop", "-c", "x y"), kubectl.ErrInvalidName},
 		{"bad long container", kubectl.New("logs", "web", "--container=--previous"), kubectl.ErrInvalidName},
 		{"dangling flag", kubectl.New("logs", "web", "-n"), kubectl.ErrInvalidName},
+		{"bad attached namespace", kubectl.New("get", "pods", "-nBad_NS"), kubectl.ErrInvalidName},
+		{"attached namespace that reads as a flag", kubectl.New("get", "pods", "-n-A"), kubectl.ErrInvalidName},
+		{"attached namespace with =", kubectl.New("get", "pods", "-nweb=x"), kubectl.ErrInvalidName},
+		{"bad attached container", kubectl.New("logs", "web", "-n", "shop", "-cX"), kubectl.ErrInvalidName},
+		{"attached container that reads as a flag", kubectl.New("logs", "web", "-c--follow"), kubectl.ErrInvalidName},
+		{"attached value with an s reads as -s", kubectl.New("get", "pods", "-nshop"), kubectl.ErrSessionFlag},
 		{"name that sets the server", kubectl.New("describe", "pod", "--server=https://evil", "-n", "ns"), kubectl.ErrSessionFlag},
 		{"name that sets the kubeconfig", kubectl.New("describe", "pod", "--kubeconfig=/tmp/evil"), kubectl.ErrSessionFlag},
 	}
@@ -303,6 +309,36 @@ func TestRunnerValidatesBeforeLookingUp(t *testing.T) {
 			}
 			if n := lookups.Load(); n != 0 {
 				t.Errorf("LookPath ran %d times for a rejected command", n)
+			}
+		})
+	}
+}
+
+// The flags k4s writes itself pass: -it is not read as -i plus a value,
+// and a valid attached value is checked, not refused.
+func TestRunnerAcceptsValidFlagForms(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		cmd  kubectl.Cmd
+	}{
+		{"split namespace and container", kubectl.New("logs", "web", "-n", "shop", "-c", "app")},
+		{"attached namespace", kubectl.New("get", "pods", "-nweb")},
+		{"attached container", kubectl.New("logs", "web", "-n", "shop", "-capp")},
+		{"long forms", kubectl.New("logs", "web", "--namespace=shop", "--container", "app")},
+		{"exec shorthands", kubectl.New("exec", "-it", "-n", "shop", "web", "--", "sh", "-c", "-nX")},
+		{"other short flags", kubectl.New("logs", "-f", "-l", "app=web", "--prefix", "--tail=-1", "-n", "shop")},
+		{"all namespaces and output", kubectl.New("get", "pods", "-A", "-o", "wide")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := kubectl.NewRunner(kubectl.RunnerConfig{LookPath: func(string) (string, error) {
+				return "/usr/bin/kubectl", nil
+			}})
+			if _, err := r.Command(tt.cmd); err != nil {
+				t.Errorf("Command(%q) = %v, want nil", tt.cmd.Args, err)
 			}
 		})
 	}
