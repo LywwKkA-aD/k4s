@@ -6,6 +6,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
@@ -54,11 +55,32 @@ func (m Model) withRows() Model {
 			}
 		}
 	}
+	m.shown = items
 	m.table.SetRows(toRows(items))
 	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	return m
 }
 
+// rowName is the raw name behind table row i: allRowName for the <all>
+// row, ok false past the rows. The rows hold cleaned text, so nothing
+// reads a name back from a cell.
+func (m Model) rowName(i int) (string, bool) {
+	switch {
+	case i == 0:
+		return allRowName, true
+	case i > 0 && i <= len(m.shown):
+		return m.shown[i-1].Name, true
+	}
+	return "", false
+}
+
+// cursorName is rowName of the row under the cursor.
+func (m Model) cursorName() (string, bool) {
+	return m.rowName(m.table.Cursor())
+}
+
+// toRows renders the <all> row, then items, each cell made inert at draw
+// time (sanitize.Cell).
 func toRows(items []k8s.Namespace) []table.Row {
 	rows := make([]table.Row, 0, len(items)+1)
 	rows = append(rows, table.Row{allRowName, "", ""})
@@ -67,7 +89,7 @@ func toRows(items []k8s.Namespace) []table.Row {
 		if !n.Age.IsZero() {
 			age = n.Age.Format("2006-01-02 15:04")
 		}
-		rows = append(rows, table.Row{n.Name, string(n.Status), age})
+		rows = append(rows, table.Row{sanitize.Cell(n.Name), sanitize.Cell(string(n.Status)), age})
 	}
 	return rows
 }
