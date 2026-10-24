@@ -5,6 +5,7 @@
 package contexts
 
 import (
+	"slices"
 	"sort"
 	"time"
 
@@ -106,9 +107,15 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		if msg.err != nil {
 			return m, nil
 		}
+		// A reread keeps the cursor on its context, not on its index: one
+		// added above would otherwise take the row Enter switches to.
+		at, had := m.cursorName()
 		sorted := sortedByName(msg.items)
 		m.names = contextNames(sorted)
 		m.table.SetRows(m.toRows(sorted))
+		if i := slices.Index(m.names, at); had && i >= 0 && !m.pending.set {
+			m = m.withCursor(i)
+		}
 		return m.landPending()
 	case tea.KeyPressMsg:
 		switch {
