@@ -47,6 +47,18 @@ func Line(s string) string {
 	return capped(scrub(s, false))
 }
 
+// blanks turns the whitespace a cell cannot hold into spaces; Line then
+// drops the CR of a CRLF.
+var blanks = strings.NewReplacer("\n", " ", "\t", " ")
+
+// Cell is Line for a table cell or any other slot measured before it is
+// drawn: line breaks and tabs become spaces first, so the words of a
+// multi-line value stay apart, and a tab, which the terminal widens to
+// the next tab stop, cannot push the next column out.
+func Cell(s string) string {
+	return Line(blanks.Replace(s))
+}
+
 // Text is Line for text of several lines: it keeps LF, drops CR (so CRLF
 // becomes LF) and caps each line on its own. An escape sequence never
 // runs past the end of its line.

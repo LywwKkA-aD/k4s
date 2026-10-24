@@ -84,6 +84,39 @@ func TestText(t *testing.T) {
 	}
 }
 
+func TestCell(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "plain text is unchanged", in: "web-1", want: "web-1"},
+		{name: "tab becomes a space", in: "a\tb", want: "a b"},
+		{name: "line breaks become spaces", in: "Back-off\nrestarting\r\nagain", want: "Back-off restarting again"},
+		{name: "escape sequences go", in: "we\x1b]52;c;aGk=\x07b\x1b[2J", want: "web"},
+		{name: "invisible format characters go", in: "\u202ew\u200beb\U000e0041", want: "web"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := Cell(tc.in); got != tc.want {
+				t.Fatalf("Cell(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// Not parallel: AllocsPerRun refuses to run alongside other tests.
+func TestCellReturnsCleanInputUnchanged(t *testing.T) {
+	in := "kube-system/coredns-7d9f8c6b5d-abcde"
+	allocs := testing.AllocsPerRun(100, func() { _ = Cell(in) })
+	if allocs != 0 {
+		t.Fatalf("Cell allocated %v times for clean input", allocs)
+	}
+}
+
 func TestLineCapsLength(t *testing.T) {
 	t.Parallel()
 
@@ -145,6 +178,11 @@ func FuzzLine(f *testing.F) {
 	f.Fuzz(func(t *testing.T, in string) {
 		checkInert(t, Line(in), false)
 		checkInert(t, Text(in), true)
+		cell := Cell(in)
+		checkInert(t, cell, false)
+		if strings.ContainsRune(cell, '\t') {
+			t.Fatalf("Cell kept a tab: %q", cell)
+		}
 	})
 }
 
