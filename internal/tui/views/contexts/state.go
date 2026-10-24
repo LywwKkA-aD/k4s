@@ -24,8 +24,8 @@ func (m Model) State() views.State {
 		return views.State{Selected: m.pending.key, Cursor: m.pending.cursor}
 	}
 	st := views.State{Cursor: max(m.table.Cursor(), 0)}
-	if row := m.table.SelectedRow(); row != nil {
-		st.Selected = views.RowKey("", row[nameColumn])
+	if name, ok := m.cursorName(); ok {
+		st.Selected = views.RowKey("", name)
 	}
 	return st
 }
@@ -49,13 +49,12 @@ func (m Model) landPending() (Model, tea.Cmd) {
 	}
 	p := m.pending
 	m.pending = pendingRow{}
-	rows := m.table.Rows()
-	for i, row := range rows {
-		if views.RowKey("", row[nameColumn]) == p.key {
+	for i, name := range m.names {
+		if views.RowKey("", name) == p.key {
 			return m.withCursor(i), nil
 		}
 	}
-	m = m.withCursor(min(p.cursor, len(rows)-1))
+	m = m.withCursor(min(p.cursor, len(m.names)-1))
 	if p.key == "" {
 		return m, nil
 	}
