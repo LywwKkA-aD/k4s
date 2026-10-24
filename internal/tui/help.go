@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/command"
 	"github.com/LywwKkA-aD/k4s/internal/tui/overlay"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -46,12 +47,14 @@ func (m Model) helpPage() overlay.HelpPage {
 // lose them first on a small terminal.
 func (m Model) helpPages() []overlay.HelpPage {
 	var view, viewMap []overlay.HelpSection
+	// A title can name an object (describe, yaml), as in the header.
+	title := sanitize.Line(m.current.Title())
 	if vh := viewHelp(m.current.Help()); len(vh) > 0 {
-		view = []overlay.HelpSection{{Title: "view: " + m.current.Title(), Entries: vh}}
+		view = []overlay.HelpSection{{Title: "view: " + title, Entries: vh}}
 	}
 	if mp, ok := m.current.(mapper); ok {
 		if entries := viewHelp(mp.HelpMap()); len(entries) > 0 {
-			viewMap = []overlay.HelpSection{{Title: m.current.Title() + " map", Entries: entries}}
+			viewMap = []overlay.HelpSection{{Title: title + " map", Entries: entries}}
 		}
 	}
 	global := overlay.HelpSection{Title: "global", Entries: globalHelp(m)}
