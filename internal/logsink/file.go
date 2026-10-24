@@ -19,7 +19,8 @@ const (
 // openLogFile opens path for appending in a private directory, rotating it
 // first if it has reached maxLogSize. Errors and API warnings can name
 // hosts, namespaces and users, so the directory is 0700 and the file 0600
-// even when they already existed with looser modes.
+// even when they already existed with looser modes, and a symbolic link
+// at path is refused where the platform can (see noFollow).
 func openLogFile(path string) (*os.File, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, dirPerm); err != nil {
@@ -31,7 +32,7 @@ func openLogFile(path string) (*os.File, error) {
 	if err := rotate(path); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, filePerm)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND|noFollow, filePerm)
 	if err != nil {
 		return nil, fmt.Errorf("open log file: %w", err)
 	}
