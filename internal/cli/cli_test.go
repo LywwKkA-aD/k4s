@@ -231,6 +231,43 @@ func TestThemesAreDocumented(t *testing.T) {
 	}
 }
 
+// TestEnvSwitchOffValuesAreDocumented keeps the help in step with
+// envSwitch: every value it reads as off is named under both switches.
+func TestEnvSwitchOffValuesAreDocumented(t *testing.T) {
+	t.Parallel()
+
+	off := []string{"0", "false", "no", "off"}
+	for _, v := range off {
+		if envSwitch(v) {
+			t.Errorf("envSwitch(%q) = on, want off", v)
+		}
+	}
+	const named = "0, false, no or off"
+	for _, name := range []string{envNoPreflight, envNoRecap} {
+		if got := usageEntry(name); !strings.Contains(got, named) {
+			t.Errorf("usage for %s = %q, want it to name %q", name, got, named)
+		}
+	}
+}
+
+// usageEntry is the Environment entry of name in usage, its continuation
+// lines joined, with runs of spaces folded.
+func usageEntry(name string) string {
+	start := strings.Index(usage, "\n  "+name+" ")
+	if start < 0 {
+		return ""
+	}
+	lines := strings.Split(usage[start+1:], "\n")
+	entry := lines[:1]
+	for _, l := range lines[1:] {
+		if !strings.HasPrefix(l, "   ") {
+			break
+		}
+		entry = append(entry, l)
+	}
+	return strings.Join(strings.Fields(strings.Join(entry, " ")), " ")
+}
+
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }

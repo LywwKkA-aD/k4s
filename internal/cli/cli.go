@@ -41,8 +41,10 @@ Environment:
   KUBECONFIG         kubeconfig file list to load (default ~/.kube/config)
   K4S_THEME          colour theme: auto, dark, light, mono or high-contrast
                      (default auto)
-  K4S_NO_PREFLIGHT   when set to anything but 0 or false, same as --no-preflight
-  K4S_NO_RECAP       when set to anything but 0 or false, same as --no-recap
+  K4S_NO_PREFLIGHT   when set to anything but 0, false, no or off, same as
+                     --no-preflight
+  K4S_NO_RECAP       when set to anything but 0, false, no or off, same as
+                     --no-recap
   NO_COLOR           when set, disable colour (same as K4S_THEME=mono)
 `
 
