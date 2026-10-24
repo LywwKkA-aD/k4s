@@ -5,6 +5,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
@@ -37,7 +38,7 @@ func formatRawLine(ln logLine, multi, full bool, colour styles.PodColorID) strin
 	}
 	style := lipgloss.NewStyle().Foreground(styles.PodColor(colour))
 	if full {
-		return style.Bold(true).Render("["+ln.pod+"]") + " " + ln.text
+		return style.Bold(true).Render(podTag(ln.pod)) + " " + ln.text
 	}
 	return style.Render(compactPrefix) + " " + ln.text
 }
@@ -48,12 +49,18 @@ func errorPrefix(pod string) string {
 	if pod == "" {
 		return "stream error: "
 	}
-	return "[" + pod + "] stream error: "
+	return podTag(pod) + " stream error: "
 }
 
 // noticePrefix heads k4s's own line about a pod's stream.
 func noticePrefix(pod string) string {
-	return "[" + pod + "] "
+	return podTag(pod) + " "
+}
+
+// podTag is "[pod]" with the name made inert at draw time: pod names come
+// from the cluster, and lines keep the raw one for their streams.
+func podTag(pod string) string {
+	return "[" + sanitize.Cell(pod) + "]"
 }
 
 // marks are the escape sequences that turn a style on and off.
