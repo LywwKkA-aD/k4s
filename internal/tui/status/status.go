@@ -8,9 +8,9 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 )
 
 // Level ranks a status message; the footer colours it by level.
@@ -62,7 +62,7 @@ type Line struct {
 
 // Set shows text at level from now on, replacing any message, and returns
 // the Cmd that delivers its ExpireMsg. The text is folded onto one line,
-// stripped of escape sequences, and $HOME in it is shortened to ~.
+// made inert (see sanitize.Text), and $HOME in it is shortened to ~.
 func (l Line) Set(level Level, text string, now time.Time) (Line, tea.Cmd) {
 	seq := l.seq + 1
 	next := Line{
@@ -113,9 +113,12 @@ func (l Line) Expire(msg ExpireMsg, now time.Time) Line {
 	return l.Clear()
 }
 
-// clean makes text safe for one footer row.
+// clean makes text safe for one footer row. sanitize.Text runs first and
+// keeps the line breaks (a CR counts as one), which then fold into spaces
+// with the tabs; sanitize.Line would glue the lines together.
 func clean(text string) string {
-	text = redact(ansi.Strip(text), userHome())
+	text = sanitize.Text(strings.ReplaceAll(text, "\r", "\n"))
+	text = redact(text, userHome())
 	text = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
