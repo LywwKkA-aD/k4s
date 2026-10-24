@@ -80,7 +80,7 @@ func logsRequest(r views.ResourceRef, t k8s.LogTarget, err error, detached bool)
 	case len(t.Pods) == 0:
 		return statusCmd(status.Warn, noRunningPods(r.Name, t))
 	}
-	req := request(promptRequest(r, t, detached))
+	req := request(views.LogsPromptFor(r, t, detached))
 	if !t.OwnersGuessed {
 		return req
 	}
@@ -93,35 +93,4 @@ func noRunningPods(name string, t k8s.LogTarget) string {
 		return text + " · " + note
 	}
 	return text
-}
-
-// promptRequest picks the container picker for a template with several
-// containers, init containers and native sidecars counted, and the tail
-// prompt otherwise. A single container is named, so a pod with an
-// injected sidecar still streams the deployment's own.
-func promptRequest(r views.ResourceRef, t k8s.LogTarget, detached bool) tea.Msg {
-	if len(t.Containers) > 1 {
-		return views.ContainerPromptRequestMsg{
-			Namespace:  r.Namespace,
-			Pods:       t.PodNames(),
-			Containers: t.Containers,
-			Init:       t.Init,
-			NextKind:   actionLogs,
-			Target:     r,
-			Logs:       t,
-			Detached:   detached,
-		}
-	}
-	container := ""
-	if len(t.Containers) == 1 {
-		container = t.Containers[0]
-	}
-	return views.TailPromptRequestMsg{
-		Namespace: r.Namespace,
-		Pods:      t.PodNames(),
-		Container: container,
-		Target:    r,
-		Logs:      t,
-		Detached:  detached,
-	}
 }

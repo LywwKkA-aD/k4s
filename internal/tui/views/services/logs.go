@@ -96,27 +96,9 @@ func logsFailed(ref views.ResourceRef, err error) tea.Cmd {
 	return statusCmd(status.Error, "logs for service "+ref.Name+": "+stale.Describe(err))
 }
 
-// logsPrompt asks the root for the container picker when the pods run
-// several containers, init containers and native sidecars counted, else
-// for the tail prompt.
+// logsPrompt asks the root for the prompt the resolved target leads to
+// (views.LogsPromptFor).
 func logsPrompt(ref views.ResourceRef, t k8s.LogTarget, detached bool) tea.Cmd {
-	pods := t.PodNames()
-	if len(t.Containers) > 1 {
-		return func() tea.Msg {
-			return views.ContainerPromptRequestMsg{
-				Namespace: ref.Namespace, Pods: pods, Containers: t.Containers, Init: t.Init, NextKind: actLogs,
-				Target: ref, Logs: t, Detached: detached,
-			}
-		}
-	}
-	container := ""
-	if len(t.Containers) == 1 {
-		container = t.Containers[0]
-	}
-	return func() tea.Msg {
-		return views.TailPromptRequestMsg{
-			Namespace: ref.Namespace, Pods: pods, Container: container,
-			Target: ref, Logs: t, Detached: detached,
-		}
-	}
+	msg := views.LogsPromptFor(ref, t, detached)
+	return func() tea.Msg { return msg }
 }
