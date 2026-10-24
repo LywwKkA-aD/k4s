@@ -1,11 +1,14 @@
 package services
 
 import (
+	"slices"
+
 	"charm.land/bubbles/v2/table"
 	"charm.land/lipgloss/v2"
 	"k8s.io/apimachinery/pkg/util/duration"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -23,6 +26,7 @@ func (m *Model) applyFilter(keep string) {
 			}
 		}
 	}
+	m.shown = items
 	m.table.SetRows(toRows(items, m.namespace == ""))
 	m.table.SetHeight(max(m.tableHeight(), minTableRows))
 	if i := m.rowIndex(keep); i >= 0 {
@@ -41,12 +45,9 @@ func (m Model) rowIndex(key string) int {
 	if key == "" {
 		return -1
 	}
-	for i, row := range m.table.Rows() {
-		if views.RowKey(serviceCoords(row, m.namespace)) == key {
-			return i
-		}
-	}
-	return -1
+	return slices.IndexFunc(m.shown, func(s k8s.Service) bool {
+		return views.RowKey(s.Namespace, s.Name) == key
+	})
 }
 
 // moveCursor puts the cursor on row i by moving it, not by SetCursor: the
@@ -66,33 +67,37 @@ func (m *Model) moveCursor(i int) {
 
 // selectedKey is views.RowKey of the row under the cursor, "" for none.
 func (m Model) selectedKey() string {
-	row := m.table.SelectedRow()
-	if row == nil {
+	s, ok := m.cursorService()
+	if !ok {
 		return ""
 	}
-	return views.RowKey(serviceCoords(row, m.namespace))
+	return views.RowKey(s.Namespace, s.Name)
 }
 
-func serviceCoords(row table.Row, scopedNamespace string) (string, string) {
-	if scopedNamespace == "" {
-		return row[0], row[1]
+// cursorService is the listed service under the cursor, raw names and all.
+func (m Model) cursorService() (k8s.Service, bool) {
+	i := m.table.Cursor()
+	if i < 0 || i >= len(m.shown) {
+		return k8s.Service{}, false
 	}
-	return scopedNamespace, row[0]
+	return m.shown[i], true
 }
 
+// toRows renders services as `kubectl get svc` prints them, each cell made
+// inert at draw time (sanitize.Cell).
 func toRows(items []k8s.Service, showNamespace bool) []table.Row {
 	rows := make([]table.Row, 0, len(items))
 	for _, s := range items {
 		row := make(table.Row, 0, 7)
 		if showNamespace {
-			row = append(row, s.Namespace)
+			row = append(row, sanitize.Cell(s.Namespace))
 		}
 		rows = append(rows, append(row,
-			s.Name,
-			s.Type,
-			s.ClusterIP,
-			s.ExternalIP,
-			s.Ports,
+			sanitize.Cell(s.Name),
+			sanitize.Cell(s.Type),
+			sanitize.Cell(s.ClusterIP),
+			sanitize.Cell(s.ExternalIP),
+			sanitize.Cell(s.Ports),
 			duration.HumanDuration(s.Age),
 		))
 	}

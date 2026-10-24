@@ -29,10 +29,11 @@ type logsSlowMsg struct{ tok async.Token }
 // last request wins: l on another row drops the answer to the one before,
 // and l again on the row being resolved is ignored.
 func (m Model) logs() (Model, tea.Cmd) {
-	ref, cmd, ok := m.row()
+	svc, cmd, ok := m.row()
 	if !ok {
 		return m, cmd
 	}
+	ref := views.ResourceRef{Kind: kindService, Namespace: svc.Namespace, Name: svc.Name}
 	tok := m.tok.Next()
 	acts, ok := m.acts.Supersede(actLogs, views.RowKey(ref.Namespace, ref.Name), tok)
 	if !ok {

@@ -6,10 +6,9 @@ import "github.com/LywwKkA-aD/k4s/internal/tui/views"
 // of a stale list included. There is none before the first list lands or
 // when the filter leaves no row.
 func (m Model) Selected() (views.ResourceRef, bool) {
-	row := m.table.SelectedRow()
-	if !m.loaded || row == nil {
+	s, ok := m.cursorService()
+	if !m.loaded || !ok {
 		return views.ResourceRef{}, false
 	}
-	ns, name := serviceCoords(row, m.namespace)
-	return views.ResourceRef{Kind: kindService, Namespace: ns, Name: name}, true
+	return views.ResourceRef{Kind: kindService, Namespace: s.Namespace, Name: s.Name}, true
 }
