@@ -5,6 +5,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/duration"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
 
@@ -69,18 +70,20 @@ func (w widths) columns() []table.Column {
 	)
 }
 
-// toRows renders pods as `kubectl get pods` prints them.
+// toRows renders pods as `kubectl get pods` prints them. Cluster text is
+// made inert here, at draw time (sanitize.Cell); the pods behind the rows
+// keep their raw names, so every action still targets the listed pod.
 func toRows(pods []k8s.Pod, showNamespace bool) []table.Row {
 	rows := make([]table.Row, 0, len(pods))
 	for _, p := range pods {
 		row := make(table.Row, 0, 6)
 		if showNamespace {
-			row = append(row, p.Namespace)
+			row = append(row, sanitize.Cell(p.Namespace))
 		}
 		rows = append(rows, append(row,
-			p.Name,
+			sanitize.Cell(p.Name),
 			p.Ready,
-			p.Status,
+			sanitize.Cell(p.Status),
 			p.RestartsText,
 			duration.HumanDuration(p.Age),
 		))
