@@ -149,10 +149,9 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
   kubectl command.
 - Footer commands can be pasted as they are: they carry `--context` when
   k4s was started with `--context` or talks to another context than the
-  kubeconfig's current-context, and `--kubeconfig` when
-  k4s reads a kubeconfig that plain `kubectl` would not (`--kubeconfig`,
-  the k3s fallback). `≈` now marks only commands that differ from what k4s
-  does.
+  kubeconfig's current-context, and `--kubeconfig` when k4s reads a
+  kubeconfig that plain `kubectl` would not (`--kubeconfig`, the k3s
+  fallback). `≈` now marks only commands that differ from what k4s does.
 - The multi-pod logs footer is a runnable command instead of a list of pods
   in braces: `kubectl logs -f -l '<selector>' --prefix --tail=<n>
   --max-log-requests=<m>`, narrowed for a deployment to its ReplicaSets
@@ -180,6 +179,16 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
   shows the logs command it will open.
 - `e` offers only the containers a shell runs in: app containers and native
   sidecars.
+- The built-in describer, used when kubectl cannot run, writes kubectl's
+  own layout: init containers, State and Last State with reason, exit code
+  and times, container and image IDs, Controlled By, priority, service
+  account, node and IP, probes, the environment (values, field and
+  resource references, secret and config map keys by name), volumes with
+  the sources of a projected one, and the object's events.
+- `:top` without a metrics API names the fix for the distribution:
+  metrics-server is bundled with k3s and rke2 (switched off with
+  `--disable`?), minikube has an addon, and elsewhere it gives the install
+  command.
 - A port-forward prompt with a bad or busy port stays open and shows the
   error.
 - Saved port-forwards are bound to their cluster: context, API server and
