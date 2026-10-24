@@ -41,7 +41,7 @@ const (
 //   - invalid UTF-8 becomes U+FFFD;
 //   - text over MaxLine bytes is cut there and noted with "…[+N bytes]".
 func Line(s string) string {
-	if clean(s) {
+	if clean(s, false) {
 		return s
 	}
 	return capped(scrub(s, false))
@@ -54,6 +54,9 @@ func Text(s string) string {
 	if !strings.ContainsRune(s, '\n') {
 		return Line(s)
 	}
+	if clean(s, true) {
+		return s
+	}
 	lines := strings.Split(scrub(s, true), "\n")
 	for i, l := range lines {
 		lines[i] = capped(l)
@@ -61,14 +64,18 @@ func Text(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// clean reports whether s is printable ASCII and tabs within the cap, the
-// common case for log lines, which then need no copy.
-func clean(s string) bool {
+// clean reports whether s is printable ASCII and tabs, and line feeds when
+// keepLF, within the cap: the common case for log lines, which then need
+// no copy. No line of s can pass the cap when s does not.
+func clean(s string, keepLF bool) bool {
 	if len(s) > MaxLine {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
+		if c == '\n' && keepLF {
+			continue
+		}
 		if (c < 0x20 && c != '\t') || c >= 0x7f {
 			return false
 		}

@@ -129,6 +129,15 @@ func TestLineReturnsCleanInputUnchanged(t *testing.T) {
 	}
 }
 
+// Not parallel: AllocsPerRun refuses to run alongside other tests.
+func TestTextReturnsCleanInputUnchanged(t *testing.T) {
+	in := "I1024 12:00:00 first line\n\tsecond line\n"
+	allocs := testing.AllocsPerRun(100, func() { _ = Text(in) })
+	if allocs != 0 {
+		t.Fatalf("Text allocated %v times for clean input", allocs)
+	}
+}
+
 func FuzzLine(f *testing.F) {
 	for _, s := range []string{"", "plain", "\x1b[31mred", "\x1b]52;c;aGk=\a", "\u009b1m", "\xff\xfe", "a\r\nb\x00", "a\u200d\ufeff\U000e0041\u00adb"} {
 		f.Add(s)
