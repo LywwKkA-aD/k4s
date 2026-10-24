@@ -331,21 +331,44 @@ says in its title who wrote the text (`via kubectl v1.36.0` or
 
 ## Themes & accessibility
 
-At startup k4s detects whether the terminal background is dark or light and
-picks its colours to match. Override it with `K4S_THEME`:
+k4s picks its colours to match the terminal background. Override it with
+`K4S_THEME` or `--theme`:
 
-| `K4S_THEME`      | Colours                                         |
-| ---------------- | ----------------------------------------------- |
-| `auto` (default) | detected from the terminal background           |
-| `dark`           | tuned for dark backgrounds                      |
-| `light`          | tuned for light backgrounds                     |
-| `mono`           | none: bold, underline and reverse video only    |
+| `K4S_THEME`      | Colours                                                   |
+| ---------------- | --------------------------------------------------------- |
+| `auto` (default) | follow the terminal background                            |
+| `dark`           | tuned for dark backgrounds                                |
+| `light`          | tuned for light backgrounds                               |
+| `mono`           | none: bold, underline and reverse video only              |
+| `high-contrast`  | like `auto`, with text at 7:1 and borders at 3:1 or better |
 
-Setting [`NO_COLOR`](https://no-color.org) gives `mono`. Any explicit
-`K4S_THEME` skips the background detection.
+`auto` and `high-contrast` ask the terminal for its background when the TUI
+starts and hold the first frame up to 150 ms for the answer; until then
+they go by `COLORFGBG`, else dark. Inside tmux or screen, on `TERM=dumb`,
+under `CI` or when stdout is not a terminal they do not ask. A terminal
+that does not answer gets the dark colours: on a light theme set
+`K4S_THEME=light` (PowerShell: `$env:K4S_THEME = "light"`).
 
-On Windows the background cannot be detected and dark is assumed; on a light
-theme set `K4S_THEME=light` (PowerShell: `$env:K4S_THEME = "light"`).
+Setting [`NO_COLOR`](https://no-color.org) gives `mono`; `--theme` wins over
+both `K4S_THEME` and `NO_COLOR`. The default colours keep text at 4.5:1 or
+better on Solarized Dark and Light, black, white, Campbell, VS Code dark,
+Dracula and Gruvbox.
+
+No state is told by colour alone. The status row and the dashboard lead
+every state with a glyph, and mono adds bold (`△`), bold and underline
+(`▲`) and reverse video (the row under the cursor, also marked `›`):
+
+| Glyph | Meaning                                                      |
+| ----- | ------------------------------------------------------------ |
+| `●`   | ok                                                           |
+| `△`   | waiting or degraded; a warning                               |
+| `▲`   | failing; an error                                            |
+| `○`   | off or absent                                                |
+| `◇`   | worth a look, such as a recent restart                       |
+| `◆`   | a neutral fact                                               |
+| `·`   | minor, such as an evicted pod                                |
+| `—`   | forbidden or unknown                                         |
+| `≈`   | worked out by k4s, or a command that does a little more or less than k4s |
 
 ## Quickstart (local k3s)
 
@@ -429,7 +452,9 @@ make fmt         # gofmt + goimports (via golangci-lint)
 make lint        # golangci-lint v2 — errcheck, staticcheck, gosec, revive, gocyclo, ...
 make vuln        # govulncheck — known CVEs in the dependency graph
 make tidy-check  # go.mod / go.sum of both modules are tidy
-make ci          # tidy-check + vet + lint + race tests + vuln
+make lines       # no non-test .go file over 800 lines
+make cover       # per-package test coverage
+make ci          # tidy-check + line cap + vet + lint + race tests + vuln
 ```
 
 GitHub Actions runs `make ci` and cross-builds (linux amd64/arm64/armv7,
@@ -462,20 +487,33 @@ internal/
   cli/                  command-line flags
   startup/              kubeconfig lookup, starting namespace, preflight
   cluster/              distribution detection (k3s, rke2, EKS, GKE, ...)
+                        and the hints worded for it
+  k8s/                  client-go wrapper: lists, describe, YAML, events,
+                        nodes, log targets and streams, metrics,
+                        port-forward, API error classification
+    dash/               dashboard data layer: refresh plan, Table lists,
+                        snapshot, severity, verdict, next suggestions
   kubectl/              the kubectl command behind every action: argv,
                         shell quoting, --context/--kubeconfig, runner
-  tui/                  Bubble Tea root, views, styles, keymap, command bar
-    views/{dashboard,pods,namespaces,deployments,services,
-           contexts,top,describe,logs,forwards}/
-    {overlay,status,async,filter,command,keys,...}
-  k8s/                  client-go wrapper (pods/deployments/services/logs/
-                        metrics/portforward/...)
+  sanitize/             text from the cluster made inert before it is drawn
   forwards/             port-forward state file + Manager (intents persist
                         across launches; SPDY sessions are in-process)
   logsink/              client-go and plugin output kept off the TUI
   version/              build version (ldflags stamp, else module version)
-deploy/seed/            demo manifests
-docker-compose.yml      single-node k3s for local development
+  tui/                  Bubble Tea root: router, header, footer, history,
+                        prompts, exec, exit recap
+    views/{dashboard,pods,deployments,services,namespaces,events,nodes,
+           top,contexts,describe,yaml,logs,forwards}/
+    async/              tokens, bounded calls, in-flight actions, poller
+    overlay/            command bar, prompts, confirms, help
+    status/             the footer's status row
+    pager/              scroll and search for describe and YAML
+    viz/                dashboard widgets: meters, sparklines, phase bar
+    {stale,filter,command,keys,styles,tuitest}/
+deploy/                 demo manifests, dev scripts, kubeconfig fixtures
+tools/                  lint and vuln tools in their own go.mod, plus the
+                        idle CPU harness (make idle-cpu)
+docker-compose.yml      k3s for local development
 Makefile                build / test / k3s / quality / release targets
 .goreleaser.yaml        release archives + checksums
 ```
@@ -484,11 +522,12 @@ Makefile                build / test / k3s / quality / release targets
 
 Release notes for every version are on the
 [releases page](https://github.com/LywwKkA-aD/k4s/releases);
-[CHANGELOG.md](./CHANGELOG.md) has the short version.
+[CHANGELOG.md](./CHANGELOG.md) has the short version, with what comes in
+1.2.0 under Unreleased.
 
-Watch this space for resource actions (delete / scale / rollout restart),
-a YAML view, ConfigMap & Secret browsing, an events view, and a Homebrew
-tap. Roadmap on <https://k4scli.io/changelog/>.
+Next, in 1.3: delete, scale and rollout restart behind a confirmation that
+shows the exact command, read-only ConfigMap and Secret views, and a
+Homebrew tap. Roadmap on <https://k4scli.io/changelog/>.
 
 ## License
 
