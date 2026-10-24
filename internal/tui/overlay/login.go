@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 )
 
 // login is a Confirm that previews the command it would run, so the footer
@@ -23,7 +24,7 @@ func NewLogin(context string, run kubectl.Cmd, yes, no tea.Msg, now func() time.
 	return login{
 		Overlay: NewConfirm(Confirm{
 			Title: "log in",
-			Question: "Context " + context + " needs a login: its credential plugin cannot\n" +
+			Question: "Context " + sanitize.Line(context) + " needs a login: its credential plugin cannot\n" +
 				"prompt while k4s owns the terminal. log in in a terminal?",
 			Hint: "Enter runs the kubectl command below · n / Esc skip",
 			Yes:  yes,

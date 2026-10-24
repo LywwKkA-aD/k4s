@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -46,13 +47,15 @@ func inputView(ti textinput.Model, width int) string {
 }
 
 // targetLabel names what a prompt acts on: the row it was asked for when
-// the request says, else its pods, then the namespace.
+// the request says, else its pods, then the namespace. Each name is made
+// inert on its own (sanitize.Line), so an unterminated sequence in one
+// cannot swallow the rest of the label.
 func targetLabel(target views.ResourceRef, namespace string, pods []string) string {
 	name := podsLabel(pods)
 	if target.Name != "" {
-		name = target.Name
+		name = sanitize.Line(target.Name)
 		if target.Kind != "" {
-			name = target.Kind + "/" + target.Name
+			name = sanitize.Line(target.Kind) + "/" + name
 		}
 	}
 	if target.Namespace != "" {
@@ -61,12 +64,12 @@ func targetLabel(target views.ResourceRef, namespace string, pods []string) stri
 	if namespace == "" {
 		return name
 	}
-	return name + " · ns " + namespace
+	return name + " · ns " + sanitize.Line(namespace)
 }
 
 func podsLabel(pods []string) string {
 	if len(pods) == 1 {
-		return "pod/" + pods[0]
+		return "pod/" + sanitize.Line(pods[0])
 	}
 	return fmt.Sprintf("%d pods", len(pods))
 }

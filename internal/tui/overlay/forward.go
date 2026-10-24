@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -64,7 +65,7 @@ func (f forward) submit() (Overlay, tea.Cmd) {
 		err = f.check(local)
 	}
 	if err != nil {
-		f.err = err.Error()
+		f.err = sanitize.Line(err.Error())
 		return f, nil
 	}
 	return nil, send(ForwardChosenMsg{Request: f.req, Local: local, Remote: remote})
@@ -72,9 +73,9 @@ func (f forward) submit() (Overlay, tea.Cmd) {
 
 // View shows the target, the input, the last error and the format.
 func (f forward) View(width int) string {
-	target := f.req.Kind + "/" + f.req.Name
+	target := sanitize.Line(f.req.Kind) + "/" + sanitize.Line(f.req.Name)
 	if f.req.Namespace != "" {
-		target += " · " + f.req.Namespace
+		target += " · " + sanitize.Line(f.req.Namespace)
 	}
 	lines := []string{
 		styles.PopupTitle.Render("port-forward"),

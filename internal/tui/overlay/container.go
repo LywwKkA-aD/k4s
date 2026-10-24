@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
@@ -81,13 +82,14 @@ func (c container) View(width int) string {
 	return rows(width, lines...)
 }
 
-// label is how the picker names a container: init:<name> for an init
-// container or native sidecar. Picking it still answers the bare name.
+// label is how the picker names a container, made inert: init:<name> for
+// an init container or native sidecar. Picking it still answers the bare
+// raw name.
 func (c container) label(name string) string {
 	if slices.Contains(c.req.Init, name) {
-		return "init:" + name
+		return "init:" + sanitize.Line(name)
 	}
-	return name
+	return sanitize.Line(name)
 }
 
 // Command is what picking the highlighted container leads to: the logs at
