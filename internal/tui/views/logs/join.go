@@ -21,6 +21,9 @@ type joinState struct {
 	told bool
 	// shownOver is the pod count the last "streaming 50 of N" named.
 	shownOver int
+	// fellBack are the pods the view said stream another container
+	// than its own.
+	fellBack []string
 }
 
 // applyTarget takes a re-resolve: it settles the streams that ended by
@@ -52,6 +55,7 @@ func (m Model) joinPods(refs []k8s.PodRef, oldHashes []string) (Model, tea.Cmd) 
 	active := len(m.streams.active())
 	var joined []k8s.PodRef
 	var reqs []attachReq
+	var fell []fallback
 	left := 0
 	for _, ref := range refs {
 		if s, known := m.streams.pods[ref.Name]; known && (s.phase != phaseDone || s.created.Equal(ref.Created)) {
@@ -68,6 +72,7 @@ func (m Model) joinPods(refs []k8s.PodRef, oldHashes []string) (Model, tea.Cmd) 
 		joined = append(joined, ref)
 		m.podColors = withColor(m.podColors, ref.Name)
 		s := podStream{container: m.containerFor(ref), created: ref.Created}
+		fell = m.noteFallback(fell, ref.Name, s.container)
 		v := judge(end{found: true, state: ref.State, container: s.container, waiting: true})
 		var req *attachReq
 		m, _, req = m.settlePod(ref.Name, s, v)
@@ -77,8 +82,13 @@ func (m Model) joinPods(refs []k8s.PodRef, oldHashes []string) (Model, tea.Cmd) 
 	}
 	cmds := []tea.Cmd{attachCmd(m.sess, reqs)}
 	if len(joined) > 0 {
-		cmds = append(cmds, statusCmd(status.Info, m.joinText(joined, oldHashes)))
+		text := m.joinText(joined, oldHashes)
+		if fb := m.fallbackText(fell); fb != "" {
+			text += " · " + fb
+		}
+		cmds = append(cmds, statusCmd(status.Info, text))
 		m.join.told = true
+		m.join = m.join.toldFallbacks(fell)
 	}
 	if total := active + left; left > 0 && total != m.join.shownOver {
 		m.join.shownOver = total
@@ -89,7 +99,7 @@ func (m Model) joinPods(refs []k8s.PodRef, oldHashes []string) (Model, tea.Cmd) 
 
 // containerFor is the container a pod streams: the view's, unless the pod
 // lacks it (a service can select pods of several workloads), then the
-// pod's first.
+// pod's first, which the view says (fallback).
 func (m Model) containerFor(ref k8s.PodRef) string {
 	if m.container == "" || len(ref.Containers) == 0 || slices.Contains(ref.Containers, m.container) {
 		return m.container
