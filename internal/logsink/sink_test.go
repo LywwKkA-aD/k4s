@@ -1,6 +1,7 @@
 package logsink
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -156,5 +157,58 @@ func TestOpenHonoursXDGStateHome(t *testing.T) {
 	want := filepath.Join(state, "k4s", "k4s.log")
 	if s.Path() != want {
 		t.Fatalf("Path() = %q, want %q", s.Path(), want)
+	}
+}
+
+// A later `cat k4s.log` must not run what the cluster wrote: klog lines,
+// API warnings and HandleError text quote object names and server text.
+func TestWriteLogsInertText(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "plain lines are kept", in: "I1024 first\n\tsecond\n", want: "I1024 first\n\tsecond\n"},
+		{name: "OSC 52 clipboard write", in: "W pod \x1b]52;c;aGk=\x07web\n", want: "W pod web\n"},
+		{name: "clear screen and title", in: "\x1b[2J\x1b]0;pwned\x1b\\E boom\n", want: "E boom\n"},
+		{name: "bidi and zero-width characters", in: "Warning: \u202eweb\u202c w\u200bx\U000e0041\n", want: "Warning: web wx\n"},
+		{name: "CRLF becomes LF", in: "a\r\nb\r\n", want: "a\nb\n"},
+		{name: "sequence ends at its line", in: "a\x1b]0;t\nb\n", want: "a\nb\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "k4s.log")
+			s := OpenAt(path, "")
+			n, err := s.Write([]byte(tc.in))
+			if err != nil || n != len(tc.in) {
+				t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(tc.in))
+			}
+			if err := s.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.want {
+				t.Fatalf("log = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+func TestInertWriterReportsWriteErrors(t *testing.T) {
+	t.Parallel()
+
+	n, err := inertWriter{w: failingWriter{}}.Write([]byte("line\n"))
+	if err == nil || n != 0 {
+		t.Fatalf("Write = (%d, %v), want (0, disk full)", n, err)
 	}
 }

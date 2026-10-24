@@ -45,12 +45,13 @@ func OpenAt(path, home string) *Sink {
 	if err != nil {
 		return &Sink{home: home, w: io.Discard, openErr: err}
 	}
-	return &Sink{path: path, home: home, w: f, file: f}
+	return &Sink{path: path, home: home, w: inertWriter{w: f}, file: f}
 }
 
-// Write appends p to the log. Each non-empty write counts as one message:
-// klog, the warning writer and the error handler each emit an entry in a
-// single call, even when it spans several lines.
+// Write appends p to the log as inert text (see inertWriter). Each
+// non-empty write counts as one message: klog, the warning writer and the
+// error handler each emit an entry in a single call, even when it spans
+// several lines.
 func (s *Sink) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
