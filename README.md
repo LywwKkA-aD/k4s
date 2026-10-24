@@ -481,6 +481,9 @@ network access.
 
 ## Project layout
 
+How the pieces fit together, and why, is in
+[docs/architecture.md](./docs/architecture.md).
+
 ```
 cmd/k4s/                entry point
 internal/
