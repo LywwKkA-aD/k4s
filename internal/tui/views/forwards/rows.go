@@ -52,13 +52,13 @@ func (m Model) selected() (forwards.Active, bool) {
 }
 
 // rowFor lays out one forward as of now. Names come from the state file and
-// errors from the cluster, so every cell is sanitized.
+// errors from the cluster, so every cell is made inert (sanitize.Cell).
 func rowFor(a forwards.Active, now time.Time) table.Row {
 	return table.Row{
 		a.Status.String(),
-		sanitize.Line(a.Forward.Kind),
-		sanitize.Line(a.Forward.Namespace),
-		sanitize.Line(a.Forward.Name),
+		sanitize.Cell(a.Forward.Kind),
+		sanitize.Cell(a.Forward.Namespace),
+		sanitize.Cell(a.Forward.Name),
 		ports(a.Forward),
 		detail(a, now),
 	}
@@ -72,9 +72,9 @@ func rowFor(a forwards.Active, now time.Time) table.Row {
 func detail(a forwards.Active, now time.Time) string {
 	switch {
 	case a.TunnelErr != "":
-		return fmt.Sprintf("last error: %s · %s ago", sanitize.Line(a.TunnelErr), duration.HumanDuration(now.Sub(a.TunnelErrAt)))
+		return fmt.Sprintf("last error: %s · %s ago", sanitize.Cell(a.TunnelErr), duration.HumanDuration(now.Sub(a.TunnelErrAt)))
 	case a.Err != nil:
-		return sanitize.Line(a.Err.Error())
+		return sanitize.Cell(a.Err.Error())
 	case a.Unbound:
 		return forwards.UnknownCluster
 	}
