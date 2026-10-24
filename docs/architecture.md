@@ -40,9 +40,9 @@ depguard keeps two rules in `make lint`:
 2. `styles.Init`: the theme from `--theme`, `K4S_THEME` and `NO_COLOR`.
    It decides whether the program will ask the terminal for its
    background.
-3. `logsink.Install`: klog, `HandleError` and API warnings go to
-   `k4s.log` before the first clientset is built (client-go captures
-   stderr for credential plugins at build time).
+3. `logsink.Open()`, then `sink.Install()`: klog, `HandleError` and API
+   warnings go to `k4s.log` before the first clientset is built (client-go
+   captures stderr for credential plugins at build time).
 4. `startup.Open`: the kubeconfig lookup (flag, `$KUBECONFIG`,
    `~/.kube/config`, then `/etc/rancher/k3s/k3s.yaml` on Linux) and the
    starting namespace (`-A`, else `-n`, else the context's, else all). It
@@ -81,7 +81,7 @@ The root looks for optional interfaces on top:
 | `Stateful`, `Restorer` | keeps a `views.State` (committed filter, row key, cursor, paused watch, mode, sort) in the history entry, and hands it to a freshly built view before `Init` on Esc |
 | `BackHandler`          | asks the view first on Esc: a list clears a kept filter, describe and YAML a search, the dashboard steps zoom → row → panel |
 | `Selection`            | `o` asks it for the object under the cursor and opens its YAML |
-| `HelpMap` (the dashboard) | adds a map of the view's parts to the help popup          |
+| `mapper` (unexported, `internal/tui/help.go`) | its `HelpMap()` adds a map of the view's parts to the help popup; the dashboard has one |
 
 `State` is a comparable value. The row is a key (`ns/name`), never an
 index: rows move between polls. A restored view applies its filter at
@@ -131,17 +131,19 @@ ctrl+Enter arrive as distinct keys and must still act as Enter.
 History holds at most 50 entries. The lists, the dashboard, contexts and
 forwards are entries by name; describe and YAML by name and object. Logs
 push their parent but are never entries: a stream is not reopened behind
-the user's back. The same view and namespace on top replace the top entry.
+the user's back. An entry with the same view, namespace and object (`ref`)
+as the top one replaces it.
 `:ctx` drops the history with every saved State. The dashboard's
 `Memory` lives in a field of its own, not in history, so it survives `q`
 (which clears history) and is dropped only by `:ctx`.
 
 Overlays (`internal/tui/overlay`) are the command bar, which takes the
 footer's first row, and the popups: tail prompt, container picker, port
-prompt, confirms (restore, login) and help. At most one is open; it gets
-every key and paste, closes by returning nil, and answers with a message
-(`TailChosenMsg`, `ForwardChosenMsg`, ...). Confirms ignore keys for their
-first 400 ms. An overlay that previews a command (the tail prompt, the
+prompt, confirms (restore, login) and help. At most one is open and it
+gets every key and paste; it closes by returning nil and answers with a
+message (`TailChosenMsg`, `ForwardChosenMsg`, ...). Help closes on `?`,
+Esc or `q`; any other key or paste closes it and goes on to the root, as
+if help had not been open. Confirms ignore keys for their first 400 ms. An overlay that previews a command (the tail prompt, the
 container picker) puts it in the footer instead of the view's.
 
 ## Chrome: header, footer, status row
@@ -441,7 +443,9 @@ live only as long as k4s).
 - Each `Start` numbers its attempt; a late report from an attempt the user
   has since stopped or restarted is ignored.
 - The dial goes the way kubectl's does (SPDY over WebSocket, falling back
-  to SPDY) under a 15 s startup bound that a stop also cancels. The
+  to SPDY), bounded at 15 s and cancelled by a stop. The TUI gives every
+  start 10 s to resolve its target and see the tunnel ready; past that the
+  Manager closes the session and marks the forward failed. The
   forwarder's output goes to a bounded ring; failures read off each
   connection become the DETAIL column's `last error`.
 - `:ctx` calls `BeginStopAll`, which closes every session at once and
@@ -480,10 +484,12 @@ cluster unless asked to.
 - **Goldens.** `tuitest.Golden` compares with `testdata/<name>.golden`;
   `go test <package> -run <Test> -update` rewrites them (name the package:
   only test binaries that define the flag know it). They are ANSI-free.
-  The dashboard's matrix renders five synthetic fixtures (busy k3s, all
-  clear, namespace-scoped EKS, k3s without metrics, vanilla kind) at
-  several sizes, checks that every line is as wide as the body, and that
-  the colour render stripped of escapes equals the mono render.
+  The dashboard's matrix renders four synthetic fixtures (all clear,
+  namespace-scoped EKS, k3s without metrics, vanilla kind) at 207x58,
+  120x40, 80x24 and 60x14; the busy k3s fixture has goldens of its own
+  (`TestWideGolden`, `TestLayoutGoldens`, 207x58 down to 40x6). Every line
+  must be as wide as the body, and for all five fixtures at the matrix
+  sizes the colour render stripped of escapes must equal the mono render.
 - **Clocks.** `asynctest.Clock` is a manual `async.Clock`: a tick
   registers its timer and returns at once, and the test fires or advances
   time. `asynctest.Instant` fires at once, for motion frames. Views and the
