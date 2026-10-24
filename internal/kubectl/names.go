@@ -59,10 +59,11 @@ func checkArgs(c Cmd) error {
 		if !ok {
 			continue
 		}
-		flag := args[i]
 		if !inline {
 			if i+1 >= len(args) {
-				return fmt.Errorf("%w: %s has no value", ErrInvalidName, flag)
+				// Quoted: the word is the flag itself here, but an error
+				// never prints a word from Args raw.
+				return fmt.Errorf("%w: %q has no value", ErrInvalidName, args[i])
 			}
 			i++
 			value = args[i]
