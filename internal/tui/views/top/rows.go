@@ -12,6 +12,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/cluster"
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/stale"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
@@ -115,13 +116,15 @@ func (m Model) sortValue(u usage) int64 {
 	return u.cpu
 }
 
+// usages are the rows of the last answer. Names are made inert in the
+// cells at draw time (sanitize.Cell); keys and tie breaks stay raw.
 func (m Model) usages() []usage {
 	if m.mode == modeNodes {
 		out := make([]usage, 0, len(m.nodes))
 		for _, n := range m.nodes {
 			out = append(out, usage{
 				key: views.RowKey("", n.Name), cpu: n.CPUMilli, mem: n.MemBytes, tieBreak: n.Name,
-				cells: table.Row{n.Name, k8s.FormatCPU(n.CPUMilli), k8s.FormatMemory(n.MemBytes)},
+				cells: table.Row{sanitize.Cell(n.Name), k8s.FormatCPU(n.CPUMilli), k8s.FormatMemory(n.MemBytes)},
 			})
 		}
 		return out
@@ -131,9 +134,9 @@ func (m Model) usages() []usage {
 	for _, p := range m.pods {
 		cells := make(table.Row, 0, 4)
 		if showNamespace {
-			cells = append(cells, p.Namespace)
+			cells = append(cells, sanitize.Cell(p.Namespace))
 		}
-		cells = append(cells, p.Name, k8s.FormatCPU(p.CPUMilli), k8s.FormatMemory(p.MemBytes))
+		cells = append(cells, sanitize.Cell(p.Name), k8s.FormatCPU(p.CPUMilli), k8s.FormatMemory(p.MemBytes))
 		key := views.RowKey(p.Namespace, p.Name)
 		out = append(out, usage{key: key, cpu: p.CPUMilli, mem: p.MemBytes, tieBreak: key, cells: cells})
 	}
