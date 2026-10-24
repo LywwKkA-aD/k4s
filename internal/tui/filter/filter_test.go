@@ -21,6 +21,14 @@ func TestMatchSubstringCaseInsensitive(t *testing.T) {
 		{name: "matches second field", query: "demo", fields: []string{"nginx", "k4s-demo"}, want: true},
 		{name: "no match", query: "redis", fields: []string{"nginx", "k4s-demo"}, want: false},
 		{name: "substring inside field", query: "log", fields: []string{"log-spammer-7c"}, want: true},
+		// The query matches what the row shows (sanitize.Cell), never the
+		// raw bytes: hidden characters cannot hide a row from it.
+		{name: "zero-width characters do not hide a match", query: "web", fields: []string{"we\u200bb-1"}, want: true},
+		{name: "a bidi override does not hide a match", query: "web", fields: []string{"\u202eweb\u202c"}, want: true},
+		{name: "an escape sequence does not hide a match", query: "web", fields: []string{"we\x1b]52;c;aGk=\x07b"}, want: true},
+		{name: "a line break matches as a space", query: "back-off restarting", fields: []string{"Back-off\nrestarting"}, want: true},
+		{name: "an escape's payload is not matched", query: "52;c", fields: []string{"we\x1b]52;c;aGk=\x07b"}, want: false},
+		{name: "a tag character is not matched", query: "\U000e0041", fields: []string{"web\U000e0041"}, want: false},
 	}
 
 	for _, tc := range cases {

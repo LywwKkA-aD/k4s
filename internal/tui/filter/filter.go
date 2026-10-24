@@ -26,6 +26,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
@@ -158,13 +159,18 @@ func (m Model) View() string {
 // Match reports whether the current query is a case-insensitive substring
 // of any of the supplied fields. An empty query matches everything (so
 // callers can call Match unconditionally).
+//
+// A field is matched as its row shows it (sanitize.Cell), raw or not: what
+// the user types is what they read, so a name with a zero-width character
+// or an escape sequence in it is found by the name it shows, and nothing
+// hidden in it can be matched.
 func (m Model) Match(fields ...string) bool {
 	if m.query == "" {
 		return true
 	}
 	q := strings.ToLower(m.query)
 	for _, f := range fields {
-		if strings.Contains(strings.ToLower(f), q) {
+		if strings.Contains(strings.ToLower(sanitize.Cell(f)), q) {
 			return true
 		}
 	}
