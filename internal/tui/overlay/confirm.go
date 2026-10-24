@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/keys"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 )
@@ -45,8 +46,12 @@ func NewRestore(count int, now func() time.Time, clusters ...string) Overlay {
 	}
 	question := fmt.Sprintf("Found %d saved %s from a previous session.", count, noun)
 	if len(clusters) > 0 {
+		lines := make([]string, 0, len(clusters))
+		for _, c := range clusters {
+			lines = append(lines, sanitize.Line(c))
+		}
 		question = fmt.Sprintf("Found %d saved %s from a previous session, for:\n  %s",
-			count, noun, strings.Join(clusters, "\n  "))
+			count, noun, strings.Join(lines, "\n  "))
 	}
 	return NewConfirm(Confirm{
 		Title:    "restore port-forwards",
