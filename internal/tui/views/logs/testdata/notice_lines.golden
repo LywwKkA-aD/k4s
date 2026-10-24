@@ -1,5 +1,6 @@
 [api-7d9f-k7x2p] ○ ended: pod deleted
 [api-7d9f-k7x2p] ○ ended: pod completed (exit 0)
+[api-7d9f-k7x2p] ○ ended: init container completed (exit 0)
 [api-7d9f-k7x2p] ○ ended: pod failed · Evicted
 [api-7d9f-k7x2p] ○ ended: pod failed · Error (exit 1)
 [api-7d9f-k7x2p] ◇ container restarted (OOMKilled, exit 137) · reattached

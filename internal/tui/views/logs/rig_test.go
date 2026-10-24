@@ -104,9 +104,15 @@ func newRig(t *testing.T, objs []runtime.Object, kind, name string, pods ...stri
 
 func mount(t *testing.T, c *k8s.Client, cs *fake.Clientset, pods []string, opts ...Option) *rig {
 	t.Helper()
+	return mountContainer(t, c, cs, "", pods, opts...)
+}
+
+// mountContainer is mount streaming container ("" for the default).
+func mountContainer(t *testing.T, c *k8s.Client, cs *fake.Clientset, container string, pods []string, opts ...Option) *rig {
+	t.Helper()
 	r := &rig{t: t, clock: asynctest.NewClock(time.Unix(1_700_000_000, 0)), src: &recorder{}, cs: cs}
 	opts = append(opts, WithClock(r.clock), withSource(r.src))
-	m := New(c, shop, pods, 100, "", opts...)
+	m := New(c, shop, pods, 100, container, opts...)
 	t.Cleanup(func() { _ = m.Close() })
 	m, _ = tuitest.DriveWith(t, quick, m, tea.WindowSizeMsg{Width: 160, Height: 40})
 	m, r.out = tuitest.InitWith(t, quick, m)

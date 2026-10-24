@@ -91,16 +91,30 @@ func judge(e end) verdict {
 		return verdict{outcome: outWaiting, note: "△ waiting: " + orDefault(sanitize.Line(c.Waiting), "Pending"), restarts: c.Restarts}
 	case e.waiting:
 		return verdict{outcome: outStarted, restarts: c.Restarts}
-	case e.restarts != restartsUnknown && c.Restarts > e.restarts:
-		return verdict{outcome: outRestarted, note: "◇ container restarted" + exitDetail(c.LastExit) + " · reattached", restarts: c.Restarts}
-	case c.Exit != nil:
-		return verdict{outcome: outExited, note: "◇ container exited" + exitDetail(c.Exit) + " · waiting for a restart", restarts: c.Restarts}
-	case c.Waiting != "" && c.LastExit != nil:
-		return verdict{outcome: outExited, note: "◇ container exited" + exitDetail(c.LastExit) + " · waiting for a restart", restarts: c.Restarts}
-	case hardError(e.err):
-		return verdict{outcome: outError, note: noteEndedHead + errText(e.err), restarts: c.Restarts}
 	}
-	return verdict{outcome: outDropped, note: noteDropped, restarts: c.Restarts}
+	v := judgeInstance(e, c)
+	v.restarts = c.Restarts
+	return v
+}
+
+// judgeInstance tells what became of the stream of container c, which
+// has run: it restarted, completed or exited, or the stream itself ended.
+func judgeInstance(e end, c k8s.ContainerState) verdict {
+	switch {
+	case e.restarts != restartsUnknown && c.Restarts > e.restarts:
+		return verdict{outcome: outRestarted, note: "◇ container restarted" + exitDetail(c.LastExit) + " · reattached"}
+	case c.Init && !c.Sidecar && c.Exit != nil && c.Exit.Code == 0:
+		// A plain init container that ran to completion never runs again
+		// while the pod lives.
+		return verdict{outcome: outCompleted, note: "○ ended: init container completed (exit 0)"}
+	case c.Exit != nil:
+		return verdict{outcome: outExited, note: "◇ container exited" + exitDetail(c.Exit) + " · waiting for a restart"}
+	case c.Waiting != "" && c.LastExit != nil:
+		return verdict{outcome: outExited, note: "◇ container exited" + exitDetail(c.LastExit) + " · waiting for a restart"}
+	case hardError(e.err):
+		return verdict{outcome: outError, note: noteEndedHead + errText(e.err)}
+	}
+	return verdict{outcome: outDropped, note: noteDropped}
 }
 
 // failedNote names why a pod failed: its own reason (Evicted), else how
