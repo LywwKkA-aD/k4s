@@ -109,9 +109,20 @@ type readError struct {
 func newReadError(path string, origin k8s.Origin, env Env, err error) *readError {
 	re := &readError{err: err}
 	if errors.Is(err, fs.ErrPermission) && path == env.K3sKubeconfig {
-		re.fix = k3sFix(origin)
+		re.fix = k3sFix(origin, hasHomeKubeconfig(env.Home))
 	}
 	return re
+}
+
+// hasHomeKubeconfig reports whether ~/.kube/config is there, or might be:
+// a file that cannot even be probed counts, so advice never overwrites it.
+func hasHomeKubeconfig(home string) bool {
+	path := homeKubeconfig(home)
+	if path == "" {
+		return false
+	}
+	found, err := probe(path)
+	return found || err != nil
 }
 
 func (e *readError) Error() string {
@@ -124,18 +135,45 @@ func (e *readError) Error() string {
 func (e *readError) Unwrap() error { return e.err }
 
 // k3sFix explains how a non-root user gets a readable copy of the k3s
-// admin kubeconfig, which k3s writes with mode 0600 for root.
-func k3sFix(origin k8s.Origin) string {
+// admin kubeconfig, which k3s writes with mode 0600 for root. The copy is
+// made under umask 077, so it is never readable by others, not even
+// between its creation and a chmod. It goes to ~/.kube/config only when
+// haveConfig is false: the fallback to the k3s file runs only then, but
+// --kubeconfig and KUBECONFIG can name the file beside an existing one,
+// which the copy must not overwrite.
+func k3sFix(origin k8s.Origin, haveConfig bool) string {
+	target, then := "~/.kube/config", k3sThen(origin)
+	if haveConfig {
+		target, then = "~/.kube/k3s.yaml", k3sThenSide(origin)
+	}
 	lines := []string{
 		"  k3s writes this file for root only; copy it for your user:",
-		"    mkdir -p ~/.kube && sudo k3s kubectl config view --raw > ~/.kube/config && chmod 600 ~/.kube/config",
+		"    mkdir -p -m 700 ~/.kube && (umask 077 && sudo k3s kubectl config view --raw > " + target + ")",
 		"  or start the k3s server with --write-kubeconfig-mode 644, which lets every local user read it",
 	}
-	switch origin {
-	case k8s.OriginFlag:
-		lines = append(lines, "  then start k4s without --kubeconfig")
-	case k8s.OriginKubectl:
-		lines = append(lines, "  then unset KUBECONFIG, or point it at ~/.kube/config")
+	if then != "" {
+		lines = append(lines, then)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// k3sThen is the step after a copy to ~/.kube/config, which kubectl and
+// k4s read by default.
+func k3sThen(origin k8s.Origin) string {
+	switch origin {
+	case k8s.OriginFlag:
+		return "  then start k4s without --kubeconfig"
+	case k8s.OriginKubectl:
+		return "  then unset KUBECONFIG, or point it at ~/.kube/config"
+	}
+	return ""
+}
+
+// k3sThenSide is the step after a copy to ~/.kube/k3s.yaml, which nothing
+// reads unless told to.
+func k3sThenSide(origin k8s.Origin) string {
+	if origin == k8s.OriginKubectl {
+		return "  then point KUBECONFIG at ~/.kube/k3s.yaml"
+	}
+	return "  then start k4s with --kubeconfig ~/.kube/k3s.yaml"
 }

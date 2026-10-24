@@ -183,7 +183,10 @@ func TestResolveSource(t *testing.T) {
 func TestResolveSourcePermissionFix(t *testing.T) {
 	t.Parallel()
 
-	const copyFix = "mkdir -p ~/.kube && sudo k3s kubectl config view --raw > ~/.kube/config && chmod 600 ~/.kube/config"
+	// The copy is never readable by others, not even before a chmod, and
+	// never lands on a kubeconfig the user already has.
+	const copyFix = "mkdir -p -m 700 ~/.kube && (umask 077 && sudo k3s kubectl config view --raw > ~/.kube/config)"
+	const sideFix = "mkdir -p -m 700 ~/.kube && (umask 077 && sudo k3s kubectl config view --raw > ~/.kube/k3s.yaml)"
 	cases := []struct {
 		name     string
 		setup    func(t *testing.T, m machine) (explicit string)
@@ -197,7 +200,7 @@ func TestResolveSourcePermissionFix(t *testing.T) {
 				return ""
 			},
 			wantFix:  []string{copyFix, "--write-kubeconfig-mode"},
-			wantNone: []string{"KUBECONFIG", "--kubeconfig"},
+			wantNone: []string{"KUBECONFIG", "--kubeconfig", "chmod"},
 		},
 		{
 			name: "KUBECONFIG names the k3s file",
@@ -205,14 +208,35 @@ func TestResolveSourcePermissionFix(t *testing.T) {
 				m.env["KUBECONFIG"] = unreadable(t, m.k3s)
 				return ""
 			},
-			wantFix: []string{copyFix, "then unset KUBECONFIG"},
+			wantFix:  []string{copyFix, "then unset KUBECONFIG"},
+			wantNone: []string{"chmod", "k3s.yaml"},
 		},
 		{
 			name: "flag names the k3s file",
 			setup: func(t *testing.T, m machine) string {
 				return unreadable(t, m.k3s)
 			},
-			wantFix: []string{copyFix, "then start k4s without --kubeconfig"},
+			wantFix:  []string{copyFix, "then start k4s without --kubeconfig"},
+			wantNone: []string{"chmod", "k3s.yaml"},
+		},
+		{
+			name: "KUBECONFIG names the k3s file beside an existing ~/.kube/config",
+			setup: func(t *testing.T, m machine) string {
+				write(t, m.homeConfig(), kubeconfigBody)
+				m.env["KUBECONFIG"] = unreadable(t, m.k3s)
+				return ""
+			},
+			wantFix:  []string{sideFix, "then point KUBECONFIG at ~/.kube/k3s.yaml"},
+			wantNone: []string{"> ~/.kube/config", "unset KUBECONFIG"},
+		},
+		{
+			name: "flag names the k3s file beside an existing ~/.kube/config",
+			setup: func(t *testing.T, m machine) string {
+				write(t, m.homeConfig(), kubeconfigBody)
+				return unreadable(t, m.k3s)
+			},
+			wantFix:  []string{sideFix, "then start k4s with --kubeconfig ~/.kube/k3s.yaml"},
+			wantNone: []string{"> ~/.kube/config", "without --kubeconfig"},
 		},
 		{
 			name: "another unreadable file gets no k3s advice",
@@ -251,6 +275,36 @@ func TestResolveSourcePermissionFix(t *testing.T) {
 				if strings.Contains(fix, s) {
 					t.Errorf("advice should not mention %q:\n%s", s, msg)
 				}
+			}
+		})
+	}
+}
+
+func TestHasHomeKubeconfig(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, m machine) string
+		want  bool
+	}{
+		{name: "no home", setup: func(*testing.T, machine) string { return "" }, want: false},
+		{name: "no file", setup: func(_ *testing.T, m machine) string { return m.home }, want: false},
+		{name: "a file", setup: func(t *testing.T, m machine) string {
+			write(t, m.homeConfig(), kubeconfigBody)
+			return m.home
+		}, want: true},
+		{name: "a file that cannot be read", setup: func(t *testing.T, m machine) string {
+			unreadable(t, m.homeConfig())
+			return m.home
+		}, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := newMachine(t)
+			if got := hasHomeKubeconfig(tc.setup(t, m)); got != tc.want {
+				t.Fatalf("hasHomeKubeconfig = %v, want %v", got, tc.want)
 			}
 		})
 	}
