@@ -178,6 +178,157 @@ to the log file. When a plugin needs a login while k4s owns the terminal
 whether to log in; Enter runs `kubectl version` for that context on the
 plain terminal and comes back.
 
+## Commands
+
+`:` opens the command bar in the footer. Commands ignore case.
+
+| Command        | Aliases                                       | Shows                                      |
+| -------------- | --------------------------------------------- | ------------------------------------------ |
+| `:dashboard`   | `:home`                                       | the dashboard                              |
+| `:pods`        | `:po`, `:pod`                                 | `kubectl get pods`                         |
+| `:deployments` | `:deploy`, `:deployment`, `:dp`               | `kubectl get deployments`                  |
+| `:services`    | `:svc`, `:service`                            | `kubectl get services`                     |
+| `:namespaces`  | `:ns`                                         | `kubectl get namespaces`                   |
+| `:events`      | `:ev`, `:event`                               | `kubectl events`                           |
+| `:nodes`       | `:no`, `:node`                                | `kubectl get nodes -o wide`                |
+| `:top`         | `:metrics`                                    | `kubectl top pods` (`n` for nodes)         |
+| `:contexts`    | `:ctx`, `:context`                            | `kubectl config get-contexts`              |
+| `:forwards`    | `:pf`, `:forward`, `:portforward`, `:port-forward` | the port-forwards of this cluster     |
+
+`:pods`, `:deploy`, `:svc`, `:top` and `:events` take a namespace as
+kubectl spells it:
+
+```
+:pods demo        :pods -n demo        :pods -A        :pods --all-namespaces
+```
+
+From another view the list opens in that namespace, one Esc away; on the
+list itself it switches in place, keeping the filter, watch and mode.
+`:ns <name>` does the same for the current list (from any other view it
+opens pods there) and `:ns -A` shows every namespace. The name is checked
+as a namespace name and never looked up, since RBAC may forbid reading
+namespaces. `:nodes` and the other commands take no namespace.
+
+## Keys
+
+The footer's first row lists the keys of the screen you are on, and `?`
+lists them all. While a filter, a search or a prompt has the keyboard,
+every key goes to it: `q`, `y` and `o` are just letters there.
+
+| Global   | Action                                                              |
+| -------- | ------------------------------------------------------------------- |
+| `q`      | go home to the dashboard; on the dashboard, quit                    |
+| `ctrl+c` | quit, from anywhere                                                 |
+| `esc`    | back: first what the view uses it for (a kept filter, a search, a zoom), then the previous view as you left it |
+| `:`      | command bar (see [Commands](#commands))                             |
+| `?`      | help: global keys, the view's keys, the dashboard map, the commands; `?`, `esc` or `q` close it |
+| `y`      | copy the footer's kubectl command (OSC 52)                          |
+| `o`      | YAML of the object the view shows or has under the cursor           |
+
+### Dashboard
+
+| Key                   | Action                                                       |
+| --------------------- | ------------------------------------------------------------ |
+| `tab` / `shift+tab`   | next / previous panel                                        |
+| `0`–`7`               | jump to a panel (`0` is the banner); one the terminal is too small for opens zoomed |
+| `←` / `→`             | neighbouring panel                                           |
+| `↑` / `↓` (`k` / `j`) | rows of the focused panel; in the banner, the `▸ next` suggestions |
+| `enter`               | on a panel, its k4s view (`:pods`, `:deploy`, `:events` with only the warnings, ...); on a row, describe its object or open its list; on a suggestion, what it says; on the verdict, the most severe panel |
+| `l`                   | logs of a pod row; on a crash loop suggestion, the previous instance's |
+| `z`                   | zoom the focused panel to the whole screen, and back         |
+| `s`                   | in panel 7, sort the top pods by CPU or memory               |
+| `r`                   | refresh every source now                                     |
+| `w`                   | watch on or off; off polls nothing                           |
+| `esc`                 | leave the zoom, then the row, then the panel                 |
+| `o` / `y`             | YAML of the row's object / copy the focused command          |
+
+The panels, by key: `1` cluster, `2` nodes, `3` pods, `4` workloads,
+`5` events, `6` k3s (on k3s only), `7` top pods (with metrics-server).
+`?` lists each with its kubectl command.
+
+### Lists
+
+In pods, deployments, services, namespaces, events and nodes:
+
+| Key | Action                                                                  |
+| --- | ----------------------------------------------------------------------- |
+| `/` | filter by substring, ignoring case; `enter` keeps it, `esc` drops it    |
+| `w` | auto-refresh on or off; the hint shows `watch 5s`, `watch 20s (slow API)` or `paused` |
+| `r` | refresh now                                                             |
+
+| In a pod row | Action                                                         |
+| ------------ | -------------------------------------------------------------- |
+| `enter`      | describe                                                       |
+| `l`          | tail logs; a pod with several containers opens a picker, init containers as `init:<name>` |
+| `e`          | `kubectl exec -it -- sh` (`cmd.exe` in a Windows pod)          |
+| `f`          | port-forward to the pod                                        |
+
+| In a deployment row | Action                                                  |
+| ------------------- | ------------------------------------------------------- |
+| `enter`             | describe                                                |
+| `l`                 | tail logs of every pod its ReplicaSets run              |
+| `f`                 | port-forward to a backing pod                           |
+
+| In a service row | Action                                                     |
+| ---------------- | ---------------------------------------------------------- |
+| `enter`          | describe                                                   |
+| `l`              | tail logs of every pod behind it, finished ones skipped    |
+| `f`              | port-forward to the service (default `local = remote + 8000` if remote < 1024) |
+
+| Other views             | Action                                                |
+| ----------------------- | ----------------------------------------------------- |
+| `enter` in `:ns`        | pods of that namespace (`<all>` for every namespace)  |
+| `/` in `:ns`            | type a namespace, when RBAC forbids listing them      |
+| `enter` in `:events`    | describe the object the event is about                |
+| `W` in `:events`        | only warnings, or every type again                    |
+| `enter` in `:nodes`     | describe the node                                     |
+| `n` in `:top`           | pods or nodes                                         |
+| `s` in `:top`           | sort by CPU or memory                                 |
+| `enter` in `:ctx`       | switch to that context                                |
+| `r` in `:ctx`           | read the kubeconfig again                             |
+
+| In the forwards view (`:pf`) | Action                          |
+| ---------------------------- | ------------------------------- |
+| `enter`                      | start a stopped forward         |
+| `s`                          | stop a running forward          |
+| `r`                          | restart                         |
+| `d`                          | delete from state               |
+| `ctrl+r`                     | refresh                         |
+
+### Logs
+
+| Key                | Action                                                  |
+| ------------------ | ------------------------------------------------------- |
+| `↑` `↓` `pgup` `pgdn` | scroll; scrolling up pauses auto-follow, the bottom resumes it |
+| `f`                | auto-follow on or off                                   |
+| `w`                | soft-wrap on or off                                     |
+| `←` / `→`          | horizontal scroll, with wrap off                        |
+| `t`                | full pod names instead of the colour tag (several pods) |
+| `/`                | search, smart-case: case matters only with an upper-case letter |
+| `n` / `N`          | next / previous match                                   |
+| `c`                | clear the search, then the buffer                       |
+| `p`                | previous instance of the container, and back (one pod)  |
+
+The buffer keeps the last 5000 lines (8 MiB at most), and the tail you ask
+for is shared out over the pods. Deployment and service logs look for their pods again every 10 s, so
+the pods of a rollout join; `kubectl logs -l` does not follow new pods.
+
+### Describe and YAML
+
+| Key                         | Action                                     |
+| --------------------------- | ------------------------------------------ |
+| `↑` `↓` `pgup` `pgdn` (`k` `j`) | scroll                                 |
+| `g` / `G`                   | top / bottom                               |
+| `/`                         | search, ignoring case                      |
+| `n` / `N`                   | next / previous match                      |
+| `r`                         | fetch again, keeping the scroll position   |
+| `esc`                       | clear the search, then back                |
+
+`o` in describe opens the object's YAML; in the YAML view it fetches it
+again. Describe runs `kubectl describe` with the footer's exact flags and
+says in its title who wrote the text (`via kubectl v1.36.0` or
+`built-in`).
+
 ## Themes & accessibility
 
 At startup k4s detects whether the terminal background is dark or light and
@@ -248,68 +399,6 @@ outside `k4s-demo`, so `kubectl get pods -A` is Forbidden.
 - If your Docker host cannot run the bundled components, use
   `K3S_PROFILE=minimal`, or [k3d](https://k3d.io):
   `k3d cluster create k4s --image rancher/k3s:v1.36.5-k3s1 && k3d kubeconfig get k4s > .kube/config && make seed`.
-
-## Keys
-
-| Global   | Action                                                     |
-| -------- | ---------------------------------------------------------- |
-| `?`      | help popup (global + current view)                         |
-| `:`      | command bar (`:pods`, `:ns`, `:ctx`, `:top`, `:pf`, ...)   |
-| `:ns <name>` | switch namespace (`:ns -A` for all)                    |
-| `y`      | copy the footer's kubectl command (a letter in text prompts) |
-| `q`      | go home, then quit on the dashboard                        |
-| `Esc`    | back                                                       |
-| `Ctrl+C` | force quit                                                 |
-
-| In the pods, namespaces, deployments, services lists | Action                                                          |
-| ---------------------------------------------------- | --------------------------------------------------------------- |
-| `/`                                                  | filter by substring                                             |
-| `w`                                                  | toggle 5s auto-refresh (also on the dashboard and in `:top`)    |
-| `r`                                                  | refresh now (also on the dashboard, in `:top`, `:ctx`, describe) |
-
-| In a pod row    | Action                                |
-| --------------- | ------------------------------------- |
-| `Enter`         | describe                              |
-| `l`             | tail logs (with container picker)     |
-| `e`             | `kubectl exec -it -- sh`              |
-| `f`             | port-forward to the pod               |
-
-| In a service row | Action                                                       |
-| ---------------- | ------------------------------------------------------------ |
-| `Enter`          | describe                                                     |
-| `l`              | tail logs of every backing pod *(v1.1.1)*                    |
-| `f`              | port-forward to the service (default `local = remote + 8000` if remote < 1024) |
-
-| In a deployment row | Action                                |
-| ------------------- | ------------------------------------- |
-| `Enter`             | describe                              |
-| `l`                 | tail logs of every replica            |
-| `f`                 | port-forward to any backing pod       |
-
-| Other views                  | Action                          |
-| ---------------------------- | ------------------------------- |
-| `Enter` in `:ns`             | switch to that namespace        |
-| `Enter` in `:ctx`            | switch to that context          |
-| `n` in `:top`                | toggle pods / nodes             |
-
-In the logs view `/` searches and `w` toggles wrap:
-
-| In logs view  | Action                                          |
-| ------------- | ----------------------------------------------- |
-| `/`           | search                                          |
-| `n` / `N`     | next / previous match                           |
-| `f`           | toggle auto-follow                              |
-| `t`           | toggle full pod names vs compact tag            |
-| `w`           | toggle soft-wrap *(v1.1.0)*                     |
-| `←` / `→`     | horizontal scroll (no-wrap mode) *(v1.1.0)*     |
-| `c`           | clear search → clear buffer                     |
-
-| In forwards view (`:pf`) | Action                          |
-| ------------------------ | ------------------------------- |
-| `Enter`                  | start a stopped forward         |
-| `s`                      | stop a running forward          |
-| `r`                      | restart                         |
-| `d`                      | delete from state               |
 
 ## Demo workloads
 
