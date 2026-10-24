@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/k8s/dash"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/status"
@@ -27,6 +28,10 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		return m.onTick(msg)
 	case async.Result[refresh]:
 		return m.onRefresh(msg)
+	case async.Result[k8s.LogTarget]:
+		return m.onDeployLogs(msg)
+	case logsResolvingMsg:
+		return m, m.onLogsResolving(msg)
 	case tea.FocusMsg:
 		return m.onTerminalFocus(false)
 	case tea.BlurMsg:

@@ -87,6 +87,7 @@ func (m Model) onEnter() (views.View, tea.Cmd) {
 	if m.client == nil {
 		return m, nil
 	}
+	m = m.dropLogs()
 	f := m.mem.focus
 	if sg, ok := m.suggestionAt(); ok {
 		return m, m.runSuggestion(sg)
@@ -140,28 +141,32 @@ func (m Model) enterHint() string {
 	return ""
 }
 
-// onLogs is l: the tail prompt for the pod under the cursor, or for the
-// pod a next suggestion reads logs of.
+// onLogs is l: the tail prompt for the pod under the cursor or for the
+// pod a next suggestion reads logs of, or the logs of the pods of the
+// deployment under the cursor (deploy_logs.go).
 func (m Model) onLogs() (views.View, tea.Cmd) {
 	if m.client == nil {
 		return m, nil
 	}
+	f := m.mem.focus
+	r, onRow := f.selected(m.rows(f.panel))
+	if _, ok := m.suggestionAt(); !ok && onRow && r.deployment() {
+		return m.startDeployLogs(r.target)
+	}
+	m = m.dropLogs()
 	if sg, ok := m.suggestionAt(); ok {
 		if readsLogs(sg) {
 			return m, logsOfSuggestion(sg)
 		}
 		return m, statusCmd(status.Info, "no logs for this suggestion · y copies the command")
 	}
-	f := m.mem.focus
-	if r, ok := f.selected(m.rows(f.panel)); ok {
-		switch {
-		case r.gone:
-			return m, statusCmd(status.Info, goneObject(r.target))
-		case r.pod():
-			return m, logsCmd(r.target, r.container)
-		}
+	switch {
+	case onRow && r.gone:
+		return m, statusCmd(status.Info, goneObject(r.target))
+	case onRow && r.pod():
+		return m, logsCmd(r.target, r.container)
 	}
-	return m, statusCmd(status.Info, "no logs here: l reads the logs of a pod row")
+	return m, statusCmd(status.Info, "no logs here: l reads the logs of a pod or deployment row")
 }
 
 // logsHint is the l hint where the cursor is, "" where l opens no logs.
@@ -173,7 +178,7 @@ func (m Model) logsHint() string {
 		return ""
 	}
 	f := m.mem.focus
-	if r, ok := f.selected(m.rows(f.panel)); ok && r.pod() {
+	if r, ok := f.selected(m.rows(f.panel)); ok && (r.pod() || r.deployment()) {
 		return "logs"
 	}
 	return ""

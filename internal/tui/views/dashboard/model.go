@@ -55,6 +55,12 @@ type Model struct {
 
 	mem  Memory
 	poll async.Poller
+	// tok mints the tokens of l's resolves; acts holds the one in flight,
+	// logsFor the deployment it is for, and clock arms its notice.
+	tok     async.Token
+	acts    async.InFlight
+	logsFor dash.ObjectKey
+	clock   async.Clock
 	// forced is set while a refresh asked for with r is in flight.
 	forced bool
 	// life ends when the view closes, and a refresh still in flight ends
@@ -129,6 +135,11 @@ func newModel(client *k8s.Client, loadErr error, home string, opts ...Option) Mo
 		profile: cfg.profile,
 		perf:    &renderClock{},
 		memo:    &renderMemo{},
+		tok:     async.New(),
+		clock:   cfg.clock,
+	}
+	if m.clock == nil {
+		m.clock = async.RealClock{}
 	}
 	m.versionErr = cfg.versionErr
 	m.poll = async.NewPoller(async.New(), async.Config{
