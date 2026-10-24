@@ -39,6 +39,9 @@ type Model struct {
 	poll  async.Poller
 	table table.Model
 	raw   []k8s.Namespace
+	// shown are the namespaces behind the table's rows after the <all>
+	// row, in row order (see rowName).
+	shown []k8s.Namespace
 	// health is the last list answer: an error over earlier rows is a stale
 	// view, one before any rows is the body.
 	health stale.Health
@@ -223,12 +226,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		}
 		return m, m.list(), true
 	case key.Matches(msg, m.selectKey) && m.loaded:
-		row := m.table.SelectedRow()
-		if row == nil {
+		name, ok := m.cursorName()
+		if !ok {
 			return m, nil, false
 		}
-		name := row[0]
-		if name == allRowName {
+		if m.table.Cursor() == 0 {
 			name = ""
 		}
 		return m, func() tea.Msg { return views.NamespaceSelectedMsg{Namespace: name} }, true
