@@ -67,9 +67,18 @@ func (c *Client) DeploymentLogTarget(ctx context.Context, namespace, name string
 		Selector:   selector,
 		Containers: cs.Names(),
 		Init:       cs.InitNames(),
+		Replicas:   replicasOf(dep),
 		UID:        dep.UID,
 	}
 	return owners.split(t, byName(pods.Items)), nil
+}
+
+// replicasOf is dep's spec.replicas, which the API defaults to 1.
+func replicasOf(dep *appsv1.Deployment) int32 {
+	if dep.Spec.Replicas == nil {
+		return 1
+	}
+	return *dep.Spec.Replicas
 }
 
 func deploymentSelector(dep *appsv1.Deployment) (string, error) {

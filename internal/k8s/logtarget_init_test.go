@@ -65,3 +65,40 @@ func TestLogTargetsListInitContainers(t *testing.T) {
 		})
 	}
 }
+
+// TestDeploymentLogTargetCarriesReplicas: a deployment's target says how
+// many replicas it asks for, so a target without pods can tell a
+// deployment scaled to zero from one whose pods are not up.
+func TestDeploymentLogTargetCarriesReplicas(t *testing.T) {
+	t.Parallel()
+
+	three, zero := int32(3), int32(0)
+	cases := []struct {
+		name     string
+		replicas *int32
+		want     int32
+	}{
+		{name: "three", replicas: &three, want: 3},
+		{name: "scaled to zero", replicas: &zero, want: 0},
+		{name: "unset means one", want: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dep := deployment("shop", "web", "uid-web", map[string]string{"app": "web"})
+			dep.Spec.Replicas = tc.replicas
+			c, _ := k8stest.NewFakeClient(dep)
+			target, err := c.DeploymentLogTarget(context.Background(), "shop", "web")
+			if err != nil {
+				t.Fatalf("DeploymentLogTarget: %v", err)
+			}
+			again, err := c.ReresolveLogTarget(context.Background(), target)
+			if err != nil {
+				t.Fatalf("ReresolveLogTarget: %v", err)
+			}
+			if target.Replicas != tc.want || again.Replicas != tc.want {
+				t.Errorf("Replicas = %d, after a re-resolve %d; want %d", target.Replicas, again.Replicas, tc.want)
+			}
+		})
+	}
+}
