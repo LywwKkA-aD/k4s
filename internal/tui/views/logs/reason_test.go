@@ -57,6 +57,18 @@ func TestJudge(t *testing.T) {
 		},
 		{name: "pod failed without a reason", found: true, state: podIn("Failed", k8s.ContainerState{}), want: outFailed, note: "○ ended: pod failed"},
 		{
+			name: "an init container completed", found: true, state: podIn("Running", k8s.ContainerState{Init: true, Exit: &k8s.ContainerExit{Reason: "Completed"}}),
+			want: outCompleted, note: "○ ended: init container completed (exit 0)",
+		},
+		{
+			name: "an init container failed", found: true, state: podIn("Pending", k8s.ContainerState{Init: true, Exit: &k8s.ContainerExit{Reason: "Error", Code: 1}}),
+			want: outExited, note: "◇ container exited (Error, exit 1) · waiting for a restart",
+		},
+		{
+			name: "a sidecar exited", found: true, state: podIn("Running", k8s.ContainerState{Init: true, Sidecar: true, Exit: &k8s.ContainerExit{Reason: "Completed"}}),
+			want: outExited, note: "◇ container exited (Completed, exit 0) · waiting for a restart",
+		},
+		{
 			name: "container restarted", found: true, restarts: 1,
 			state: podIn("Running", k8s.ContainerState{Restarts: 2, Running: true, Started: started, LastExit: &k8s.ContainerExit{Reason: "OOMKilled", Code: 137}}),
 			want:  outRestarted, note: "◇ container restarted (OOMKilled, exit 137) · reattached",
@@ -109,6 +121,7 @@ func TestNoticeLines(t *testing.T) {
 	notes := []string{
 		"○ ended: pod deleted",
 		"○ ended: pod completed (exit 0)",
+		"○ ended: init container completed (exit 0)",
 		"○ ended: pod failed · Evicted",
 		"○ ended: pod failed · Error (exit 1)",
 		"◇ container restarted (OOMKilled, exit 137) · reattached",
