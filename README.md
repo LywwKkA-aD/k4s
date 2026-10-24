@@ -150,9 +150,11 @@ namespaces when it sets none; `-n` and `-A` override it. In the TUI,
 valid namespace name, so it means that namespace).
 
 Footer commands always reach the cluster k4s shows when pasted into the
-shell k4s was started from: `--context` is added after `:ctx` or when you
-passed `--context`, and `--kubeconfig` when k4s reads a file a plain
-`kubectl` would not (an explicit `--kubeconfig`, the k3s fallback). `y`
+shell k4s was started from: `--context` is added when you passed
+`--context` or k4s talks to another context than the kubeconfig's
+current-context (after `:ctx`, say), and `--kubeconfig` when k4s reads a
+file a plain `kubectl` would not (an explicit `--kubeconfig`, the k3s
+fallback). `y`
 copies the command through the terminal (OSC 52), which also works over
 SSH; inside tmux it needs `set -g set-clipboard on`. `y` copies nothing,
 and says why, when a word in the command would set a session flag such as
@@ -454,7 +456,8 @@ make vuln        # govulncheck — known CVEs in the dependency graph
 make tidy-check  # go.mod / go.sum of both modules are tidy
 make lines       # no non-test .go file over 800 lines
 make cover       # per-package test coverage
-make ci          # tidy-check + line cap + vet + lint + race tests + vuln
+make ci          # tidy-check + line cap + vet + lint + race tests
+                 # + idle-cpu harness lint and tests + vuln
 ```
 
 GitHub Actions runs `make ci` and cross-builds (linux amd64/arm64/armv7,
