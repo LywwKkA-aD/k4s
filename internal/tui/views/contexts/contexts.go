@@ -14,6 +14,7 @@ import (
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
 	"github.com/LywwKkA-aD/k4s/internal/kubectl"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/styles"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -24,13 +25,15 @@ const (
 	// prevents the "loading" placeholder from flashing on fast disks but
 	// also lets the WindowSizeMsg arrive first so the table is sized.
 	loadDelay = 50 * time.Millisecond
-	// nameColumn is the NAME cell of a row; the first holds the marker.
-	nameColumn = 1
 )
 
 // Model is the contexts list view.
 type Model struct {
-	table  table.Model
+	table table.Model
+	// names are the raw context names behind the rows, in row order. A
+	// kubeconfig name is free text and the rows hold it cleaned, so Enter
+	// and State read the name here, never back from a cell.
+	names  []string
 	loaded bool
 	err    error
 	// pending is the row a Restore asked for, held until the first read.
@@ -103,18 +106,19 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 		if msg.err != nil {
 			return m, nil
 		}
-		m.table.SetRows(m.toRows(msg.items))
+		sorted := sortedByName(msg.items)
+		m.names = contextNames(sorted)
+		m.table.SetRows(m.toRows(sorted))
 		return m.landPending()
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.refreshKey):
 			return m, fetchCmd(m.source)
 		case key.Matches(msg, m.selectKey) && m.loaded && len(m.table.Rows()) > 0:
-			row := m.table.SelectedRow()
-			if row == nil {
+			name, ok := m.cursorName()
+			if !ok {
 				return m, nil
 			}
-			name := row[nameColumn]
 			return m, func() tea.Msg {
 				return views.ContextSelectedMsg{Name: name}
 			}
@@ -125,13 +129,38 @@ func (m Model) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	return m, cmd
 }
 
-// toRows builds the table rows, sorted by name with the current context
-// surfaced in the leading marker column.
-func (m Model) toRows(items []k8s.Context) []table.Row {
+// sortedByName returns a copy of items sorted by name.
+func sortedByName(items []k8s.Context) []k8s.Context {
 	sorted := make([]k8s.Context, len(items))
 	copy(sorted, items)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+	return sorted
+}
 
+func contextNames(items []k8s.Context) []string {
+	names := make([]string, 0, len(items))
+	for _, c := range items {
+		names = append(names, c.Name)
+	}
+	return names
+}
+
+// cursorName is the raw name of the context under the cursor.
+func (m Model) cursorName() (string, bool) {
+	return m.rowName(m.table.Cursor())
+}
+
+func (m Model) rowName(i int) (string, bool) {
+	if i < 0 || i >= len(m.names) {
+		return "", false
+	}
+	return m.names[i], true
+}
+
+// toRows builds the table rows in the order of sorted, with the current
+// context surfaced in the leading marker column. The kubeconfig's names
+// are made inert at draw time (sanitize.Cell).
+func (m Model) toRows(sorted []k8s.Context) []table.Row {
 	rows := make([]table.Row, 0, len(sorted))
 	for _, c := range sorted {
 		marker := " "
@@ -142,7 +171,13 @@ func (m Model) toRows(items []k8s.Context) []table.Row {
 			// letters of the neighbouring NAME column.
 			marker = "★"
 		}
-		rows = append(rows, table.Row{marker, c.Name, c.Cluster, c.AuthInfo, c.Namespace})
+		rows = append(rows, table.Row{
+			marker,
+			sanitize.Cell(c.Name),
+			sanitize.Cell(c.Cluster),
+			sanitize.Cell(c.AuthInfo),
+			sanitize.Cell(c.Namespace),
+		})
 	}
 	return rows
 }
@@ -153,7 +188,7 @@ func (m Model) View() string {
 		return styles.Hint.Render("loading kubeconfig…")
 	}
 	if m.err != nil {
-		return styles.Warn.Render("contexts unavailable: " + m.err.Error())
+		return styles.Warn.Render("contexts unavailable: " + sanitize.Line(m.err.Error()))
 	}
 	if len(m.table.Rows()) == 0 {
 		return styles.Hint.Render("no contexts in kubeconfig")
