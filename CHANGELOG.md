@@ -264,6 +264,11 @@ are on the [releases page](https://github.com/LywwKkA-aD/k4s/releases).
   writes over OSC 52, title changes, screen clears) and control, bidi and
   zero-width characters are dropped, invalid UTF-8 becomes U+FFFD, and a
   line is cut at 64 KiB.
+- The same goes for names, statuses and errors in every list, picker and
+  prompt (contexts from the kubeconfig included), for `k4s.log` and for the
+  credential plugin output printed after exit; `/` matches what a row
+  shows, and actions still reach the object picked, or run nothing for a
+  name kubectl would reject.
 - `y`, the exit recap and every kubectl k4s runs refuse a command in which
   a word from the cluster would set a session flag such as `--server`,
   `--kubeconfig`, `--token` or `-s`; `y` also refuses one that holds
