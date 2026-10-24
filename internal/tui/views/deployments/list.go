@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/duration"
 
 	"github.com/LywwKkA-aD/k4s/internal/k8s"
+	"github.com/LywwKkA-aD/k4s/internal/sanitize"
 	"github.com/LywwKkA-aD/k4s/internal/tui/async"
 	"github.com/LywwKkA-aD/k4s/internal/tui/views"
 )
@@ -151,15 +152,17 @@ func tableColumns(showNamespace bool) []table.Column {
 	)
 }
 
+// toRows renders deployments as `kubectl get deploy` prints them, names
+// made inert at draw time (sanitize.Cell); shown keeps the raw ones.
 func toRows(items []k8s.Deployment, showNamespace bool) []table.Row {
 	rows := make([]table.Row, 0, len(items))
 	for _, d := range items {
 		row := make(table.Row, 0, 6)
 		if showNamespace {
-			row = append(row, d.Namespace)
+			row = append(row, sanitize.Cell(d.Namespace))
 		}
 		rows = append(rows, append(row,
-			d.Name,
+			sanitize.Cell(d.Name),
 			fmt.Sprintf("%d/%d", d.Ready, d.Replicas),
 			strconv.Itoa(int(d.UpToDate)),
 			strconv.Itoa(int(d.Available)),
